@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Req } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { UsersService } from './users.service';
-import type { CreateUserDto, UpdateUserDto } from './users.service';
+import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 
 function isAdmin(req: any) {
   return req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN';
@@ -13,13 +13,13 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  findAll() {
-    return this.usersService.findAll();
+  findAll(@Req() req: any) {
+    return this.usersService.findAll(req.user);
   }
 
   @Post()
-  create(@Body() dto: CreateUserDto) {
-    return this.usersService.create(dto);
+  create(@Req() req: any, @Body() dto: CreateUserDto) {
+    return this.usersService.create(dto, req.user);
   }
 
   @Patch(':id')

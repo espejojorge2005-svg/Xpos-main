@@ -2,32 +2,22 @@ import { Injectable, NotFoundException, BadRequestException, ForbiddenException 
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { ClsService } from 'nestjs-cls';
+import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 
-export interface CreateUserDto {
-  name: string;
-  email: string;
-  password: string;
-  pin?: string;
-  role?: 'ADMIN' | 'CASHIER' | 'WAITER';
-  allowedViews?: string[];
-}
-
-export interface UpdateUserDto {
-  name?: string;
-  email?: string;
-  password?: string;
-  pin?: string;
-  role?: 'ADMIN' | 'CASHIER' | 'WAITER';
-  allowedViews?: string[];
-  isActive?: boolean;
-}
+export { CreateUserDto, UpdateUserDto };
 
 @Injectable()
 export class UsersService {
   constructor(private prisma: PrismaService, private cls: ClsService) {}
 
-  async findAll() {
+  async findAll(reqUser?: any) {
+    const restaurantId = this.cls.get('restaurantId') || reqUser?.restaurantId;
+    const whereClause: any = {};
+    if (restaurantId && reqUser?.role !== 'SUPER_ADMIN') {
+      whereClause.restaurantId = restaurantId;
+    }
     return this.prisma.user.findMany({
+      where: whereClause,
       select: {
         id: true,
         name: true,
@@ -60,20 +50,29 @@ export class UsersService {
     return user;
   }
 
-  async create(dto: CreateUserDto) {
+  async create(dto: CreateUserDto, reqUser?: any) {
     const exists = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (exists) throw new BadRequestException('El correo ya está registrado');
 
-    const restaurantId = this.cls.get('restaurantId');
-    const restaurant = await this.prisma.restaurant.findUnique({ 
-      where: { id: restaurantId },
-      include: { plan: true } 
-    });
-    if (restaurant && restaurant.plan) {
-      const activeUsers = await this.prisma.user.count({ where: { isActive: true } });
-      const limit = restaurant.plan.maxUsers;
-      if (activeUsers >= limit) {
-        throw new ForbiddenException(`Límite de usuarios (${limit}) alcanzado para el plan ${restaurant.plan.name}. Mejore su plan para añadir más.`);
+    let restaurantId = this.cls.get('restaurantId') || reqUser?.restaurantId || null;
+    if (!restaurantId) {
+      const firstRest = await this.prisma.restaurant.findFirst();
+      if (firstRest) restaurantId = firstRest.id;
+    }
+
+    if (restaurantId) {
+      const restaurant = await this.prisma.restaurant.findUnique({ 
+        where: { id: restaurantId },
+        include: { plan: true } 
+      });
+      if (restaurant && restaurant.plan) {
+        const activeUsers = await this.prisma.user.count({ 
+          where: { restaurantId, isActive: true } 
+        });
+        const limit = restaurant.plan.maxUsers;
+        if (activeUsers >= limit) {
+          throw new ForbiddenException(`Límite de usuarios (${limit}) alcanzado para el plan ${restaurant.plan.name}. Mejore su plan para añadir más.`);
+        }
       }
     }
 
@@ -93,6 +92,7 @@ export class UsersService {
         pin: dto.pin || null,
         role: role as any,
         allowedViews,
+        restaurantId,
       },
     });
     const { password, ...result } = user;

@@ -123,7 +123,8 @@ export default function UsersPage() {
         fetchUsers();
       } else {
         const err = await res.json();
-        toast.error(err.message || 'Error al guardar');
+        const errMsg = Array.isArray(err.message) ? err.message.join(', ') : (err.message || 'Error al guardar');
+        toast.error(errMsg);
       }
     } catch { toast.error('Error de red'); }
     finally { setIsSaving(false); }
