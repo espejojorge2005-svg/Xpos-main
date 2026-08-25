@@ -22,15 +22,15 @@ const VIEW_PATH_MAP: Record<string, string> = {
 
 /**
  * Returns the first allowed path for a user given their allowedViews.
- * ADMIN / '*' always returns '/' (full access).
+ * If empty, ADMIN, or '*' always returns '/' (full access).
  */
 export function getFirstAllowedPath(allowedViews: string[]): string {
-  if (!allowedViews || allowedViews.includes('*')) return '/';
+  if (!allowedViews || allowedViews.length === 0 || allowedViews.includes('*')) return '/';
   const order = ['pos', 'cocina', 'caja', 'inventario', 'categorias', 'areas', 'kardex', 'analytics', 'configuracion', 'usuarios'];
   for (const key of order) {
     if (allowedViews.includes(key)) return VIEW_PATH_MAP[key];
   }
-  return '/login'; // No views assigned at all
+  return '/';
 }
 
 /**
@@ -52,7 +52,7 @@ export function useGuardedRoute(viewKey: string | null) {
 
     try {
       const user = JSON.parse(userStr);
-      const allowedViews: string[] = user.allowedViews ?? ['*'];
+      let allowedViews: string[] = user.allowedViews && user.allowedViews.length > 0 ? user.allowedViews : ['*'];
       const role: string = user.role ?? '';
 
       // ADMIN and SUPER_ADMIN always have full access

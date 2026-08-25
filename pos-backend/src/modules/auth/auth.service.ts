@@ -20,23 +20,40 @@ export class AuthService {
     // 2. Encriptamos la contraseña
     const hashedPassword = await bcrypt.hash(data.password, 10);
 
-    // 3. El primer usuario del sistema recibe rol SUPER_ADMIN automáticamente
+    // 3. El primer usuario es SUPER_ADMIN; cualquier nuevo registro genera su propio Restaurante con rol ADMIN
     const userCount = await this.prisma.user.count();
-    const role = userCount === 0 ? 'SUPER_ADMIN' : 'CASHIER';
+    const isFirstUser = userCount === 0;
+    const role = isFirstUser ? 'SUPER_ADMIN' : 'ADMIN';
 
-    // 4. Guardamos el usuario
+    let restaurantId: string | null = null;
+    if (!isFirstUser) {
+      const restaurant = await this.prisma.restaurant.create({
+        data: {
+          name: `Restaurante de ${data.name}`,
+        }
+      });
+      restaurantId = restaurant.id;
+    }
+
+    // 4. Guardamos el usuario con permisos de Administrador
     const user = await this.prisma.user.create({
       data: {
         name: data.name,
         email: data.email,
         password: hashedPassword,
         role: role as any,
+        restaurantId,
+        allowedViews: ['*'],
       }
     });
 
-    // 5. Retornamos el usuario SIN la contraseña
-    const { password, ...result } = user;
-    return result;
+    // 5. Generamos JWT y retoramos token + usuario
+    const allowedViews = ['*'];
+    const payload = { sub: user.id, email: user.email, role: user.role, allowedViews, restaurantId: user.restaurantId };
+    return {
+      access_token: this.jwtService.sign(payload),
+      user: { id: user.id, name: user.name, role: user.role, allowedViews, restaurantId: user.restaurantId }
+    };
   }
 
   async login(data: LoginDto) {
@@ -64,8 +81,10 @@ export class AuthService {
     const isPasswordValid = await bcrypt.compare(data.password, user.password);
     if (!isPasswordValid) throw new UnauthorizedException('Credenciales inválidas');
 
-    // 3. ADMIN / SUPER_ADMIN siempre tienen acceso total; los demás usan su lista
-    const allowedViews = (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') ? ['*'] : user.allowedViews;
+    // 3. ADMIN / SUPER_ADMIN o lista vacía obtienen acceso total ['*']
+    const allowedViews = (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN' || !user.allowedViews || user.allowedViews.length === 0) 
+      ? ['*'] 
+      : user.allowedViews;
 
     // 4. Generamos el JWT con los permisos y el tenant (restaurantId)
     const payload = { sub: user.id, email: user.email, role: user.role, allowedViews, restaurantId: user.restaurantId };
