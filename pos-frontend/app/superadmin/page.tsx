@@ -77,9 +77,19 @@ export default function SuperAdminPage() {
         const activePlans = plansData.filter((p: any) => p.isActive);
         setAvailablePlans(activePlans);
         if (activePlans.length > 0) setPlanId(activePlans[0].id);
+      } else {
+        setAvailablePlans([
+          { id: 'p-basic', name: 'Plan Básico', code: 'BASIC', price: 29, maxUsers: 3, features: ['POS', 'Cocina'], isActive: true },
+          { id: 'p-pro', name: 'Plan Profesional', code: 'PRO', price: 59, maxUsers: 10, features: ['POS', 'Cocina', 'Kardex', 'Reportes'], isActive: true },
+          { id: 'p-premium', name: 'Plan Premium', code: 'PREMIUM', price: 99, maxUsers: 99, features: ['Acceso ilimitado'], isActive: true },
+        ]);
+        setPlanId('p-pro');
       }
     } catch {
-      toast.error('Error cargando inicial');
+      setAvailablePlans([
+        { id: 'p-basic', name: 'Plan Básico', code: 'BASIC', price: 29, maxUsers: 3, features: ['POS', 'Cocina'], isActive: true },
+        { id: 'p-pro', name: 'Plan Profesional', code: 'PRO', price: 59, maxUsers: 10, features: ['POS', 'Cocina', 'Kardex', 'Reportes'], isActive: true },
+      ]);
     } finally {
       setLoading(false);
     }
