@@ -2,7 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { UtensilsCrossed, Lock, Mail, User, Loader2 } from 'lucide-react';
+import Link from 'next/link';
+import { getApiUrl } from '@/utils/api';
+import { UtensilsCrossed, Lock, Mail, User, Loader2, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function RegisterPage() {
@@ -17,8 +19,7 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      // Ajusta esta URL si tu endpoint de registro en NestJS es diferente
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/register`, {
+      const response = await fetch(getApiUrl('/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password }),
@@ -27,8 +28,18 @@ export default function RegisterPage() {
       const data = await response.json();
 
       if (response.ok) {
-        toast.success('¡Usuario creado con éxito! Ahora puedes iniciar sesión.');
-        router.push('/login'); // Te manda al login para que pruebes las credenciales
+        if (data.access_token && data.user) {
+          localStorage.setItem('pos_token', data.access_token);
+          localStorage.setItem('pos_user', JSON.stringify(data.user));
+          if (data.user.restaurantId) {
+            localStorage.setItem('pos_restaurant_id', data.user.restaurantId);
+          }
+          toast.success('¡Restaurante registrado con éxito! Bienvenido.');
+          window.location.href = '/';
+        } else {
+          toast.success('¡Registro exitoso! Por favor inicia sesión.');
+          window.location.href = '/login';
+        }
       } else {
         toast.error(data.message || 'Error al registrar el usuario');
       }
@@ -114,14 +125,14 @@ export default function RegisterPage() {
           </button>
         </form>
         
-        {/* Botón para volver al Login */}
+        {/* Link para volver al Login */}
         <div className="mt-6 text-center">
-            <button 
-                onClick={() => router.push('/login')}
-                className="text-sm text-emerald-600 font-bold hover:underline"
-            >
-                ¿Ya tienes cuenta? Inicia sesión aquí
-            </button>
+          <Link 
+            href="/login"
+            className="text-sm text-emerald-600 font-bold hover:underline flex items-center justify-center gap-1.5"
+          >
+            <ArrowLeft className="w-4 h-4" /> ¿Ya tienes cuenta? Inicia sesión aquí
+          </Link>
         </div>
       </div>
     </div>

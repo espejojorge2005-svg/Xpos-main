@@ -1,9 +1,10 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
+import Link from 'next/link';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { UtensilsCrossed, Lock, Mail, Loader2, KeyRound, User as UserIcon, LogOut, ArrowLeft } from 'lucide-react';
+import { UtensilsCrossed, Lock, Mail, Loader2, KeyRound, User as UserIcon, LogOut, ArrowLeft, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { getFirstAllowedPath } from '@/hooks/useGuardedRoute';
 
@@ -84,12 +85,8 @@ export default function LoginPage() {
         }
 
         toast.success(`¡Bienvenido, ${data.user.name}!`);
-        if (data.user.role === 'SUPER_ADMIN') {
-          router.push('/superadmin');
-        } else {
-          const dest = getFirstAllowedPath(data.user.allowedViews ?? ['*']);
-          router.push(dest);
-        }
+        const dest = data.user.role === 'SUPER_ADMIN' ? '/superadmin' : getFirstAllowedPath(data.user.allowedViews ?? ['*']);
+        window.location.href = dest;
       } else {
         toast.error(data.message || 'Credenciales incorrectas');
       }
@@ -118,7 +115,7 @@ export default function LoginPage() {
         localStorage.setItem('pos_user', JSON.stringify(data.user));
         toast.success(`¡Hola de nuevo, ${data.user.name}!`);
         const dest = getFirstAllowedPath(data.user.allowedViews ?? ['*']);
-        router.push(dest);
+        window.location.href = dest;
       } else {
         toast.error(data.message || 'PIN Incorrecto');
         setPin(''); // Reset only on error
@@ -227,14 +224,23 @@ export default function LoginPage() {
                 </button>
               </form>
               
-              {restaurantId && (
-                <button 
-                  onClick={() => setMode('STAFF')}
-                  className="w-full mt-6 text-sm text-emerald-400 hover:text-emerald-300 font-medium text-center transition-colors"
+              <div className="mt-6 flex flex-col gap-3 text-center">
+                <Link
+                  href="/register"
+                  className="w-full text-sm text-emerald-400 hover:text-emerald-300 font-bold flex items-center justify-center gap-1.5 py-2 rounded-xl hover:bg-white/5 transition-all border border-emerald-500/20"
                 >
-                  Volver al acceso de personal
-                </button>
-              )}
+                  <UserPlus className="w-4 h-4" /> ¿No tienes cuenta? Registra tu restaurante
+                </Link>
+
+                {restaurantId && (
+                  <button 
+                    onClick={() => setMode('STAFF')}
+                    className="w-full text-xs text-slate-400 hover:text-slate-200 font-medium transition-colors"
+                  >
+                    Volver al acceso de personal
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -277,13 +283,19 @@ export default function LoginPage() {
                 </div>
               )}
 
-              <div className="mt-auto pt-6 border-t border-white/10 text-center">
+              <div className="mt-auto pt-6 border-t border-white/10 flex flex-col gap-2 text-center">
                 <button 
                   onClick={() => setMode('ADMIN')}
-                  className="text-sm font-medium text-slate-400 hover:text-white transition-colors flex items-center justify-center w-full gap-2"
+                  className="text-sm font-medium text-slate-400 hover:text-white transition-colors flex items-center justify-center w-full gap-2 py-1"
                 >
-                  <Lock className="w-4 h-4" /> Acceso Configuración
+                  <Lock className="w-4 h-4" /> Acceso Configuración / Administrador
                 </button>
+                <Link 
+                  href="/register"
+                  className="text-xs font-bold text-emerald-400 hover:text-emerald-300 transition-colors flex items-center justify-center w-full gap-1.5 py-1"
+                >
+                  <UserPlus className="w-3.5 h-3.5" /> Registrar Nuevo Restaurante
+                </Link>
               </div>
             </div>
           )}
