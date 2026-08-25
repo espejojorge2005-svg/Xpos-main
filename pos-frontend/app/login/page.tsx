@@ -4,7 +4,7 @@ import Link from 'next/link';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { UtensilsCrossed, Lock, Mail, Loader2, KeyRound, User as UserIcon, LogOut, ArrowLeft, UserPlus } from 'lucide-react';
+import { UtensilsCrossed, Lock, Mail, Loader2, KeyRound, User as UserIcon, LogOut, ArrowLeft, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 import { getFirstAllowedPath } from '@/hooks/useGuardedRoute';
 
@@ -15,7 +15,7 @@ interface StaffMember {
 }
 
 export default function LoginPage() {
-  const [mode, setMode] = useState<'ADMIN' | 'STAFF' | 'PIN'>('STAFF');
+  const [mode, setMode] = useState<'ADMIN' | 'STAFF' | 'PIN'>('ADMIN');
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [selectedUser, setSelectedUser] = useState<StaffMember | null>(null);
@@ -34,10 +34,7 @@ export default function LoginPage() {
     const savedRestaurantId = localStorage.getItem('pos_restaurant_id');
     if (savedRestaurantId) {
       setRestaurantId(savedRestaurantId);
-      setMode('STAFF');
       fetchStaff(savedRestaurantId);
-    } else {
-      setMode('ADMIN');
     }
   }, []);
 
@@ -65,23 +62,26 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
 
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
+
     try {
       const response = await fetch(getApiUrl('/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: cleanEmail, password: cleanPassword }),
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        // Guardar token y usuario
         localStorage.setItem('pos_token', data.access_token);
         localStorage.setItem('pos_user', JSON.stringify(data.user)); 
         
-        // Vincular restaurante
         if (data.user.restaurantId) {
           localStorage.setItem('pos_restaurant_id', data.user.restaurantId);
+        } else {
+          localStorage.removeItem('pos_restaurant_id');
         }
 
         toast.success(`¡Bienvenido, ${data.user.name}!`);
@@ -118,7 +118,7 @@ export default function LoginPage() {
         window.location.href = dest;
       } else {
         toast.error(data.message || 'PIN Incorrecto');
-        setPin(''); // Reset only on error
+        setPin('');
       }
     } catch (error) {
       toast.error('Error de conexión');
@@ -144,7 +144,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-slate-900 overflow-hidden relative selection:bg-emerald-500/30">
-      {/* Dynamic Background Blurs */}
+      {/* Background Blurs */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-emerald-500/20 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-500/20 rounded-full blur-[120px] pointer-events-none" />
 
@@ -173,20 +173,44 @@ export default function LoginPage() {
           )}
         </div>
 
-        {/* Right Side: Dynamic Form Area */}
+        {/* Right Side: Form Area */}
         <div className="w-full max-w-md bg-white/10 backdrop-blur-xl rounded-[2rem] border border-white/20 shadow-2xl p-8 flex flex-col relative overflow-hidden">
           
-          {/* ----- ADMINISTRATOR LOGIN MODE ----- */}
+          {/* Mode Switch Tabs */}
+          <div className="flex bg-slate-900/60 p-1.5 rounded-2xl border border-white/10 mb-6">
+            <button
+              onClick={() => setMode('ADMIN')}
+              className={`flex-1 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${
+                mode === 'ADMIN' 
+                  ? 'bg-emerald-500 text-white shadow-md' 
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Shield className="w-4 h-4" /> Admin / SuperAdmin
+            </button>
+            <button
+              onClick={() => setMode('STAFF')}
+              className={`flex-1 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${
+                mode === 'STAFF' || mode === 'PIN'
+                  ? 'bg-emerald-500 text-white shadow-md' 
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <KeyRound className="w-4 h-4" /> Personal (PIN)
+            </button>
+          </div>
+
+          {/* ----- ADMINISTRATOR / SUPERADMIN LOGIN MODE ----- */}
           {mode === 'ADMIN' && (
-            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="text-center mb-8">
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <div className="text-center mb-6">
                 <h2 className="text-2xl font-bold text-white">Acceso Administrativo</h2>
-                <p className="text-slate-300 text-sm mt-2">Ingresa tus credenciales para configurar la terminal</p>
+                <p className="text-slate-300 text-xs mt-1">Ingresa con tu correo y contraseña</p>
               </div>
 
-              <form onSubmit={handleAdminLogin} className="space-y-6">
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-200">Correo Electrónico</label>
+              <form onSubmit={handleAdminLogin} className="space-y-5">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-200">Correo Electrónico</label>
                   <div className="relative">
                     <Mail className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
                     <input
@@ -194,14 +218,14 @@ export default function LoginPage() {
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full pl-12 pr-4 py-3.5 bg-slate-800/50 border border-slate-700/50 text-white rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all placeholder:text-slate-500"
-                      placeholder="admin@restaurante.com"
+                      className="w-full pl-12 pr-4 py-3.5 bg-slate-800/60 border border-slate-700/60 text-white rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all text-sm placeholder:text-slate-500"
+                      placeholder="superadmin@xpos.com"
                     />
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-200">Contraseña</label>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-200">Contraseña</label>
                   <div className="relative">
                     <Lock className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
                     <input
@@ -209,7 +233,7 @@ export default function LoginPage() {
                       required
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full pl-12 pr-4 py-3.5 bg-slate-800/50 border border-slate-700/50 text-white rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all placeholder:text-slate-500"
+                      className="w-full pl-12 pr-4 py-3.5 bg-slate-800/60 border border-slate-700/60 text-white rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all text-sm placeholder:text-slate-500"
                       placeholder="••••••••"
                     />
                   </div>
@@ -218,22 +242,11 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-500/50 text-white font-bold py-4 rounded-2xl shadow-lg shadow-emerald-500/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 mt-4"
+                  className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-500/50 text-white font-bold py-4 rounded-2xl shadow-lg shadow-emerald-500/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 mt-4 text-sm"
                 >
-                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Ingresar'}
+                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Ingresar al Sistema'}
                 </button>
               </form>
-              
-              {restaurantId && (
-                <div className="mt-6 text-center">
-                  <button 
-                    onClick={() => setMode('STAFF')}
-                    className="w-full text-xs text-slate-400 hover:text-slate-200 font-medium transition-colors"
-                  >
-                    Volver al acceso de personal
-                  </button>
-                </div>
-              )}
             </div>
           )}
 
@@ -241,49 +254,41 @@ export default function LoginPage() {
           {mode === 'STAFF' && (
             <div className="animate-in fade-in zoom-in-95 duration-300 h-full flex flex-col">
               <div className="text-center mb-6">
-                <h2 className="text-2xl font-bold text-white">Turno Actual</h2>
-                <p className="text-slate-300 text-sm mt-1">Selecciona tu usuario para ingresar</p>
+                <h2 className="text-2xl font-bold text-white">Turno Personal</h2>
+                <p className="text-slate-300 text-xs mt-1">Selecciona tu usuario e ingresa tu PIN</p>
               </div>
 
-              {staff.length === 0 ? (
-                <div className="flex-1 flex items-center justify-center flex-col text-slate-400 min-h-[300px]">
-                  <Loader2 className="w-8 h-8 animate-spin mb-4 text-emerald-500" />
-                  <p>Cargando personal...</p>
+              {!restaurantId ? (
+                <div className="flex-1 flex items-center justify-center flex-col text-slate-300 text-center p-4">
+                  <Shield className="w-12 h-12 text-emerald-400 mb-3 opacity-80" />
+                  <p className="text-sm font-bold">Terminal no vinculada</p>
+                  <p className="text-xs text-slate-400 mt-1">Ingresa primero con tu cuenta Administradora para vincular la terminal.</p>
+                </div>
+              ) : staff.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center flex-col text-slate-400 min-h-[220px]">
+                  <Loader2 className="w-8 h-8 animate-spin mb-3 text-emerald-500" />
+                  <p className="text-sm">Cargando lista de personal...</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                <div className="grid grid-cols-2 gap-3 max-h-[350px] overflow-y-auto pr-1">
                   {staff.filter(u => u.role !== 'SUPER_ADMIN').map((user) => (
                     <button
                       key={user.id}
                       onClick={() => {
                         setSelectedUser(user);
-                        setPin('');
                         setMode('PIN');
                       }}
-                      className="flex flex-col items-center justify-center p-4 bg-slate-800/40 hover:bg-slate-700/60 border border-white/5 hover:border-emerald-500/50 rounded-2xl transition-all active:scale-95 group"
+                      className="p-4 rounded-2xl bg-white/5 hover:bg-emerald-500/20 border border-white/10 hover:border-emerald-500/50 flex flex-col items-center justify-center gap-2 transition-all active:scale-95 text-center group"
                     >
-                      <div className="w-12 h-12 bg-emerald-500/10 rounded-full flex items-center justify-center mb-3 group-hover:bg-emerald-500/20 transition-colors">
-                        <UserIcon className="w-6 h-6 text-emerald-400" />
+                      <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-emerald-400 font-bold group-hover:bg-emerald-500 group-hover:text-white transition-colors">
+                        {user.name.charAt(0).toUpperCase()}
                       </div>
-                      <span className="font-bold text-white text-sm truncate w-full text-center">{user.name}</span>
-                      <span className="text-xs text-slate-400 mt-1 uppercase tracking-wider">{
-                        user.role === 'CASHIER' ? 'Cajero/a' : 
-                        user.role === 'WAITER' ? 'Mesero/a' : 
-                        'Administrador'
-                      }</span>
+                      <span className="text-xs font-bold text-white truncate w-full">{user.name}</span>
+                      <span className="text-[10px] text-slate-400 uppercase font-black tracking-widest">{user.role}</span>
                     </button>
                   ))}
                 </div>
               )}
-
-              <div className="mt-auto pt-6 border-t border-white/10 text-center">
-                <button 
-                  onClick={() => setMode('ADMIN')}
-                  className="text-sm font-medium text-slate-400 hover:text-white transition-colors flex items-center justify-center w-full gap-2 py-1"
-                >
-                  <Lock className="w-4 h-4" /> Acceso Configuración / Administrador
-                </button>
-              </div>
             </div>
           )}
 
@@ -297,19 +302,19 @@ export default function LoginPage() {
                 <ArrowLeft className="w-6 h-6" />
               </button>
 
-              <div className="flex flex-col items-center mb-8 pt-4">
-                <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mb-4 border border-emerald-500/30">
-                  <UserIcon className="w-8 h-8 text-emerald-400" />
+              <div className="flex flex-col items-center mb-6 pt-2">
+                <div className="w-14 h-14 bg-emerald-500/20 rounded-2xl flex items-center justify-center mb-3 border border-emerald-500/30">
+                  <UserIcon className="w-7 h-7 text-emerald-400" />
                 </div>
-                <h2 className="text-2xl font-bold text-white">{selectedUser.name}</h2>
-                <p className="text-slate-400 text-sm">Ingresa tu código PIN</p>
+                <h2 className="text-xl font-bold text-white">{selectedUser.name}</h2>
+                <p className="text-slate-400 text-xs mt-0.5">Ingresa tu código PIN de 4 dígitos</p>
                 
                 {/* Dots */}
-                <div className="flex gap-4 mt-6">
+                <div className="flex gap-4 mt-5">
                   {[...Array(4)].map((_, i) => (
                     <div 
                       key={i} 
-                      className={`w-4 h-4 rounded-full border-2 transition-all duration-300 ${
+                      className={`w-3.5 h-3.5 rounded-full border-2 transition-all duration-300 ${
                         i < pin.length 
                           ? 'bg-emerald-400 border-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.5)]' 
                           : 'border-slate-500/50 bg-transparent'
@@ -320,7 +325,7 @@ export default function LoginPage() {
               </div>
 
               {/* Numpad */}
-              <div className="grid grid-cols-3 gap-3 max-w-[280px] mx-auto">
+              <div className="grid grid-cols-3 gap-2.5 max-w-[240px] mx-auto">
                 {['1','2','3','4','5','6','7','8','9','X','0','del'].map((key) => {
                   if (key === 'X') return <div key={key} />;
                   return (
@@ -329,7 +334,7 @@ export default function LoginPage() {
                       disabled={loading}
                       onClick={() => key === 'del' ? onPinPadDelete() : onPinPadPress(key)}
                       className={`
-                        aspect-square flex items-center justify-center text-3xl font-medium rounded-full
+                        aspect-square flex items-center justify-center text-2xl font-bold rounded-2xl
                         transition-all active:scale-90
                         ${key === 'del' 
                           ? 'text-red-400 hover:bg-red-500/10' 
