@@ -186,7 +186,7 @@ export default function LoginPage() {
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              <Shield className="w-4 h-4" /> Admin / SuperAdmin
+              <Shield className="w-4 h-4" /> Administrador
             </button>
             <button
               onClick={() => setMode('STAFF')}
@@ -200,11 +200,11 @@ export default function LoginPage() {
             </button>
           </div>
 
-          {/* ----- ADMINISTRATOR / SUPERADMIN LOGIN MODE ----- */}
+          {/* ----- ADMINISTRATOR LOGIN MODE ----- */}
           {mode === 'ADMIN' && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
               <div className="text-center mb-6">
-                <h2 className="text-2xl font-bold text-white">Acceso Administrativo</h2>
+                <h2 className="text-2xl font-bold text-white">Acceso Administrador</h2>
                 <p className="text-slate-300 text-xs mt-1">Ingresa con tu correo y contraseña</p>
               </div>
 
@@ -219,7 +219,7 @@ export default function LoginPage() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full pl-12 pr-4 py-3.5 bg-slate-800/60 border border-slate-700/60 text-white rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all text-sm placeholder:text-slate-500"
-                      placeholder="superadmin@xpos.com"
+                      placeholder="admin@restaurante.com"
                     />
                   </div>
                 </div>
