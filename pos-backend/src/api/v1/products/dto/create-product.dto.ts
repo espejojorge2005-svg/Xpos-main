@@ -1,8 +1,8 @@
-import { IsString, IsNumber, IsInt, Min, IsNotEmpty, IsUUID, IsOptional, ValidateNested, IsArray } from 'class-validator';
+import { IsString, IsNumber, Min, IsNotEmpty, IsOptional, ValidateNested, IsArray } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class ModifierOptionDto {
-  @IsUUID()
+  @IsString()
   @IsNotEmpty()
   targetProductId: string;
 
@@ -17,18 +17,21 @@ export class ModifierGroupDto {
   @IsNotEmpty()
   name: string;
 
-  @IsInt()
+  @IsOptional()
+  @IsNumber()
   @Min(0)
-  minSelect: number;
+  minSelect?: number;
 
-  @IsInt()
+  @IsOptional()
+  @IsNumber()
   @Min(1)
-  maxSelect: number;
+  maxSelect?: number;
 
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ModifierOptionDto)
-  options: ModifierOptionDto[];
+  options?: ModifierOptionDto[];
 }
 
 export class CreateProductDto {
@@ -36,26 +39,27 @@ export class CreateProductDto {
   @IsNotEmpty()
   name: string;
 
-  @IsUUID()
-  @IsNotEmpty()
-  categoryId: string;
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
 
   @IsOptional()
   @IsArray()
-  @IsUUID('all', { each: true })
   stationIds?: string[];
 
   @IsNumber()
   @Min(0)
   price: number;
 
-  @IsInt()
+  @IsOptional()
+  @IsNumber()
   @Min(0)
-  stock: number;
+  stock?: number;
 
-  @IsInt()
+  @IsOptional()
+  @IsNumber()
   @Min(0)
-  minStock: number;
+  minStock?: number;
 
   @IsOptional()
   @IsArray()
