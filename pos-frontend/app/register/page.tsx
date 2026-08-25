@@ -1,139 +1,38 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getApiUrl } from '@/utils/api';
-import { UtensilsCrossed, Lock, Mail, User, Loader2, ArrowLeft } from 'lucide-react';
-import { toast } from 'sonner';
+import { UtensilsCrossed, ArrowLeft, ShieldCheck, PhoneCall } from 'lucide-react';
 
 export default function RegisterPage() {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const router = useRouter();
-
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-
-    try {
-      const response = await fetch(getApiUrl('/auth/register'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        if (data.access_token && data.user) {
-          localStorage.setItem('pos_token', data.access_token);
-          localStorage.setItem('pos_user', JSON.stringify(data.user));
-          if (data.user.restaurantId) {
-            localStorage.setItem('pos_restaurant_id', data.user.restaurantId);
-          }
-          toast.success('¡Restaurante registrado con éxito! Bienvenido.');
-          window.location.href = '/';
-        } else {
-          toast.success('¡Registro exitoso! Por favor inicia sesión.');
-          window.location.href = '/login';
-        }
-      } else {
-        toast.error(data.message || 'Error al registrar el usuario');
-      }
-    } catch (error) {
-      toast.error('Error al conectar con el servidor backend');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-slate-50 p-4">
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-slate-100 p-8">
+    <div className="min-h-screen w-full flex items-center justify-center bg-slate-900 p-4">
+      <div className="w-full max-w-md bg-slate-800/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-slate-700 p-8 text-center">
         
-        <div className="flex flex-col items-center mb-8">
-          <div className="bg-emerald-100 p-4 rounded-2xl mb-4">
-            <UtensilsCrossed className="w-10 h-10 text-emerald-600" />
+        <div className="flex flex-col items-center mb-6">
+          <div className="bg-emerald-500/20 p-4 rounded-2xl mb-4 border border-emerald-500/30">
+            <ShieldCheck className="w-10 h-10 text-emerald-400" />
           </div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">Nuevo Usuario</h1>
-          <p className="text-slate-500 font-medium">Únete a Xpos Huanchaco</p>
+          <h1 className="text-2xl font-black text-white tracking-tight">Acceso a Xpos SaaS</h1>
+          <p className="text-slate-400 text-sm mt-2 font-medium">
+            El registro público está desactivado. Las cuentas de restaurante son creadas por el equipo de administración al adquirir una suscripción.
+          </p>
         </div>
 
-        <form onSubmit={handleRegister} className="space-y-5">
-          {/* Campo Nombre */}
-          <div className="space-y-2">
-            <label className="text-sm font-bold text-slate-700 ml-1">Nombre Completo</label>
-            <div className="relative">
-              <User className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
-              <input
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-slate-900"
-                placeholder="Ej. Xander Admin"
-              />
-            </div>
-          </div>
-
-          {/* Campo Email */}
-          <div className="space-y-2">
-            <label className="text-sm font-bold text-slate-700 ml-1">Correo Electrónico</label>
-            <div className="relative">
-              <Mail className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-slate-900"
-                placeholder="nuevo@restaurante.com"
-              />
-            </div>
-          </div>
-
-          {/* Campo Contraseña */}
-          <div className="space-y-2">
-            <label className="text-sm font-bold text-slate-700 ml-1">Contraseña</label>
-            <div className="relative">
-              <Lock className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-slate-900"
-                placeholder="••••••••"
-              />
-            </div>
-          </div>
-
-          {/* Botón Registrar */}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white font-bold py-4 rounded-2xl shadow-lg shadow-emerald-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2 mt-4"
-          >
-            {loading ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              'Crear Cuenta'
-            )}
-          </button>
-        </form>
-        
-        {/* Link para volver al Login */}
-        <div className="mt-6 text-center">
-          <Link 
-            href="/login"
-            className="text-sm text-emerald-600 font-bold hover:underline flex items-center justify-center gap-1.5"
-          >
-            <ArrowLeft className="w-4 h-4" /> ¿Ya tienes cuenta? Inicia sesión aquí
-          </Link>
+        <div className="bg-slate-900/60 p-4 rounded-2xl border border-slate-700/50 mb-6 text-left space-y-2 text-xs text-slate-300">
+          <p className="font-bold text-emerald-400 flex items-center gap-1.5 text-sm">
+            <UtensilsCrossed className="w-4 h-4" /> ¿Deseas contratar el servicio?
+          </p>
+          <p>
+            Ponte en contacto con nuestro equipo comercial para activar tu restaurante en minutos con tu plan preferido.
+          </p>
         </div>
+
+        <Link 
+          href="/login"
+          className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3.5 rounded-2xl shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2"
+        >
+          <ArrowLeft className="w-4 h-4" /> Volver al Inicio de Sesión
+        </Link>
       </div>
     </div>
   );
