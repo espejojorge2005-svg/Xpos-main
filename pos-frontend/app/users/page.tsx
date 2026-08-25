@@ -279,11 +279,22 @@ export default function UsersPage() {
                 </div>
                 <div>
                   <label className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5 block">Rol *</label>
-                  <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value as User['role'] }))}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-violet-500 outline-none text-slate-800 font-bold">
-                    <option value="CASHIER">Cajero</option>
-                    <option value="WAITER">Mesero</option>
-                    <option value="ADMIN">Administrador</option>
+                  <select 
+                    value={form.role} 
+                    onChange={e => {
+                      const newRole = e.target.value as User['role'];
+                      let defaultViews: string[] = ['pos', 'cocina'];
+                      if (newRole === 'ADMIN') defaultViews = ['*'];
+                      else if (newRole === 'CASHIER') defaultViews = ['pos', 'cocina', 'caja'];
+                      else if (newRole === 'WAITER') defaultViews = ['pos', 'cocina'];
+                      
+                      setForm(f => ({ ...f, role: newRole, allowedViews: defaultViews }));
+                    }}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-violet-500 outline-none text-slate-800 font-bold"
+                  >
+                    <option value="ADMIN">Administrador (Acceso Total)</option>
+                    <option value="CASHIER">Cajero (POS, Cocina, Caja)</option>
+                    <option value="WAITER">Mesero (POS, Cocina)</option>
                   </select>
                 </div>
               </div>

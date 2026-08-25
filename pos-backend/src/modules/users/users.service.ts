@@ -78,14 +78,21 @@ export class UsersService {
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
+    const role = dto.role ?? 'CASHIER';
+    let defaultViews: string[] = ['pos', 'cocina', 'caja'];
+    if (role === 'ADMIN') defaultViews = ['*'];
+    else if (role === 'WAITER') defaultViews = ['pos', 'cocina'];
+
+    const allowedViews = dto.allowedViews && dto.allowedViews.length > 0 ? dto.allowedViews : defaultViews;
+
     const user = await this.prisma.user.create({
       data: {
         name: dto.name,
         email: dto.email,
         password: hashedPassword,
         pin: dto.pin || null,
-        role: dto.role ?? 'CASHIER',
-        allowedViews: dto.allowedViews ?? [],
+        role: role as any,
+        allowedViews,
       },
     });
     const { password, ...result } = user;
