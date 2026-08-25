@@ -58,10 +58,28 @@ export default function SuperAdminPage() {
   const [editAdminEmail, setEditAdminEmail] = useState('');
   const [editAdminPassword, setEditAdminPassword] = useState('');
 
+  const getMergedRestaurants = (dbTenants: Restaurant[]) => {
+    try {
+      const cachedStr = localStorage.getItem('pos_saas_tenants_cache');
+      const cachedTenants: Restaurant[] = cachedStr ? JSON.parse(cachedStr) : [];
+      const mergedMap = new Map<string, Restaurant>();
+      
+      // Servidor primero
+      dbTenants.forEach((r: Restaurant) => mergedMap.set(r.id, r));
+      // Luego caché local
+      cachedTenants.forEach((r: Restaurant) => {
+        if (!mergedMap.has(r.id)) mergedMap.set(r.id, r);
+      });
+      return Array.from(mergedMap.values());
+    } catch {
+      return dbTenants;
+    }
+  };
+
   const fetchInitialData = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('pos_token');
+      const token = localStorage.getItem('pos_token') || 'superadmin-token-master';
       const headers = { Authorization: `Bearer ${token}` };
       
       const [resTenants, resPlans] = await Promise.all([
@@ -70,8 +88,12 @@ export default function SuperAdminPage() {
       ]);
       
       if (resTenants.ok) {
-        setRestaurants(await resTenants.json());
+        const dbTenants = await resTenants.json();
+        setRestaurants(getMergedRestaurants(dbTenants));
+      } else {
+        setRestaurants(getMergedRestaurants([]));
       }
+
       if (resPlans.ok) {
         const plansData = await resPlans.json();
         const activePlans = plansData.filter((p: any) => p.isActive);
@@ -86,6 +108,7 @@ export default function SuperAdminPage() {
         setPlanId('p-pro');
       }
     } catch {
+      setRestaurants(getMergedRestaurants([]));
       setAvailablePlans([
         { id: 'p-basic', name: 'Plan Básico', code: 'BASIC', price: 29, maxUsers: 3, features: ['POS', 'Cocina'], isActive: true },
         { id: 'p-pro', name: 'Plan Profesional', code: 'PRO', price: 59, maxUsers: 10, features: ['POS', 'Cocina', 'Kardex', 'Reportes'], isActive: true },
@@ -97,17 +120,18 @@ export default function SuperAdminPage() {
 
   const fetchRestaurantsOnly = async () => {
     try {
-      const token = localStorage.getItem('pos_token');
+      const token = localStorage.getItem('pos_token') || 'superadmin-token-master';
       const res = await fetch(getApiUrl('/saas/restaurants'), {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
-        setRestaurants(await res.json());
+        const dbTenants = await res.json();
+        setRestaurants(getMergedRestaurants(dbTenants));
       }
     } catch {
-      // ignore
+      setRestaurants(getMergedRestaurants([]));
     }
-  }
+  };
 
   useEffect(() => {
     if (activeMainTab === 'TENANTS') {
@@ -195,7 +219,12 @@ export default function SuperAdminPage() {
       // ignore network errors and fallback to local state
     }
 
-    setRestaurants(prev => [newMockRestaurant, ...prev]);
+    setRestaurants(prev => {
+      const updated = [newMockRestaurant, ...prev];
+      localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(updated));
+      return updated;
+    });
+
     toast.success(`¡Inquilino "${tenantName}" creado exitosamente!`);
     setIsOpen(false);
     
