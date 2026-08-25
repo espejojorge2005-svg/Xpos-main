@@ -246,28 +246,6 @@ export default function LoginPage() {
                 >
                   {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Ingresar al Sistema'}
                 </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    const superUser = {
-                      id: 'superadmin-master',
-                      name: 'Super Administrador SaaS',
-                      email: 'superadmin@xpos.com',
-                      role: 'SUPER_ADMIN',
-                      allowedViews: ['*'],
-                      restaurantId: null,
-                    };
-                    localStorage.setItem('pos_token', 'superadmin-token-master');
-                    localStorage.setItem('pos_user', JSON.stringify(superUser));
-                    localStorage.removeItem('pos_restaurant_id');
-                    toast.success('¡Bienvenido al Portal SuperAdmin!');
-                    window.location.href = '/superadmin';
-                  }}
-                  className="w-full bg-violet-600/20 hover:bg-violet-600/40 text-violet-200 border border-violet-500/30 font-bold py-3 rounded-2xl transition-all text-xs flex items-center justify-center gap-2 mt-2"
-                >
-                  <Shield className="w-4 h-4 text-violet-400" /> Acceso Directo a Panel SuperAdmin
-                </button>
               </form>
             </div>
           )}
