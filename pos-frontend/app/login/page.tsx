@@ -93,7 +93,7 @@ export default function LoginPage() {
         return;
       }
 
-      // Si el correo es SuperAdmin SaaS
+      // A. Autenticación de SuperAdmin SaaS
       if (cleanEmail === 'superadmin@xpos.com' && (cleanPassword === '1234567' || cleanPassword === 'admin')) {
         const superUser = {
           id: 'superadmin-master',
@@ -111,25 +111,63 @@ export default function LoginPage() {
         return;
       }
 
-      // Si es un Administrador de Restaurante Cliente (ej. xander@florcita.com)
-      if (cleanEmail && cleanPassword && cleanEmail.includes('@')) {
-        const clientAdminUser = {
-          id: `user-${Date.now()}`,
-          name: cleanEmail.split('@')[0],
-          email: cleanEmail,
-          role: 'ADMIN',
-          allowedViews: ['*'],
-          restaurantId: `rest-${Date.now()}`,
-        };
-        localStorage.setItem('pos_token', `client-token-${Date.now()}`);
-        localStorage.setItem('pos_user', JSON.stringify(clientAdminUser));
-        localStorage.setItem('pos_restaurant_id', clientAdminUser.restaurantId);
-        toast.success(`¡Bienvenido, ${clientAdminUser.name}!`);
-        window.location.href = '/';
-        return;
+      // B. Autenticación contra el Servidor Backend
+      try {
+        const response = await fetch(getApiUrl('/auth/login'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: cleanEmail, password: cleanPassword }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.access_token && data.user) {
+            localStorage.setItem('pos_token', data.access_token);
+            localStorage.setItem('pos_user', JSON.stringify(data.user)); 
+            
+            if (data.user.restaurantId) {
+              localStorage.setItem('pos_restaurant_id', data.user.restaurantId);
+            } else {
+              localStorage.removeItem('pos_restaurant_id');
+            }
+
+            toast.success(`¡Bienvenido, ${data.user.name}!`);
+            const dest = data.user.role === 'SUPER_ADMIN' ? '/superadmin' : getFirstAllowedPath(data.user.allowedViews ?? ['*']);
+            window.location.href = dest;
+            return;
+          }
+        }
+      } catch {}
+
+      // C. Autenticación contra la lista de Administradores Clientes registrados por el SuperAdmin
+      const registeredAdminsStr = localStorage.getItem('pos_registered_admins');
+      const registeredAdmins: any[] = registeredAdminsStr ? JSON.parse(registeredAdminsStr) : [];
+      const matchedAdmin = registeredAdmins.find(a => a.email === cleanEmail);
+
+      if (matchedAdmin) {
+        if (matchedAdmin.password === cleanPassword) {
+          const clientAdminUser = {
+            id: `user-${matchedAdmin.restaurantId}`,
+            name: matchedAdmin.name,
+            email: matchedAdmin.email,
+            role: 'ADMIN',
+            allowedViews: ['*'],
+            restaurantId: matchedAdmin.restaurantId,
+          };
+          localStorage.setItem('pos_token', `client-token-${matchedAdmin.restaurantId}`);
+          localStorage.setItem('pos_user', JSON.stringify(clientAdminUser));
+          localStorage.setItem('pos_restaurant_id', matchedAdmin.restaurantId);
+          toast.success(`¡Bienvenido, ${clientAdminUser.name}!`);
+          window.location.href = '/';
+          return;
+        } else {
+          toast.error('Contraseña incorrecta. Por favor verifica la clave asignada.');
+          setLoading(false);
+          return;
+        }
       }
 
-      toast.error('Por favor ingresa un correo y contraseña válidos.');
+      toast.error('El correo no se encuentra registrado. Contacte a soporte para contratar el servicio.');
     } catch (error) {
       toast.error('Error al conectar con el servidor');
     } finally {

@@ -195,6 +195,25 @@ export default function SuperAdminPage() {
       _count: { users: 1, orders: 0 }
     };
 
+    // Guardar cuenta del Administrador cliente para la autenticación
+    if (adminEmail && adminPassword) {
+      try {
+        const cleanEmail = adminEmail.trim().toLowerCase();
+        const newAdminAccount = {
+          email: cleanEmail,
+          password: adminPassword.trim(),
+          name: adminName || ownerName || 'Administrador',
+          restaurantName: tenantName,
+          restaurantId: newMockRestaurant.id,
+        };
+        const existingStr = localStorage.getItem('pos_registered_admins');
+        const existing: any[] = existingStr ? JSON.parse(existingStr) : [];
+        const filtered = existing.filter(a => a.email !== cleanEmail);
+        filtered.push(newAdminAccount);
+        localStorage.setItem('pos_registered_admins', JSON.stringify(filtered));
+      } catch {}
+    }
+
     try {
       const token = localStorage.getItem('pos_token') || 'superadmin-token-master';
       const res1 = await fetch(getApiUrl('/saas/restaurants'), {
@@ -216,7 +235,7 @@ export default function SuperAdminPage() {
         }
       }
     } catch {
-      // ignore network errors and fallback to local state
+      // ignore network errors
     }
 
     setRestaurants(prev => {
