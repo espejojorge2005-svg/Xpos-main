@@ -4,47 +4,50 @@ import * as bcrypt from 'bcrypt';
 const prisma = new PrismaClient();
 
 async function main() {
-  // Configuración de credenciales del SuperAdmin
-  const email = 'superadmin@xpos.com';
-  const password = 'admin'; // Contraseña inicial
+  const email = 'admin@xpos.com';
+  const password = '1234567';
 
-  console.log(`Intentando crear/actualizar el usuario: ${email}...`);
-
+  console.log(`Creando/actualizando usuario Admin: ${email}...`);
   const hashedPassword = await bcrypt.hash(password, 10);
 
-  const superAdmin = await prisma.user.upsert({
+  let restaurant = await prisma.restaurant.findFirst();
+  if (!restaurant) {
+    restaurant = await prisma.restaurant.create({
+      data: { name: 'Mi Restaurante Xpos' }
+    });
+  }
+
+  const adminUser = await prisma.user.upsert({
     where: { email },
     update: {
       password: hashedPassword,
-      role: Role.SUPER_ADMIN,
-      restaurantId: null, // Global!
+      role: Role.ADMIN,
+      restaurantId: restaurant.id,
       allowedViews: ['*'],
       isActive: true,
     },
     create: {
-      name: 'Super Administrador',
+      name: 'Administrador Xpos',
       email: email,
       password: hashedPassword,
-      role: Role.SUPER_ADMIN,
-      restaurantId: null,
+      role: Role.ADMIN,
+      restaurantId: restaurant.id,
       allowedViews: ['*'],
       isActive: true,
     },
   });
 
   console.log('\n=======================================');
-  console.log('✅ SÚPER ADMIN CONFIGURADO CON ÉXITO');
+  console.log('✅ USUARIO ADMIN CONFIGURADO CON ÉXITO');
   console.log('=======================================');
-  console.log('Puedes usar las siguientes credenciales para gestionar todo el SaaS:');
-  console.log(`📧 Email:    ${superAdmin.email}`);
+  console.log(`📧 Email:    ${adminUser.email}`);
   console.log(`🔐 Password: ${password}`);
-  console.log('👉 Entra a http://localhost:3001/login usando estas credenciales y serás dirigido a /superadmin');
   console.log('=======================================\n');
 }
 
 main()
   .catch((e) => {
-    console.error('Error creando superadmin:', e);
+    console.error('Error creando admin:', e);
     process.exit(1);
   })
   .finally(async () => {
