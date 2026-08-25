@@ -153,7 +153,6 @@ export default function SuperAdminPage() {
 
   const handleCreateTenant = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!planId) return toast.error('Debes seleccionar un plan válido');
     setIsSubmitting(true);
     try {
       const token = localStorage.getItem('pos_token');
@@ -165,7 +164,10 @@ export default function SuperAdminPage() {
         })
       });
       
-      if (!res1.ok) throw new Error('Error al crear el restaurante');
+      if (!res1.ok) {
+        const errorData = await res1.json().catch(() => ({}));
+        throw new Error(Array.isArray(errorData.message) ? errorData.message.join(', ') : (errorData.message || 'Error al crear el restaurante'));
+      }
       const newRestaurant = await res1.json();
       
       const res2 = await fetch(getApiUrl(`/saas/restaurants/${newRestaurant.id}/admins`), {
@@ -174,7 +176,10 @@ export default function SuperAdminPage() {
         body: JSON.stringify({ name: adminName, email: adminEmail, password: adminPassword })
       });
       
-      if (!res2.ok) throw new Error('Restaurante creado, pero falló la creación del admin');
+      if (!res2.ok) {
+        const errorData2 = await res2.json().catch(() => ({}));
+        toast.warning('Restaurante creado, pero ocurrió un aviso con el usuario admin');
+      }
 
       toast.success('¡Nuevo Inquilino creado exitosamente!');
       setIsOpen(false);
