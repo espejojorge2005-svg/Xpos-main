@@ -1,0 +1,30 @@
+<service>
+	<id>posprintagent.exe</id>
+	<name>POS Print Agent</name>
+	<description>Agente de impresión térmica para el POS del restaurante</description>
+	<executable>D:\nodejs\node.exe</executable>
+	<argument>D:\proyectos\Saas Restaurant\Saas Restaurant\pos-print-agent\node_modules\node-windows\lib\wrapper.js</argument>
+	<argument>--file</argument>
+	<argument>D:\proyectos\Saas Restaurant\Saas Restaurant\pos-print-agent\index.js</argument>
+	<argument>--scriptoptions=</argument>
+	<argument>--log</argument>
+	<argument>POS Print Agent wrapper</argument>
+	<argument>--grow</argument>
+	<argument>0.25</argument>
+	<argument>--wait</argument>
+	<argument>1</argument>
+	<argument>--maxrestarts</argument>
+	<argument>5</argument>
+	<argument>--abortonerror</argument>
+	<argument>n</argument>
+	<argument>--stopparentfirst</argument>
+	<argument>undefined</argument>
+	<logmode>rotate</logmode>
+	<stoptimeout>30sec</stoptimeout>
+	<serviceaccount>
+		<domain>DESKTOP-7U8LF2M</domain>
+		<user>LocalSystem</user>
+		<password></password>
+	</serviceaccount>
+	<workingdirectory>D:\proyectos\Saas Restaurant\Saas Restaurant\pos-print-agent</workingdirectory>
+</service>
