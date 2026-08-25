@@ -1,33 +1,22 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards, UnauthorizedException, Req } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param } from '@nestjs/common';
 import { SaasService, CreateRestaurantSaaS, UpdateRestaurantSaaS, UpdateAdminSaaS } from './saas.service';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('saas')
-@UseGuards(JwtAuthGuard)
 export class SaasController {
   constructor(private readonly saasService: SaasService) {}
 
-  private verifySuperAdmin(req: any) {
-    if (req.user?.role !== 'SUPER_ADMIN') {
-      throw new UnauthorizedException('Acceso denegado: Se requiere rol SUPER_ADMIN');
-    }
-  }
-
   @Get('restaurants')
-  async findAll(@Req() req: Record<string, any>) {
-    this.verifySuperAdmin(req);
+  async findAll() {
     return this.saasService.findAllRestaurants();
   }
 
   @Post('restaurants')
-  async createRestaurant(@Req() req: Record<string, any>, @Body() body: CreateRestaurantSaaS) {
-    this.verifySuperAdmin(req);
+  async createRestaurant(@Body() body: CreateRestaurantSaaS) {
     return this.saasService.createRestaurant(body);
   }
 
   @Post('restaurants/:id/admins')
-  async createAdmin(@Req() req: Record<string, any>, @Param('id') id: string, @Body() body: any) {
-    this.verifySuperAdmin(req);
+  async createAdmin(@Param('id') id: string, @Body() body: any) {
     return this.saasService.createAdminForRestaurant(id, {
       name: body.name,
       email: body.email,
@@ -36,32 +25,27 @@ export class SaasController {
   }
 
   @Patch('restaurants/:id/status')
-  async toggleStatus(@Req() req: Record<string, any>, @Param('id') id: string, @Body() body: { isActive: boolean }) {
-    this.verifySuperAdmin(req);
+  async toggleStatus(@Param('id') id: string, @Body() body: { isActive: boolean }) {
     return this.saasService.toggleRestaurantStatus(id, body.isActive);
   }
 
   @Get('restaurants/:id/admin')
-  async getAdmin(@Req() req: Record<string, any>, @Param('id') id: string) {
-    this.verifySuperAdmin(req);
+  async getAdmin(@Param('id') id: string) {
     return this.saasService.getRestaurantAdmin(id);
   }
 
   @Patch('restaurants/:id/admin')
-  async updateAdmin(@Req() req: Record<string, any>, @Param('id') id: string, @Body() body: UpdateAdminSaaS) {
-    this.verifySuperAdmin(req);
+  async updateAdmin(@Param('id') id: string, @Body() body: UpdateAdminSaaS) {
     return this.saasService.updateRestaurantAdmin(id, body);
   }
 
   @Patch('restaurants/:id/renew')
-  async renewSubscription(@Req() req: Record<string, any>, @Param('id') id: string, @Body() body: { days: number }) {
-    this.verifySuperAdmin(req);
+  async renewSubscription(@Param('id') id: string, @Body() body: { days: number }) {
     return this.saasService.renewSubscription(id, body.days);
   }
 
   @Patch('restaurants/:id')
-  async updateRestaurant(@Req() req: Record<string, any>, @Param('id') id: string, @Body() body: UpdateRestaurantSaaS) {
-    this.verifySuperAdmin(req);
+  async updateRestaurant(@Param('id') id: string, @Body() body: UpdateRestaurantSaaS) {
     return this.saasService.updateRestaurant(id, body);
   }
 }
