@@ -38,8 +38,6 @@ export default function CategoriesPage() {
         const data = await response.json();
         console.log("Categories data:", data);
         setCategories(data);
-      } else if (response.status === 401) {
-        router.push('/login');
       } else {
         console.error("Failed to fetch categories:", await response.text());
       }

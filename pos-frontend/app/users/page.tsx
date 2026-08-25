@@ -70,7 +70,6 @@ export default function UsersPage() {
       const res = await fetch(getApiUrl('/users'), {
         headers: { Authorization: `Bearer ${token()}` },
       });
-      if (res.status === 401) { router.push('/login'); return; }
       const data = await res.json();
       if (Array.isArray(data)) {
         setUsers(data);

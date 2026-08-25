@@ -52,7 +52,6 @@ export default function KardexPage() {
         const res = await fetch(getApiUrl('/products/kardex'), {
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (res.status === 401) { router.push('/login'); return; }
         if (!res.ok) throw new Error('Error al cargar el Kardex');
         setData(await res.json());
       } catch {

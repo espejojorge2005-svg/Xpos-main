@@ -50,8 +50,6 @@ export default function KitchenStationsPage() {
       });
       if (response.ok) {
         setStations(await response.json());
-      } else if (response.status === 401) {
-        router.push('/login');
       }
     } catch (error) {
       toast.error('Error al conectar con la base de datos');

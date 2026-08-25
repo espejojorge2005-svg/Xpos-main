@@ -71,8 +71,6 @@ const response = await fetch(getApiUrl('/floor/zones'), {
       if (response.ok) {
         const data = await response.json();
         setZones(data);
-      } else if (response.status === 401) {
-        router.push('/login');
       }
     } catch (error) {
       toast.error('Error al cargar la configuración de salas');

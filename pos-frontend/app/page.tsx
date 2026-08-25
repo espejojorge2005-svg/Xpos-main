@@ -204,6 +204,7 @@ export default function Home() {
   
   // NUEVO: Estado para verificar si la caja está abierta
   const [isShiftOpen, setIsShiftOpen] = useState<boolean | null>(null);
+  const [restaurantName, setRestaurantName] = useState<string>('');
 
   const fetchZonas = async () => {
     const token = localStorage.getItem('pos_token');
@@ -256,6 +257,22 @@ export default function Home() {
       return;
     }
     
+    // Carga de nombre de restaurante dinámico
+    const cachedConfig = localStorage.getItem('pos_restaurant_config');
+    if (cachedConfig) {
+      try {
+        const cfg = JSON.parse(cachedConfig);
+        if (cfg.name) setRestaurantName(cfg.name);
+      } catch {}
+    }
+    const userStr = localStorage.getItem('pos_user');
+    if (userStr) {
+      try {
+        const u = JSON.parse(userStr);
+        if (u.restaurantName) setRestaurantName(u.restaurantName);
+      } catch {}
+    }
+
     // NUEVO: Verificamos si existe el turno guardado en LocalStorage
     const shiftData = localStorage.getItem('mock_cash_shift');
     setIsShiftOpen(!!shiftData);
@@ -365,7 +382,9 @@ export default function Home() {
             <Utensils className="text-emerald-600 w-6 h-6 md:w-7 md:h-7" /> 
             Plano de Sala
           </h1>
-          <p className="text-slate-500 font-medium mt-0.5 text-xs md:text-sm">Xpos Cloud - Huanchaco Vista al Mar</p>
+          <p className="text-slate-500 font-medium mt-0.5 text-xs md:text-sm">
+            {restaurantName ? `Xpos Cloud - ${restaurantName}` : 'Xpos Cloud'}
+          </p>
         </div>
         <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto mt-4 md:mt-0">
           {!isEditMode && (

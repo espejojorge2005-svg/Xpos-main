@@ -181,7 +181,7 @@ export default function CocinaPage() {
         prevOrdersRef.current = data.orders;
         setOrders(data.orders);
         setFinishedCount(data.finishedCount || 0);
-      } else if (response.status === 401) { router.push('/login'); }
+      }
     } catch (error) { console.error("Error KDS:", error);
     } finally { setLoading(false); }
   };

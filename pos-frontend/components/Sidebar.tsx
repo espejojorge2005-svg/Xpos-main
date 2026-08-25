@@ -1,4 +1,5 @@
 'use client';
+import { getApiUrl } from '@/utils/api';
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -42,15 +43,16 @@ export default function Sidebar() {
     const fetchConfig = async () => {
       try {
         const token = localStorage.getItem('pos_token');
-        const base = process.env.NEXT_PUBLIC_API_URL;
-      const res = await fetch(`${base}/restaurant-config`, {
+        const res = await fetch(getApiUrl('/restaurant-config'), {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
           cache: 'no-store',
         });
         if (res.ok) {
           const data: RestaurantConfig = await res.json();
-          setConfig(data);
-          localStorage.setItem('pos_restaurant_config', JSON.stringify(data));
+          if (data.name) {
+            setConfig(data);
+            localStorage.setItem('pos_restaurant_config', JSON.stringify(data));
+          }
         }
       } catch { /* ignore */ }
     };
@@ -63,6 +65,9 @@ export default function Sidebar() {
         setAllowedViews(user.allowedViews ?? []);
         setRole(user.role ?? '');
         setUserName(user.name ?? '');
+        if (user.restaurantName && (config.name === 'Xpos' || !config.name)) {
+          setConfig(prev => ({ ...prev, name: user.restaurantName }));
+        }
       } catch { /* ignore */ }
     } else {
       setAllowedViews([]);

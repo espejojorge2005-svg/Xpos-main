@@ -83,8 +83,6 @@ export default function InventoryPage() {
       if (response.ok) {
         const data = await response.json();
         setProducts(data);
-      } else if (response.status === 401) {
-        router.push('/login');
       }
     } catch (error) {
       toast.error('Error al conectar con la base de datos (Productos)');

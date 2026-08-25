@@ -86,6 +86,9 @@ export default function LoginPage() {
         } else {
           localStorage.removeItem('pos_restaurant_id');
         }
+        if (data.user.restaurantName) {
+          localStorage.setItem('pos_restaurant_config', JSON.stringify({ name: data.user.restaurantName }));
+        }
 
         toast.success(`¡Bienvenido, ${data.user.name}!`);
         const dest = data.user.role === 'SUPER_ADMIN' ? '/superadmin' : getFirstAllowedPath(data.user.allowedViews ?? ['*']);
@@ -130,6 +133,9 @@ export default function LoginPage() {
             } else {
               localStorage.removeItem('pos_restaurant_id');
             }
+            if (data.user.restaurantName) {
+              localStorage.setItem('pos_restaurant_config', JSON.stringify({ name: data.user.restaurantName }));
+            }
 
             toast.success(`¡Bienvenido, ${data.user.name}!`);
             const dest = data.user.role === 'SUPER_ADMIN' ? '/superadmin' : getFirstAllowedPath(data.user.allowedViews ?? ['*']);
@@ -153,10 +159,14 @@ export default function LoginPage() {
             role: 'ADMIN',
             allowedViews: ['*'],
             restaurantId: matchedAdmin.restaurantId,
+            restaurantName: matchedAdmin.restaurantName,
           };
           localStorage.setItem('pos_token', `client-token-${matchedAdmin.restaurantId}`);
           localStorage.setItem('pos_user', JSON.stringify(clientAdminUser));
           localStorage.setItem('pos_restaurant_id', matchedAdmin.restaurantId);
+          if (matchedAdmin.restaurantName) {
+            localStorage.setItem('pos_restaurant_config', JSON.stringify({ name: matchedAdmin.restaurantName }));
+          }
           toast.success(`¡Bienvenido, ${clientAdminUser.name}!`);
           window.location.href = '/';
           return;

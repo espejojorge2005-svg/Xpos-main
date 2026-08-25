@@ -50,7 +50,6 @@ export default function AnalyticsPage() {
       const res = await fetch(getApiUrl(`/analytics?from=${from}&to=${to}`), {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (res.status === 401) { router.push('/login'); return; }
       if (res.ok) {
         setData(await res.json());
       } else {

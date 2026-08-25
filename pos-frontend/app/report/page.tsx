@@ -1,4 +1,5 @@
 'use client';
+import { getApiUrl } from '@/utils/api';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -89,8 +90,7 @@ export default function CashRegisterPage() {
 
     try {
       setLoading(true);
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
-      const response = await fetch(`${API_URL}/api/v1/payments/closure`, {
+      const response = await fetch(getApiUrl('/payments/closure'), {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = response.ok ? await response.json() : {};

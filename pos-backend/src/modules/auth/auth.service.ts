@@ -135,10 +135,11 @@ export class AuthService {
       : user.allowedViews;
 
     // 7. Retornar JWT y payload
-    const payload = { sub: user.id, email: user.email, role: user.role, allowedViews, restaurantId: user.restaurantId };
+    const restaurantName = user.restaurant?.name || null;
+    const payload = { sub: user.id, email: user.email, role: user.role, allowedViews, restaurantId: user.restaurantId, restaurantName };
     return {
       access_token: this.jwtService.sign(payload),
-      user: { id: user.id, name: user.name, role: user.role, allowedViews, restaurantId: user.restaurantId }
+      user: { id: user.id, name: user.name, role: user.role, allowedViews, restaurantId: user.restaurantId, restaurantName }
     };
   }
 
