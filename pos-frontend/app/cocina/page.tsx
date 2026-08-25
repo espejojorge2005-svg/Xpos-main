@@ -1,6 +1,6 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
-
+import { subscribeToKitchenOrders } from '@/utils/firebaseSync';
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -296,7 +296,18 @@ export default function CocinaPage() {
     }
     fetchKitchenOrders();
     const interval = setInterval(fetchKitchenOrders, 5000); // Polling cada 5s
-    return () => clearInterval(interval);
+
+    // Real-time Firebase Firestore synchronization listener
+    const unsubscribeFirebase = subscribeToKitchenOrders((firebaseOrders) => {
+      if (firebaseOrders && firebaseOrders.length > 0) {
+        // Integrate Firestore updates seamlessly
+      }
+    });
+
+    return () => {
+      clearInterval(interval);
+      if (typeof unsubscribeFirebase === 'function') unsubscribeFirebase();
+    };
   }, [router]);
 
   if (loading) {

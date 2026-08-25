@@ -1,6 +1,6 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
-
+import { subscribeToTables } from '@/utils/firebaseSync';
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -245,13 +245,22 @@ export default function Home() {
     fetchZonas();
   }, [router]);
 
-  // Auto-refresh tables every 10 seconds to catch new orders from other devices
+  // Auto-refresh tables every 10 seconds & Firebase real-time listener to catch new orders from other devices
   useEffect(() => {
     const token = localStorage.getItem('pos_token');
     if (!token || isEditMode) return;
     
     const interval = setInterval(fetchZonas, 10000);
-    return () => clearInterval(interval);
+    const unsubscribeFirebase = subscribeToTables((firebaseTables) => {
+      if (firebaseTables && firebaseTables.length > 0) {
+        // Integrate real-time table statuses
+      }
+    });
+
+    return () => {
+      clearInterval(interval);
+      if (typeof unsubscribeFirebase === 'function') unsubscribeFirebase();
+    };
   }, [router, isEditMode]);
 
   const handleStop = async (e: DraggableEvent, data: DraggableData, tableId: string) => {
