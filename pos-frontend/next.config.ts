@@ -2,12 +2,16 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   async rewrites() {
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL 
+      ? process.env.NEXT_PUBLIC_API_URL.replace(/\/api\/v1\/?$/, '') 
+      : 'https://xpos-backend.onrender.com';
+      
     return [
       {
         source: '/api/:path*',
-        destination: 'http://localhost:3000/api/:path*' // Proxy to Backend
+        destination: `${backendUrl}/api/:path*`
       }
-    ]
+    ];
   }
 };
 
