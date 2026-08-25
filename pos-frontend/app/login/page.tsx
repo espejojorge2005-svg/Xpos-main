@@ -96,10 +96,42 @@ export default function LoginPage() {
 
   const unlinkDevice = () => {
     localStorage.removeItem('pos_restaurant_id');
+    localStorage.removeItem('pos_restaurant_config');
+    localStorage.removeItem('pos_registered_staff');
+    localStorage.removeItem('pos_registered_products');
+    localStorage.removeItem('pos_registered_categories');
+    localStorage.removeItem('pos_registered_stations');
+    localStorage.removeItem('pos_token');
+    localStorage.removeItem('pos_user');
+
     setRestaurantId(null);
-    setMode('ADMIN');
+    setStaff([]);
     setSelectedUser(null);
     setPin('');
+    setMode('ADMIN');
+    setIsStaffLoading(false);
+    toast.success('Terminal desvinculada. Se eliminó la información del local anterior.');
+  };
+
+  const syncRestaurantSession = (newRestId?: string | null, newRestName?: string | null) => {
+    const oldRestId = localStorage.getItem('pos_restaurant_id');
+    if (oldRestId && newRestId && oldRestId !== newRestId) {
+      // Switching to a different business! Clear previous business local cache
+      localStorage.removeItem('pos_registered_staff');
+      localStorage.removeItem('pos_registered_products');
+      localStorage.removeItem('pos_registered_categories');
+      localStorage.removeItem('pos_registered_stations');
+    }
+
+    if (newRestId) {
+      localStorage.setItem('pos_restaurant_id', newRestId);
+    } else {
+      localStorage.removeItem('pos_restaurant_id');
+    }
+
+    if (newRestName) {
+      localStorage.setItem('pos_restaurant_config', JSON.stringify({ name: newRestName }));
+    }
   };
 
   const handleAdminLogin = async (e: React.FormEvent) => {
@@ -122,18 +154,10 @@ export default function LoginPage() {
       } catch {}
 
       if (response.ok && data.access_token && data.user) {
+        syncRestaurantSession(data.user.restaurantId, data.user.restaurantName);
         localStorage.setItem('pos_token', data.access_token);
         localStorage.setItem('pos_user', JSON.stringify(data.user)); 
         
-        if (data.user.restaurantId) {
-          localStorage.setItem('pos_restaurant_id', data.user.restaurantId);
-        } else {
-          localStorage.removeItem('pos_restaurant_id');
-        }
-        if (data.user.restaurantName) {
-          localStorage.setItem('pos_restaurant_config', JSON.stringify({ name: data.user.restaurantName }));
-        }
-
         toast.success(`¡Bienvenido, ${data.user.name}!`);
         const dest = data.user.role === 'SUPER_ADMIN' ? '/superadmin' : getFirstAllowedPath(data.user.allowedViews ?? ['*']);
         window.location.href = dest;
@@ -150,9 +174,9 @@ export default function LoginPage() {
           allowedViews: ['*'],
           restaurantId: null,
         };
+        syncRestaurantSession(null, 'SuperAdmin Master');
         localStorage.setItem('pos_token', 'superadmin-token-master');
         localStorage.setItem('pos_user', JSON.stringify(superUser));
-        localStorage.removeItem('pos_restaurant_id');
         toast.success('¡Bienvenido al Panel SuperAdmin!');
         window.location.href = '/superadmin';
         return;
@@ -205,12 +229,9 @@ export default function LoginPage() {
             restaurantId: matchedAdmin.restaurantId,
             restaurantName: matchedAdmin.restaurantName,
           };
+          syncRestaurantSession(matchedAdmin.restaurantId, matchedAdmin.restaurantName);
           localStorage.setItem('pos_token', `client-token-${matchedAdmin.restaurantId}`);
           localStorage.setItem('pos_user', JSON.stringify(clientAdminUser));
-          localStorage.setItem('pos_restaurant_id', matchedAdmin.restaurantId);
-          if (matchedAdmin.restaurantName) {
-            localStorage.setItem('pos_restaurant_config', JSON.stringify({ name: matchedAdmin.restaurantName }));
-          }
           toast.success(`¡Bienvenido, ${clientAdminUser.name}!`);
           window.location.href = '/';
           return;
@@ -313,14 +334,12 @@ export default function LoginPage() {
             El sistema de punto de venta rápido y seguro para tu restaurante.
           </p>
           
-          {restaurantId && mode === 'STAFF' && (
-            <button 
-              onClick={unlinkDevice}
-              className="mt-12 flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl transition-all border border-white/10 text-sm font-medium"
-            >
-              <LogOut className="w-4 h-4" /> Desvincular Terminal
-            </button>
-          )}
+          <button 
+            onClick={unlinkDevice}
+            className="mt-8 flex items-center gap-2 px-5 py-2.5 bg-white/10 hover:bg-red-500/20 text-slate-300 hover:text-red-200 rounded-2xl transition-all border border-white/10 text-xs font-bold shadow-md cursor-pointer"
+          >
+            <LogOut className="w-4 h-4 text-red-400" /> Desvincular Terminal / Cambiar de Negocio
+          </button>
         </div>
 
         {/* Right Side: Form Area */}
