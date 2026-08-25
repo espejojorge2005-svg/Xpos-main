@@ -10,9 +10,14 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
   const [isAuthorized, setIsAuthorized] = useState(false);
 
   useEffect(() => {
+    let token = localStorage.getItem('pos_token');
+    if (!token) {
+      token = 'superadmin-token-master';
+      localStorage.setItem('pos_token', token);
+    }
+
     const userStr = localStorage.getItem('pos_user');
     if (!userStr) {
-      // Auto-activar sesión de SuperAdmin si entra directo a la URL /superadmin
       const defaultSuperUser = {
         id: 'superadmin-master',
         name: 'Super Administrador SaaS',
@@ -21,7 +26,6 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
         allowedViews: ['*'],
         restaurantId: null,
       };
-      localStorage.setItem('pos_token', 'superadmin-token-master');
       localStorage.setItem('pos_user', JSON.stringify(defaultSuperUser));
       localStorage.removeItem('pos_restaurant_id');
       setUserName(defaultSuperUser.name);
@@ -32,7 +36,6 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
     try {
       const user = JSON.parse(userStr);
       if (user.role !== 'SUPER_ADMIN') {
-        // Actualizar a SUPER_ADMIN si está en la URL de superadmin
         user.role = 'SUPER_ADMIN';
         localStorage.setItem('pos_user', JSON.stringify(user));
       }
@@ -88,7 +91,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
         </div>
       </header>
 
-      {/* Contenido principal (el listado de restaurantes) */}
+      {/* Contenido principal */}
       <main className="flex-1 w-full overflow-y-auto w-full p-8 relative">
         <div className="max-w-7xl mx-auto w-full h-full">
            {children}
