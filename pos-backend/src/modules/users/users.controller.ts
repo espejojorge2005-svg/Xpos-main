@@ -1,14 +1,14 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Req } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { UsersService } from './users.service';
 import type { CreateUserDto, UpdateUserDto } from './users.service';
 
 function isAdmin(req: any) {
-  return req.user?.role === 'ADMIN';
+  return req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN';
 }
 
 @Controller('users')
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(JwtAuthGuard)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 

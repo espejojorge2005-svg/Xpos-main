@@ -1,8 +1,9 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { LogOut, UtensilsCrossed, Shield, ShieldCheck } from 'lucide-react';
+import { LogOut, UtensilsCrossed, Shield, ShieldCheck, LayoutDashboard } from 'lucide-react';
 
 export default function SuperAdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -36,8 +37,8 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
     try {
       const user = JSON.parse(userStr);
       if (user.role !== 'SUPER_ADMIN') {
-        user.role = 'SUPER_ADMIN';
-        localStorage.setItem('pos_user', JSON.stringify(user));
+        router.replace('/');
+        return;
       }
       setUserName(user.name || 'Super Administrador');
       setIsAuthorized(true);
@@ -73,7 +74,17 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
           <h1 className="text-xl font-black tracking-tight">Xpos <span className="font-light text-emerald-400">SaaS Control</span></h1>
         </div>
 
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-4">
+          <Link
+            href="/"
+            className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2"
+          >
+            <LayoutDashboard className="w-4 h-4 text-emerald-400" />
+            Ver POS / Restaurante
+          </Link>
+
+          <div className="h-8 w-px bg-slate-700" />
+
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
             <div className="flex flex-col items-end">

@@ -143,7 +143,6 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
             setSelectedCategoryId(catsData[0].id);
           }
         } else if (categoriesRes.status === 401 || productsRes.status === 401) {
-          localStorage.removeItem('pos_token');
           router.push('/login');
         }
 

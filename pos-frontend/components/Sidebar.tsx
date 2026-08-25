@@ -179,6 +179,19 @@ export default function Sidebar() {
           })}
         </nav>
 
+      {/* SuperAdmin Access Link */}
+      {isMounted && role === 'SUPER_ADMIN' && (
+        <div className="px-4 pb-2">
+          <Link
+            href="/superadmin"
+            className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl font-bold bg-slate-900 text-emerald-400 hover:bg-slate-800 transition-all text-xs shadow-sm border border-slate-700"
+          >
+            <Shield className="w-4 h-4 text-emerald-400" />
+            Panel SuperAdmin SaaS
+          </Link>
+        </div>
+      )}
+
       {/* User / Role badge */}
       {isMounted && role && ROLE_UI[role] && (
         <div className="px-4 pb-2">

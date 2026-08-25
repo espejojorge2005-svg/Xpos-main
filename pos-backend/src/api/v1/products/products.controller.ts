@@ -2,11 +2,10 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@n
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-// IMPORTANTE: Asegúrate de importar tu guardia real aquí. Puede llamarse JwtAuthGuard o similar dependiendo de cómo lo creaste.
-import { AuthGuard } from '@nestjs/passport'; 
+import { JwtAuthGuard } from '../../../modules/auth/jwt-auth.guard'; 
 
 @Controller('products') // Se usa global prefix 'api/v1' en main.ts, así que la ruta final será /api/v1/products
-@UseGuards(AuthGuard('jwt')) // Protegemos todas las rutas del inventario
+@UseGuards(JwtAuthGuard) // Protegemos todas las rutas del inventario
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
