@@ -1,0 +1,10 @@
+{
+  "name": "xpos-main-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "cd pos-backend && npm install && npx prisma generate",
+    "build": "cd pos-backend && npm run build",
+    "start": "cd pos-backend && npm run start:prod"
+  }
+}
