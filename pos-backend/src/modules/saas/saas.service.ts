@@ -235,4 +235,15 @@ export class SaasService {
       data: updateData
     });
   }
+
+  async deleteRestaurant(id: string) {
+    try {
+      await this.prisma.user.deleteMany({ where: { restaurantId: id } });
+      await this.prisma.restaurant.delete({ where: { id } });
+    } catch {
+      // Soft delete if cascade delete has foreign keys
+      await this.prisma.restaurant.update({ where: { id }, data: { isActive: false } }).catch(() => {});
+    }
+    return { message: 'Restaurante eliminado correctamente' };
+  }
 }

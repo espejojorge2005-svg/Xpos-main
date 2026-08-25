@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param } from '@nestjs/common';
 import { SaasService, CreateRestaurantSaaS, UpdateRestaurantSaaS, UpdateAdminSaaS } from './saas.service';
 
 @Controller('saas')
@@ -47,5 +47,10 @@ export class SaasController {
   @Patch('restaurants/:id')
   async updateRestaurant(@Param('id') id: string, @Body() body: UpdateRestaurantSaaS) {
     return this.saasService.updateRestaurant(id, body);
+  }
+
+  @Delete('restaurants/:id')
+  async deleteRestaurant(@Param('id') id: string) {
+    return this.saasService.deleteRestaurant(id);
   }
 }

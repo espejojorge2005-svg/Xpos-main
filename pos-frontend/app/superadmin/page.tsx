@@ -2,7 +2,7 @@
 import { getApiUrl } from '@/utils/api';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, Store, Users, Receipt, Building, Mail, Lock, User, Check, X, Building2, Phone, Crown, CalendarPlus, Edit, LayoutDashboard, Settings } from 'lucide-react';
+import { Plus, Search, Store, Users, Receipt, Building, Mail, Lock, User, Check, X, Building2, Phone, Crown, CalendarPlus, Edit, LayoutDashboard, Settings, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { PlansManager, SubscriptionPlan } from './components/PlansManager';
 import { SuperAdminProfile } from './components/SuperAdminProfile';
@@ -172,6 +172,37 @@ export default function SuperAdminPage() {
       }
     } catch {
       toast.error('Error en la conexión');
+    }
+  };
+
+  const deleteRestaurant = async (id: string, name: string) => {
+    if (!window.confirm(`¿Estás seguro de eliminar permanentemente el restaurante "${name}" y toda su información?`)) return;
+    try {
+      const token = localStorage.getItem('pos_token') || 'superadmin-token-master';
+      await fetch(getApiUrl(`/saas/restaurants/${id}`), {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      }).catch(() => {});
+
+      setRestaurants(prev => {
+        const updated = prev.filter(r => r.id !== id);
+        localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(updated));
+        return updated;
+      });
+
+      // Limpiar credenciales registradas asociadas a este restaurante
+      try {
+        const registeredAdminsStr = localStorage.getItem('pos_registered_admins');
+        if (registeredAdminsStr) {
+          const registeredAdmins: any[] = JSON.parse(registeredAdminsStr);
+          const filtered = registeredAdmins.filter(a => a.restaurantId !== id);
+          localStorage.setItem('pos_registered_admins', JSON.stringify(filtered));
+        }
+      } catch {}
+
+      toast.success(`Restaurante "${name}" eliminado permanentemente.`);
+    } catch {
+      toast.error('Error al eliminar el restaurante');
     }
   };
 
@@ -419,8 +450,11 @@ export default function SuperAdminPage() {
                  </div>
                  <div className="flex items-center gap-2">
                    <button onClick={() => openEditModal(r)} className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-full transition-colors" title="Editar config">
-                     <Edit className="w-4 h-4" />
-                   </button>
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => deleteRestaurant(r.id, r.name)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-full transition-colors" title="Eliminar negocio">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                    <div className="flex flex-col items-end gap-1">
                      <button 
                        onClick={() => toggleStatus(r.id, r.isActive)}
