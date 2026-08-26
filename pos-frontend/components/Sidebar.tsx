@@ -61,8 +61,8 @@ export default function Sidebar() {
       setUserName('');
     }
 
-    // Only fetch config from backend if logged in as ADMIN or SUPER_ADMIN
-    if (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN') {
+    // Only fetch restaurant config from backend if logged in strictly as restaurant ADMIN
+    if (userRole === 'ADMIN') {
       const fetchConfig = async () => {
         try {
           const token = localStorage.getItem('pos_token');

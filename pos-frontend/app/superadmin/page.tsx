@@ -65,14 +65,69 @@ export default function SuperAdminPage() {
       const mergedMap = new Map<string, Restaurant>();
       
       // Servidor primero
-      dbTenants.forEach((r: Restaurant) => mergedMap.set(r.id, r));
+      if (Array.isArray(dbTenants)) {
+        dbTenants.forEach((r: Restaurant) => mergedMap.set(r.id, r));
+      }
       // Luego caché local
-      cachedTenants.forEach((r: Restaurant) => {
-        if (!mergedMap.has(r.id)) mergedMap.set(r.id, r);
-      });
-      return Array.from(mergedMap.values());
+      if (Array.isArray(cachedTenants)) {
+        cachedTenants.forEach((r: Restaurant) => {
+          if (!mergedMap.has(r.id)) mergedMap.set(r.id, r);
+        });
+      }
+
+      // Si no hay ninguno guardado en servidor ni local, inicializar restaurantes por defecto
+      if (mergedMap.size === 0) {
+        const defaultTenants: Restaurant[] = [
+          {
+            id: 'rest-demo-1',
+            name: 'Restaurante Central Demo',
+            slogan: 'El sabor tradicional de la cocina',
+            isActive: true,
+            createdAt: new Date().toISOString(),
+            planId: 'p-pro',
+            plan: { name: 'Plan Profesional', code: 'PRO' },
+            subscriptionEndDate: new Date(Date.now() + 30*24*60*60*1000).toISOString(),
+            ownerName: 'Juan Pérez',
+            ownerPhone: '+51 987 654 321',
+            _count: { users: 4, orders: 120 }
+          },
+          {
+            id: 'rest-florcita-1',
+            name: 'Carpita de Florcita',
+            slogan: 'Comida criolla y marina',
+            isActive: true,
+            createdAt: new Date().toISOString(),
+            planId: 'p-premium',
+            plan: { name: 'Plan Premium', code: 'PREMIUM' },
+            subscriptionEndDate: new Date(Date.now() + 60*24*60*60*1000).toISOString(),
+            ownerName: 'Xander / Florcita Ramos',
+            ownerPhone: '+51 912 345 678',
+            _count: { users: 6, orders: 350 }
+          }
+        ];
+        defaultTenants.forEach(r => mergedMap.set(r.id, r));
+        localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(defaultTenants));
+      }
+
+      const list = Array.from(mergedMap.values());
+      localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(list));
+      return list;
     } catch {
-      return dbTenants;
+      return dbTenants.length > 0 ? dbTenants : [
+        {
+          id: 'rest-demo-1',
+          name: 'Restaurante Central Demo',
+          slogan: 'El sabor tradicional de la cocina',
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          planId: 'p-pro',
+          plan: { name: 'Plan Profesional', code: 'PRO' },
+          subscriptionEndDate: new Date(Date.now() + 30*24*60*60*1000).toISOString(),
+          ownerName: 'Juan Pérez',
+          ownerPhone: '+51 987 654 321',
+          _count: { users: 4, orders: 120 }
+        }
+      ];
     }
   };
 
