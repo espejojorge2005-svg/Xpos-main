@@ -1,4 +1,6 @@
 'use client';
+
+import { clearCurrentRestaurantData } from '@/utils/storage';
 import { getApiUrl } from '@/utils/api';
 
 import Link from 'next/link';
@@ -40,30 +42,14 @@ export default function Sidebar() {
     const cached = localStorage.getItem('pos_restaurant_config');
     if (cached) { try { setConfig(JSON.parse(cached)); } catch { /* ignore */ } }
 
-    const fetchConfig = async () => {
-      try {
-        const token = localStorage.getItem('pos_token');
-        const res = await fetch(getApiUrl('/restaurant-config'), {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          cache: 'no-store',
-        });
-        if (res.ok) {
-          const data: RestaurantConfig = await res.json();
-          if (data.name) {
-            setConfig(data);
-            localStorage.setItem('pos_restaurant_config', JSON.stringify(data));
-          }
-        }
-      } catch { /* ignore */ }
-    };
-    fetchConfig();
-
     const userStr = localStorage.getItem('pos_user');
+    let userRole = '';
     if (userStr) {
       try {
         const user = JSON.parse(userStr);
         setAllowedViews(user.allowedViews ?? []);
-        setRole(user.role ?? '');
+        userRole = user.role ?? '';
+        setRole(userRole);
         setUserName(user.name ?? '');
         if (user.restaurantName && (config.name === 'Xpos' || !config.name)) {
           setConfig(prev => ({ ...prev, name: user.restaurantName }));
@@ -73,6 +59,27 @@ export default function Sidebar() {
       setAllowedViews([]);
       setRole('');
       setUserName('');
+    }
+
+    // Only fetch config from backend if logged in as ADMIN or SUPER_ADMIN
+    if (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN') {
+      const fetchConfig = async () => {
+        try {
+          const token = localStorage.getItem('pos_token');
+          const res = await fetch(getApiUrl('/restaurant-config'), {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            cache: 'no-store',
+          });
+          if (res.ok) {
+            const data: RestaurantConfig = await res.json();
+            if (data.name) {
+              setConfig(data);
+              localStorage.setItem('pos_restaurant_config', JSON.stringify(data));
+            }
+          }
+        } catch { /* ignore */ }
+      };
+      fetchConfig();
     }
 
     // Listen for storage events (settings page updates config)
@@ -98,9 +105,7 @@ export default function Sidebar() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('pos_token');
-    localStorage.removeItem('pos_user');
-    localStorage.removeItem('pos_restaurant_config');
+    clearCurrentRestaurantData();
     router.push('/login');
   };
 

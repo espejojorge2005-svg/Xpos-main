@@ -21,8 +21,7 @@ const VIEW_PATH_MAP: Record<string, string> = {
 };
 
 /**
- * Returns the first allowed path for a user given their allowedViews.
- * If empty, ADMIN, or '*' always returns '/' (full access).
+ * Returns the first allowed path for a user given their allowedViews and role.
  */
 export function getFirstAllowedPath(allowedViews: string[]): string {
   if (!allowedViews || allowedViews.length === 0 || allowedViews.includes('*')) return '/';
@@ -34,11 +33,9 @@ export function getFirstAllowedPath(allowedViews: string[]): string {
 }
 
 /**
- * Hook that protects a page by its view key.
- * Call at the top of every protected page component.
+ * Hook that protects a page by its view key and user role.
  *
- * @param viewKey - The key string for this view (e.g. 'pos', 'cocina', 'inventario').
- *                  Pass null to only check auth (no view restriction).
+ * @param viewKey - The key string for this view (e.g. 'pos', 'cocina', 'usuarios').
  */
 export function useGuardedRoute(viewKey: string | null) {
   const router = useRouter();
@@ -52,16 +49,25 @@ export function useGuardedRoute(viewKey: string | null) {
 
     try {
       const user = JSON.parse(userStr);
-      let allowedViews: string[] = user.allowedViews && user.allowedViews.length > 0 ? user.allowedViews : ['*'];
       const role: string = user.role ?? '';
+      let allowedViews: string[] = user.allowedViews && user.allowedViews.length > 0 
+        ? user.allowedViews 
+        : (role === 'ADMIN' || role === 'SUPER_ADMIN' ? ['*'] : ['pos', 'cocina']);
 
-      // ADMIN and SUPER_ADMIN always have full access
+      // ADMIN and SUPER_ADMIN have full access
       const isAdmin = role === 'ADMIN' || role === 'SUPER_ADMIN' || allowedViews.includes('*');
       if (isAdmin) return;
 
-      // If a specific view key is required, check it
+      // Restricción estricta de rutas administrativas para Cajeros y Meseros
+      const adminOnlyKeys = ['usuarios', 'configuracion', 'analytics', 'kardex'];
+      if (viewKey && adminOnlyKeys.includes(viewKey) && !isAdmin) {
+        const dest = getFirstAllowedPath(allowedViews);
+        router.replace(dest);
+        return;
+      }
+
+      // If a specific view key is required, check permission
       if (viewKey && !allowedViews.includes(viewKey)) {
-        // Redirect to the first allowed view instead of login
         const firstPath = getFirstAllowedPath(allowedViews);
         router.replace(firstPath);
       }

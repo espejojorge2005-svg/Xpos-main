@@ -25,8 +25,21 @@ export const apiFetch = async (endpoint: string, options: RequestInit = {}): Pro
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  return fetch(url, {
+  const response = await fetch(url, {
     ...options,
     headers,
   });
+
+  // Si la petición devuelve 401 y el usuario no está en la página de login, redirigir a /login
+  if (response.status === 401 && typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+    const isUnauthEndpoint = endpoint.includes('/auth/login');
+    if (!isUnauthEndpoint) {
+      console.warn('Sesión expirada o no autorizada. Redirigiendo a /login...');
+      localStorage.removeItem('pos_token');
+      localStorage.removeItem('pos_user');
+      window.location.href = '/login';
+    }
+  }
+
+  return response;
 };

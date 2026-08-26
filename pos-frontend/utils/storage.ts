@@ -60,13 +60,24 @@ export const clearCurrentRestaurantData = (): void => {
     'pos_closed_items',
     'pos_shift_history',
     'pos_cash_shift',
+    'pos_registered_admins',
+    'pos_saas_tenants_cache',
   ];
 
   const restId = getRestaurantId();
   keysToClear.forEach(key => {
     localStorage.removeItem(key);
+    try { sessionStorage.removeItem(key); } catch {}
     if (restId) {
       localStorage.removeItem(`${key}_${restId}`);
+      try { sessionStorage.removeItem(`${key}_${restId}`); } catch {}
     }
   });
+
+  // Clear session cookies if present
+  try {
+    document.cookie.split(';').forEach(c => {
+      document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
+    });
+  } catch {}
 };
