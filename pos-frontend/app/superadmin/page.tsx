@@ -212,6 +212,9 @@ export default function SuperAdminPage() {
     const createdDate = new Date();
     createdDate.setDate(createdDate.getDate() + 30);
 
+    const cleanEmail = adminEmail ? adminEmail.trim().toLowerCase() : '';
+    const cleanPassword = adminPassword ? adminPassword.trim() : '';
+
     const newMockRestaurant: Restaurant = {
       id: `rest-${Date.now()}`,
       name: tenantName,
@@ -226,7 +229,6 @@ export default function SuperAdminPage() {
       _count: { users: 1, orders: 0 }
     };
 
-    // Guardar cuenta del Administrador cliente para la autenticación
     let finalRestaurantId = newMockRestaurant.id;
 
     try {
@@ -235,36 +237,42 @@ export default function SuperAdminPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ 
-           name: tenantName, slogan: tenantSlogan, planId, ownerName, ownerPhone
+           name: tenantName,
+           slogan: tenantSlogan,
+           planId,
+           ownerName,
+           ownerPhone,
+           adminName: adminName || ownerName || 'Administrador',
+           adminEmail: cleanEmail,
+           adminPassword: cleanPassword
         })
       });
+
+      if (!res1.ok) {
+        let errStr = 'Error al crear el restaurante';
+        try {
+          const errData = await res1.json();
+          errStr = Array.isArray(errData.message) ? errData.message.join(', ') : errData.message || errStr;
+        } catch {}
+        toast.error(errStr);
+        setIsSubmitting(false);
+        return;
+      }
       
-      if (res1.ok) {
-        const createdOnServer = await res1.json();
-        if (createdOnServer?.id) {
-          finalRestaurantId = createdOnServer.id;
-          newMockRestaurant.id = createdOnServer.id;
-        }
-        if (adminEmail && adminPassword) {
-          const cleanEmail = adminEmail.trim().toLowerCase();
-          const cleanPassword = adminPassword.trim();
-          await fetch(getApiUrl(`/saas/restaurants/${createdOnServer.id}/admins`), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ name: adminName || ownerName || 'Admin', email: cleanEmail, password: cleanPassword })
-          }).catch(() => {});
-        }
+      const createdOnServer = await res1.json();
+      if (createdOnServer?.id) {
+        finalRestaurantId = createdOnServer.id;
+        newMockRestaurant.id = createdOnServer.id;
       }
     } catch {
       // ignore network errors
     }
 
-    if (adminEmail && adminPassword) {
+    if (cleanEmail && cleanPassword) {
       try {
-        const cleanEmail = adminEmail.trim().toLowerCase();
         const newAdminAccount = {
           email: cleanEmail,
-          password: adminPassword.trim(),
+          password: cleanPassword,
           name: adminName || ownerName || 'Administrador',
           restaurantName: tenantName,
           restaurantId: finalRestaurantId,
@@ -283,7 +291,7 @@ export default function SuperAdminPage() {
       return updated;
     });
 
-    toast.success(`¡Inquilino "${tenantName}" creado exitosamente!`);
+    toast.success(`¡Inquilino "${tenantName}" y Administrador creados exitosamente!`);
     setIsOpen(false);
     
     setTenantName(''); setTenantSlogan(''); setOwnerName(''); setOwnerPhone('');

@@ -22,6 +22,18 @@ export class CreateRestaurantSaaS {
   @IsOptional()
   @IsString()
   ownerPhone?: string;
+
+  @IsOptional()
+  @IsString()
+  adminName?: string;
+
+  @IsOptional()
+  @IsString()
+  adminEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  adminPassword?: string;
 }
 
 export class UpdateRestaurantSaaS {
@@ -88,16 +100,50 @@ export class SaasService {
       }
     }
 
-    return this.prisma.restaurant.create({
-      data: {
-        name: dto.name,
-        slogan: dto.slogan || null,
-        planId: validPlanId,
-        ownerName: dto.ownerName || null,
-        ownerPhone: dto.ownerPhone || null,
-        subscriptionEndDate: endDate,
-        isActive: true,
+    let cleanEmail: string | null = null;
+    let hashedPassword: string | null = null;
+
+    if (dto.adminEmail && dto.adminPassword) {
+      cleanEmail = dto.adminEmail.trim().toLowerCase();
+      const existingUser = await this.prisma.user.findUnique({ where: { email: cleanEmail } });
+      if (existingUser) {
+        throw new BadRequestException(`El correo ${cleanEmail} ya se encuentra registrado en el sistema`);
       }
+      hashedPassword = await bcrypt.hash(dto.adminPassword.trim(), 10);
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const restaurant = await tx.restaurant.create({
+        data: {
+          name: dto.name,
+          slogan: dto.slogan || null,
+          planId: validPlanId,
+          ownerName: dto.ownerName || null,
+          ownerPhone: dto.ownerPhone || null,
+          subscriptionEndDate: endDate,
+          isActive: true,
+        }
+      });
+
+      let adminUser: any = null;
+      if (cleanEmail && hashedPassword) {
+        adminUser = await tx.user.create({
+          data: {
+            name: dto.adminName || dto.ownerName || 'Administrador',
+            email: cleanEmail,
+            password: hashedPassword,
+            role: 'ADMIN',
+            restaurantId: restaurant.id,
+            allowedViews: ['*'],
+            isActive: true,
+          }
+        });
+      }
+
+      return {
+        ...restaurant,
+        adminUser: adminUser ? { id: adminUser.id, name: adminUser.name, email: adminUser.email } : null
+      };
     });
   }
 

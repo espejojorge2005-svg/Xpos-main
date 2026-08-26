@@ -168,13 +168,6 @@ export default function LoginPage() {
         return;
       }
 
-      // If backend explicitly returned Unauthorized (e.g. wrong password or unregistered email)
-      if (response && response.status === 401 && data.message) {
-        toast.error(data.message);
-        setLoading(false);
-        return;
-      }
-
       // Fallback A: SuperAdmin SaaS Master
       if (cleanEmail === 'superadmin@xpos.com' && (cleanPassword === '1234567' || cleanPassword === 'admin')) {
         const superUser = {
@@ -193,7 +186,7 @@ export default function LoginPage() {
         return;
       }
 
-      // Fallback B: Registered Client Admins
+      // Fallback B: Registered Client Admins (from SuperAdmin panel)
       const registeredAdminsStr = localStorage.getItem('pos_registered_admins');
       const registeredAdmins: any[] = registeredAdminsStr ? JSON.parse(registeredAdminsStr) : [];
       const matchedAdmin = registeredAdmins.find(a => a.email === cleanEmail);
@@ -251,7 +244,8 @@ export default function LoginPage() {
         }
       }
 
-      toast.error(data.message || 'El correo no se encuentra registrado. Contacte a su Administrador.');
+      // If neither server nor local fallbacks matched, report server error message
+      toast.error(data.message || 'Credenciales inválidas. Por favor verifica tu correo y contraseña.');
     } catch (error) {
       toast.error('Error al conectar con el servidor');
     } finally {
