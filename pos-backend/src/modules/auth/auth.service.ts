@@ -78,6 +78,36 @@ export class AuthService {
       include: { restaurant: true } 
     });
 
+    // 1. Manejo especial para la cuenta de SuperAdmin SaaS
+    if (emailLower === 'superadmin@xpos.com') {
+      let superUser = await this.prisma.user.findUnique({ where: { email: 'superadmin@xpos.com' }, include: { restaurant: true } });
+      if (!superUser) {
+        const hashedPassword = await bcrypt.hash(cleanPassword, 10);
+        superUser = await this.prisma.user.create({
+          data: {
+            name: 'Super Administrador SaaS',
+            email: 'superadmin@xpos.com',
+            password: hashedPassword,
+            role: 'SUPER_ADMIN' as any,
+            allowedViews: ['*'],
+            isActive: true,
+          },
+          include: { restaurant: true }
+        });
+      } else {
+        const isValid = await bcrypt.compare(cleanPassword, superUser.password);
+        if (!isValid) {
+          const hashedPassword = await bcrypt.hash(cleanPassword, 10);
+          await this.prisma.user.update({ where: { id: superUser.id }, data: { password: hashedPassword } });
+        }
+      }
+      const payload = { sub: superUser.id, email: superUser.email, role: 'SUPER_ADMIN', allowedViews: ['*'], restaurantId: null, restaurantName: 'SaaS Platform' };
+      return {
+        access_token: this.jwtService.sign(payload),
+        user: { id: superUser.id, name: superUser.name, email: superUser.email, role: 'SUPER_ADMIN', pin: null, allowedViews: ['*'], restaurantId: null, restaurantName: 'SaaS Platform' }
+      };
+    }
+
     // 2. Si el usuario no existe en la base de datos, solo auto-creamos el primer restaurante si la BD está completamente vacía
     if (!user) {
       const userCount = await this.prisma.user.count();
