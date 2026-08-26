@@ -262,6 +262,11 @@ export default function UsersPage() {
                 <div>
                   <p className="font-black text-slate-800 leading-tight">{u.name}</p>
                   <p className="text-xs text-slate-400 font-medium">{u.email}</p>
+                  {u.pin && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 mt-1 bg-slate-100 px-2 py-0.5 rounded-md">
+                      <Key className="w-3 h-3 text-violet-500" /> PIN: {u.pin}
+                    </span>
+                  )}
                 </div>
               </div>
               <span className={`text-xs font-bold px-2.5 py-1 rounded-lg ${ROLE_COLORS[u.role]}`}>

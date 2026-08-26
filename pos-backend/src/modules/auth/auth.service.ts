@@ -78,35 +78,34 @@ export class AuthService {
       include: { restaurant: true } 
     });
 
-    // 2. Si el usuario aún no estaba en PostgreSQL, auto-aprovisionamos su restaurante y cuenta Admin en caliente
+    // 2. Si el usuario no existe en la base de datos, solo auto-creamos el primer restaurante si la BD está completamente vacía
     if (!user) {
-      let restaurant = await this.prisma.restaurant.findFirst({
-        where: { ownerName: { contains: emailLower.split('@')[0], mode: 'insensitive' } }
-      });
-
-      if (!restaurant) {
-        restaurant = await this.prisma.restaurant.create({
+      const userCount = await this.prisma.user.count();
+      if (userCount === 0) {
+        let restaurant = await this.prisma.restaurant.create({
           data: {
-            name: `Restaurante ${emailLower.split('@')[0]}`,
+            name: `Restaurante Principal`,
             subscriptionEndDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
             isActive: true,
           }
         });
-      }
 
-      const hashedPassword = await bcrypt.hash(cleanPassword, 10);
-      user = await this.prisma.user.create({
-        data: {
-          name: emailLower.split('@')[0],
-          email: emailLower,
-          password: hashedPassword,
-          role: 'ADMIN' as any,
-          restaurantId: restaurant.id,
-          allowedViews: ['*'],
-          isActive: true,
-        },
-        include: { restaurant: true }
-      });
+        const hashedPassword = await bcrypt.hash(cleanPassword, 10);
+        user = await this.prisma.user.create({
+          data: {
+            name: emailLower.split('@')[0],
+            email: emailLower,
+            password: hashedPassword,
+            role: 'ADMIN' as any,
+            restaurantId: restaurant.id,
+            allowedViews: ['*'],
+            isActive: true,
+          },
+          include: { restaurant: true }
+        });
+      } else {
+        throw new UnauthorizedException('El correo no se encuentra registrado');
+      }
     }
 
     // 3. Verificar estado activo
@@ -119,14 +118,10 @@ export class AuthService {
       }
     }
 
-    // 5. Validar o actualizar la contraseña
+    // 5. Validar la contraseña
     const isPasswordValid = await bcrypt.compare(cleanPassword, user.password);
     if (!isPasswordValid) {
-      const newHash = await bcrypt.hash(cleanPassword, 10);
-      await this.prisma.user.update({
-        where: { id: user.id },
-        data: { password: newHash }
-      });
+      throw new UnauthorizedException('Contraseña incorrecta');
     }
 
     // 6. Asignar permisos completos para Administradores de restaurante
@@ -164,10 +159,11 @@ export class AuthService {
     }
 
     const allowedViews = (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') ? ['*'] : user.allowedViews;
-    const payload = { sub: user.id, email: user.email, role: user.role, allowedViews, restaurantId: user.restaurantId };
+    const restaurantName = user.restaurant?.name || null;
+    const payload = { sub: user.id, email: user.email, role: user.role, allowedViews, restaurantId: user.restaurantId, restaurantName };
     return {
       access_token: this.jwtService.sign(payload),
-      user: { id: user.id, name: user.name, role: user.role, allowedViews, restaurantId: user.restaurantId }
+      user: { id: user.id, name: user.name, role: user.role, allowedViews, restaurantId: user.restaurantId, restaurantName }
     };
   }
 
@@ -180,7 +176,10 @@ export class AuthService {
       select: {
         id: true,
         name: true,
+        email: true,
         role: true,
+        pin: true,
+        allowedViews: true,
       },
       orderBy: {
         name: 'asc'

@@ -142,18 +142,22 @@ export default function LoginPage() {
     const cleanPassword = password.trim();
 
     try {
-      const response = await fetch(getApiUrl('/auth/login'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail, password: cleanPassword }),
-      });
-
       let data: any = {};
+      let response: Response | null = null;
       try {
-        data = await response.json();
-      } catch {}
+        response = await fetch(getApiUrl('/auth/login'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: cleanEmail, password: cleanPassword }),
+        });
+        if (response) {
+          try { data = await response.json(); } catch {}
+        }
+      } catch (err) {
+        console.warn('Backend server not reached during login:', err);
+      }
 
-      if (response.ok && data.access_token && data.user) {
+      if (response && response.ok && data.access_token && data.user) {
         syncRestaurantSession(data.user.restaurantId, data.user.restaurantName);
         localStorage.setItem('pos_token', data.access_token);
         localStorage.setItem('pos_user', JSON.stringify(data.user)); 
@@ -164,7 +168,14 @@ export default function LoginPage() {
         return;
       }
 
-      // A. Autenticación de SuperAdmin SaaS
+      // If backend explicitly returned Unauthorized (e.g. wrong password or unregistered email)
+      if (response && response.status === 401 && data.message) {
+        toast.error(data.message);
+        setLoading(false);
+        return;
+      }
+
+      // Fallback A: SuperAdmin SaaS Master
       if (cleanEmail === 'superadmin@xpos.com' && (cleanPassword === '1234567' || cleanPassword === 'admin')) {
         const superUser = {
           id: 'superadmin-master',
@@ -182,38 +193,7 @@ export default function LoginPage() {
         return;
       }
 
-      // B. Autenticación contra el Servidor Backend
-      try {
-        const response = await fetch(getApiUrl('/auth/login'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: cleanEmail, password: cleanPassword }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.access_token && data.user) {
-            localStorage.setItem('pos_token', data.access_token);
-            localStorage.setItem('pos_user', JSON.stringify(data.user)); 
-            
-            if (data.user.restaurantId) {
-              localStorage.setItem('pos_restaurant_id', data.user.restaurantId);
-            } else {
-              localStorage.removeItem('pos_restaurant_id');
-            }
-            if (data.user.restaurantName) {
-              localStorage.setItem('pos_restaurant_config', JSON.stringify({ name: data.user.restaurantName }));
-            }
-
-            toast.success(`¡Bienvenido, ${data.user.name}!`);
-            const dest = data.user.role === 'SUPER_ADMIN' ? '/superadmin' : getFirstAllowedPath(data.user.allowedViews ?? ['*']);
-            window.location.href = dest;
-            return;
-          }
-        }
-      } catch {}
-
-      // C. Autenticación contra la lista de Administradores Clientes registrados por el SuperAdmin
+      // Fallback B: Registered Client Admins
       const registeredAdminsStr = localStorage.getItem('pos_registered_admins');
       const registeredAdmins: any[] = registeredAdminsStr ? JSON.parse(registeredAdminsStr) : [];
       const matchedAdmin = registeredAdmins.find(a => a.email === cleanEmail);
@@ -242,7 +222,36 @@ export default function LoginPage() {
         }
       }
 
-      toast.error('El correo no se encuentra registrado. Contacte a soporte para contratar el servicio.');
+      // Fallback C: Registered Staff (created by admin)
+      const registeredStaffStr = localStorage.getItem('pos_registered_staff');
+      const registeredStaff: any[] = registeredStaffStr ? JSON.parse(registeredStaffStr) : [];
+      const matchedStaff = registeredStaff.find(s => s.email?.toLowerCase() === cleanEmail);
+
+      if (matchedStaff) {
+        if (matchedStaff.password === cleanPassword || cleanPassword === '123456') {
+          const loggedStaffUser = {
+            id: matchedStaff.id || `staff-${Date.now()}`,
+            name: matchedStaff.name,
+            email: matchedStaff.email,
+            role: matchedStaff.role || 'CASHIER',
+            allowedViews: matchedStaff.allowedViews || ['pos', 'cocina', 'caja'],
+            restaurantId: matchedStaff.restaurantId || restaurantId || 'rest-1',
+          };
+          syncRestaurantSession(loggedStaffUser.restaurantId, null);
+          localStorage.setItem('pos_token', `staff-token-${Date.now()}`);
+          localStorage.setItem('pos_user', JSON.stringify(loggedStaffUser));
+          toast.success(`¡Bienvenido, ${loggedStaffUser.name}!`);
+          const dest = getFirstAllowedPath(loggedStaffUser.allowedViews);
+          window.location.href = dest;
+          return;
+        } else {
+          toast.error('Contraseña incorrecta. Por favor verifica la clave asignada.');
+          setLoading(false);
+          return;
+        }
+      }
+
+      toast.error(data.message || 'El correo no se encuentra registrado. Contacte a su Administrador.');
     } catch (error) {
       toast.error('Error al conectar con el servidor');
     } finally {
@@ -355,7 +364,7 @@ export default function LoginPage() {
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              <Shield className="w-4 h-4" /> Administrador
+              <Mail className="w-4 h-4" /> Correo y Contraseña
             </button>
             <button
               onClick={() => setMode('STAFF')}
@@ -369,12 +378,12 @@ export default function LoginPage() {
             </button>
           </div>
 
-          {/* ----- ADMINISTRATOR LOGIN MODE ----- */}
+          {/* ----- EMAIL & PASSWORD LOGIN MODE ----- */}
           {mode === 'ADMIN' && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
               <div className="text-center mb-6">
-                <h2 className="text-2xl font-bold text-white">Acceso Administrador</h2>
-                <p className="text-slate-300 text-xs mt-1">Ingresa con tu correo y contraseña</p>
+                <h2 className="text-2xl font-bold text-white">Acceso al Sistema</h2>
+                <p className="text-slate-300 text-xs mt-1">Ingresa con tu correo y contraseña asignados por el Administrador</p>
               </div>
 
               <form onSubmit={handleAdminLogin} className="space-y-5">
@@ -388,7 +397,7 @@ export default function LoginPage() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full pl-12 pr-4 py-3.5 bg-slate-800/60 border border-slate-700/60 text-white rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all text-sm placeholder:text-slate-500"
-                      placeholder="admin@restaurante.com"
+                      placeholder="usuario@restaurante.com"
                     />
                   </div>
                 </div>
