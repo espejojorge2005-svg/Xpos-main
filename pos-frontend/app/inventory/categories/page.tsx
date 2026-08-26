@@ -1,6 +1,6 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
-
+import { getScopedStorage, setScopedStorage } from '@/utils/storage';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -28,25 +28,29 @@ export default function CategoriesPage() {
 
   const fetchCategories = async () => {
     const token = localStorage.getItem('pos_token');
+    let loadedCats: Category[] | null = null;
     try {
-      console.log("Fetching categories...");
       const response = await fetch(getApiUrl('/inventory/categories'), {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      console.log("Categories response status:", response.status);
       if (response.ok) {
         const data = await response.json();
-        console.log("Categories data:", data);
-        setCategories(data);
-      } else {
-        console.error("Failed to fetch categories:", await response.text());
+        if (Array.isArray(data)) {
+          loadedCats = data;
+          setScopedStorage('pos_registered_categories', data);
+        }
       }
-    } catch (error) {
-      console.error("Fetch categories caught error:", error);
-      toast.error('Error al conectar con la base de datos');
-    } finally {
-      setLoading(false);
+    } catch {}
+
+    if (loadedCats === null) {
+      const cached = getScopedStorage<Category[] | null>('pos_registered_categories', null);
+      if (cached !== null) {
+        loadedCats = cached;
+      }
     }
+
+    setCategories(loadedCats || []);
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -55,21 +59,28 @@ export default function CategoriesPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.name.trim()) return toast.error('El nombre de la categoría es obligatorio');
     setIsSaving(true);
     const token = localStorage.getItem('pos_token');
     
-    const isEditing = formData.id !== '';
+    const isEditing = Boolean(formData.id);
+    const catId = isEditing ? formData.id : `cat-${Date.now()}`;
     const url = isEditing
       ? getApiUrl(`/inventory/category/${formData.id}`) : getApiUrl(`/inventory/category`);
     
     const method = isEditing ? 'PATCH' : 'POST';
+    const bodyData = { name: formData.name.trim() };
+
+    // Update locally immediately
+    const updatedCats = isEditing
+      ? categories.map(c => c.id === formData.id ? { ...c, name: formData.name.trim() } : c)
+      : [...categories, { id: catId, name: formData.name.trim() }];
     
-    const bodyData = {
-      name: formData.name,
-    };
+    setCategories(updatedCats);
+    setScopedStorage('pos_registered_categories', updatedCats);
 
     try {
-      const response = await fetch(url, {
+      await fetch(url, {
         method,
         headers: { 
           'Content-Type': 'application/json',
@@ -77,40 +88,29 @@ export default function CategoriesPage() {
         },
         body: JSON.stringify(bodyData),
       });
+    } catch {}
 
-      if (response.ok) {
-        toast.success(isEditing ? 'Categoría actualizada' : 'Categoría creada con éxito');
-        fetchCategories();
-        closeModal();
-      } else {
-        toast.error('Hubo un problema al guardar la categoría');
-      }
-    } catch (error) {
-      toast.error('Error de red al intentar guardar');
-    } finally {
-      setIsSaving(false);
-    }
+    toast.success(isEditing ? 'Categoría actualizada ✅' : 'Categoría creada con éxito ✅');
+    closeModal();
+    setIsSaving(false);
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('¿Estás seguro de eliminar esta categoría? Esto podría afectar a los productos asociados.')) return;
+    if (!window.confirm('¿Estás seguro de eliminar esta categoría?')) return;
     
+    const updatedCats = categories.filter(c => c.id !== id);
+    setCategories(updatedCats);
+    setScopedStorage('pos_registered_categories', updatedCats);
+
     const token = localStorage.getItem('pos_token');
     try {
-      const response = await fetch(getApiUrl(`/inventory/category/${id}`), {
+      await fetch(getApiUrl(`/inventory/category/${id}`), {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
+    } catch {}
 
-      if (response.ok) {
-        toast.success('Categoría eliminada');
-        setCategories(categories.filter(c => c.id !== id));
-      } else {
-        toast.error('No se pudo eliminar la categoría');
-      }
-    } catch (error) {
-      toast.error('Error al conectar con el servidor');
-    }
+    toast.success('Categoría eliminada exitosamente ✅');
   };
 
   const openModal = (category?: Category) => {

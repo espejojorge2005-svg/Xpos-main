@@ -1,5 +1,6 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
+import { getScopedStorage, setScopedStorage, removeScopedStorage } from '@/utils/storage';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -29,7 +30,7 @@ interface PastClosure {
   date: string;
   report: any;
   expenses: Expense[];
-  closureNote: string;
+  closureNote?: string;
 }
 
 export default function CashRegisterPage() {
@@ -82,6 +83,24 @@ export default function CashRegisterPage() {
     cashAmount: '', cardAmount: '', transferAmount: '',
     tip: '', tipMethod: 'CASH'
   });
+  const [pendingTables, setPendingTables] = useState<any[]>([]);
+
+  const fetchPendingTables = () => {
+    try {
+      const activeObj = getScopedStorage('pos_active_table_orders', {});
+      if (activeObj && typeof activeObj === 'object') {
+        const list = Object.entries(activeObj).map(([key, val]: [string, any]) => ({
+          tableId: key,
+          ...val
+        })).filter(t => t.status === 'OCCUPIED');
+        setPendingTables(list);
+      } else {
+        setPendingTables([]);
+      }
+    } catch {
+      setPendingTables([]);
+    }
+  };
 
   // 1. CARGAR DATOS 
   const fetchDailyReport = async () => {
@@ -95,22 +114,42 @@ export default function CashRegisterPage() {
       });
       const data = response.ok ? await response.json() : {};
 
-      const historyData = JSON.parse(localStorage.getItem('pos_shift_history') || '[]');
+      const historyData = getScopedStorage<PastClosure[]>('pos_shift_history', []);
       setPastClosures(historyData);
-      const closedItemsIds = JSON.parse(localStorage.getItem('pos_closed_items') || '[]');
+      const closedItemsIds = getScopedStorage<string[]>('pos_closed_items', []);
 
-      const localShiftData = localStorage.getItem('mock_cash_shift');
+      let ordersToUse: OrderDetail[] = Array.isArray(data.ordersDetail) ? [...data.ordersDetail] : [];
+      const tipsToUse: TipDetail[] = Array.isArray(data.tipsDetail) ? [...data.tipsDetail] : [];
+
+      const parsedShiftData = getScopedStorage<any>('mock_cash_shift', null);
       let localOpeningCash = 0, localExpensesArray: Expense[] = [], isLocalShiftOpen = false;
 
-      if (localShiftData) {
-        const parsedData = JSON.parse(localShiftData);
-        localOpeningCash = parsedData.openingCash || 0;
-        localExpensesArray = parsedData.expenses || [];
+      if (parsedShiftData) {
+        localOpeningCash = parsedShiftData.openingCash || 0;
+        localExpensesArray = parsedShiftData.expenses || [];
         isLocalShiftOpen = true;
-      }
 
-      const ordersToUse: OrderDetail[] = data.ordersDetail || [];
-      const tipsToUse: TipDetail[] = data.tipsDetail || [];
+        if (Array.isArray(parsedShiftData.payments) && parsedShiftData.payments.length > 0) {
+          parsedShiftData.payments.forEach((p: any) => {
+            const orderId = p.orderId || p.id;
+            if (!ordersToUse.some(o => o.id === orderId)) {
+              ordersToUse.push({
+                id: orderId,
+                table: p.table || 'Mesa 1',
+                amount: Number(p.amount) || 0,
+                tip: Number(p.tipAmount) || 0,
+                methods: [p.method || 'CASH'],
+                payments: [{ id: p.id, method: p.method || 'CASH', amount: Number(p.amount) || 0 }],
+                items: (p.items || []).map((item: any, idx: number) => ({
+                  productId: `prod-${idx}`,
+                  name: item.name,
+                  quantity: Number(item.quantity) || 1,
+                }))
+              });
+            }
+          });
+        }
+      }
 
       const activeOrders = ordersToUse.filter(o => !closedItemsIds.includes(o.id));
       const activeTips = tipsToUse.filter(t => !closedItemsIds.includes(t.id));
@@ -175,10 +214,16 @@ export default function CashRegisterPage() {
       setIsShiftOpen(isLocalShiftOpen);
       if (!isLocalShiftOpen) { setIsEditingOpening(false); setShowOpenModal(true); }
 
-    } catch (error) { toast.error('Error al cargar reporte'); } finally { setLoading(false); }
+    } catch (error) { toast.error('Error al cargar reporte'); } finally { 
+      setLoading(false); 
+      fetchPendingTables();
+    }
   };
 
-  useEffect(() => { fetchDailyReport(); }, [router]);
+  useEffect(() => { 
+    fetchDailyReport(); 
+    fetchPendingTables();
+  }, [router]);
 
   // ==========================================
   // FUNCIONES DE CAJA Y GASTOS
@@ -187,8 +232,8 @@ export default function CashRegisterPage() {
     e.preventDefault();
     if (!openingAmount || isNaN(Number(openingAmount))) return toast.error('Monto inválido');
     const amount = Number(openingAmount);
-    const currentData = JSON.parse(localStorage.getItem('mock_cash_shift') || '{"expenses": []}');
-    localStorage.setItem('mock_cash_shift', JSON.stringify({ ...currentData, openingCash: amount }));
+    const currentData = getScopedStorage<any>('mock_cash_shift', { expenses: [] }) || { expenses: [] };
+    setScopedStorage('mock_cash_shift', { ...currentData, openingCash: amount });
     setReport(prev => ({ ...prev, openingCash: amount, expectedCashInDrawer: amount + prev.cash - prev.totalExpenses }));
     setIsShiftOpen(true); setShowOpenModal(false); toast.success('Caja actualizada');
   };
@@ -203,8 +248,9 @@ export default function CashRegisterPage() {
     else { updated.push({ id: Date.now().toString(), amount, description: expenseForm.description }); }
 
     const newTotal = updated.reduce((s, exp) => s + exp.amount, 0);
-    const local = JSON.parse(localStorage.getItem('mock_cash_shift') || '{}');
-    local.expenses = updated; localStorage.setItem('mock_cash_shift', JSON.stringify(local));
+    const local = getScopedStorage<any>('mock_cash_shift', {}) || {};
+    local.expenses = updated; 
+    setScopedStorage('mock_cash_shift', local);
     setExpenses(updated);
     setReport(prev => ({ ...prev, totalExpenses: newTotal, expectedCashInDrawer: prev.openingCash + prev.cash - newTotal }));
     setShowExpenseModal(false); setExpenseForm({ id: '', amount: '', description: '' }); toast.success('Gasto guardado');
@@ -214,8 +260,9 @@ export default function CashRegisterPage() {
     if (!confirm('¿Eliminar gasto?')) return;
     const updated = expenses.filter(exp => exp.id !== id);
     const newTotal = updated.reduce((s, exp) => s + exp.amount, 0);
-    const local = JSON.parse(localStorage.getItem('mock_cash_shift') || '{}');
-    local.expenses = updated; localStorage.setItem('mock_cash_shift', JSON.stringify(local));
+    const local = getScopedStorage<any>('mock_cash_shift', {}) || {};
+    local.expenses = updated; 
+    setScopedStorage('mock_cash_shift', local);
     setExpenses(updated);
     setReport(prev => ({ ...prev, totalExpenses: newTotal, expectedCashInDrawer: prev.openingCash + prev.cash - newTotal }));
   };
@@ -238,15 +285,15 @@ export default function CashRegisterPage() {
       expenses: [...expenses],
       closureNote
     };
-    const currentHistory = JSON.parse(localStorage.getItem('pos_shift_history') || '[]');
-    localStorage.setItem('pos_shift_history', JSON.stringify([newHistoryRecord, ...currentHistory]));
+    const currentHistory = getScopedStorage<PastClosure[]>('pos_shift_history', []);
+    setScopedStorage('pos_shift_history', [newHistoryRecord, ...currentHistory]);
     setPastClosures([newHistoryRecord, ...currentHistory]);
 
-    const currentClosedItems = JSON.parse(localStorage.getItem('pos_closed_items') || '[]');
+    const currentClosedItems = getScopedStorage<string[]>('pos_closed_items', []);
     const itemsToArchive = [...report.ordersDetail.map(o => o.id), ...report.tipsDetail.map(t => t.id)];
-    localStorage.setItem('pos_closed_items', JSON.stringify([...currentClosedItems, ...itemsToArchive]));
+    setScopedStorage('pos_closed_items', [...currentClosedItems, ...itemsToArchive]);
 
-    localStorage.removeItem('mock_cash_shift');
+    removeScopedStorage('mock_cash_shift');
     toast.success('Caja cerrada con éxito. Turno reseteado a cero.');
 
     setIsShiftOpen(false);
@@ -272,7 +319,7 @@ export default function CashRegisterPage() {
 
     const updatedHistory = pastClosures.filter(c => c.id !== closureId);
     setPastClosures(updatedHistory);
-    localStorage.setItem('pos_shift_history', JSON.stringify(updatedHistory));
+    setScopedStorage('pos_shift_history', updatedHistory);
     toast.success('Cierre eliminado del historial exitosamente.');
   };
 
@@ -588,6 +635,53 @@ export default function CashRegisterPage() {
           )}
         </div>
       </header>
+
+      {/* SECCIÓN DE MESAS CON CUENTA PENDIENTE DE COBRO */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+            <ReceiptText className="w-5 h-5 text-indigo-600" />
+            Mesas con Cuentas Pendientes de Cobro
+          </h2>
+          <span className="text-xs font-bold bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-full">
+            {pendingTables.length} mesas abiertas
+          </span>
+        </div>
+        {pendingTables.length === 0 ? (
+          <div className="bg-white p-5 rounded-2xl border border-dashed border-slate-200 text-center text-slate-400 text-sm font-medium">
+            No hay mesas con cuentas pendientes de cobro en este momento.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {pendingTables.map(t => (
+              <div key={t.tableId} className={`bg-white p-5 rounded-2xl border shadow-sm flex flex-col justify-between transition-all ${t.billRequested ? 'border-amber-400 ring-2 ring-amber-200 bg-amber-50/20' : 'border-slate-200 hover:border-indigo-300'}`}>
+                <div>
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="font-black text-slate-800 text-base">{t.tableName}</h3>
+                    {t.billRequested ? (
+                      <span className="px-2 py-0.5 bg-amber-500 text-white font-bold text-[10px] rounded-full animate-pulse flex items-center gap-1">
+                        🔔 Cuenta Pedida
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 bg-slate-100 text-slate-600 font-bold text-[10px] rounded-full">
+                        Consumiendo
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 font-medium mb-1">{t.items?.length || 0} productos pedidos</p>
+                  <p className="text-2xl font-black text-emerald-600 mb-3">S/ {Number(t.total || 0).toFixed(2)}</p>
+                </div>
+                <button
+                  onClick={() => router.push(`/pos/${t.tableId}`)}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md shadow-indigo-100 active:scale-[0.98]"
+                >
+                  <ReceiptText className="w-4 h-4" /> Cobrar en Caja
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="flex justify-between items-end mb-4">
         <h2 className="text-xl font-bold text-slate-800">Flujo de Efectivo Físico</h2>

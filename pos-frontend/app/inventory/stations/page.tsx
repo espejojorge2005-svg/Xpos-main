@@ -1,6 +1,6 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
-
+import { getScopedStorage, setScopedStorage } from '@/utils/storage';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -44,18 +44,31 @@ export default function KitchenStationsPage() {
 
   const fetchStations = async () => {
     const token = localStorage.getItem('pos_token');
+    let loadedStations: KitchenStation[] | null = null;
     try {
       const response = await fetch(getApiUrl('/kitchen-stations'), {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.ok) {
-        setStations(await response.json());
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          loadedStations = data;
+          setScopedStorage('pos_registered_stations', data);
+        }
       }
     } catch (error) {
-      toast.error('Error al conectar con la base de datos');
-    } finally {
-      setLoading(false);
+      console.warn('Backend stations notice:', error);
     }
+
+    if (loadedStations === null) {
+      const cached = getScopedStorage<KitchenStation[] | null>('pos_registered_stations', null);
+      if (cached !== null) {
+        loadedStations = cached;
+      }
+    }
+
+    setStations(loadedStations || []);
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -98,8 +111,15 @@ export default function KitchenStationsPage() {
       printerName: formData.printerName || null,
     };
 
+    const updatedStations = isEditing
+      ? stations.map(s => s.id === formData.id ? { ...s, name: formData.name, colorHex: formData.colorHex, printerName: formData.printerName } : s)
+      : [...stations, { id: `st-${Date.now()}`, name: formData.name, colorHex: formData.colorHex, printerName: formData.printerName }];
+    
+    setStations(updatedStations);
+    setScopedStorage('pos_registered_stations', updatedStations);
+
     try {
-      const response = await fetch(url, {
+      await fetch(url, {
         method,
         headers: { 
           'Content-Type': 'application/json',
@@ -107,40 +127,29 @@ export default function KitchenStationsPage() {
         },
         body: JSON.stringify(bodyData),
       });
+    } catch {}
 
-      if (response.ok) {
-        toast.success(isEditing ? 'Estación actualizada' : 'Estación creada con éxito');
-        fetchStations();
-        closeModal();
-      } else {
-        toast.error('Hubo un problema al guardar la estación');
-      }
-    } catch (error) {
-      toast.error('Error de red al intentar guardar');
-    } finally {
-      setIsSaving(false);
-    }
+    toast.success(isEditing ? 'Estación actualizada ✅' : 'Estación creada con éxito ✅');
+    closeModal();
+    setIsSaving(false);
   };
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('¿Estás seguro de eliminar esta Área de Preparación?')) return;
     
+    const updated = stations.filter(s => s.id !== id);
+    setStations(updated);
+    setScopedStorage('pos_registered_stations', updated);
+
     const token = localStorage.getItem('pos_token');
     try {
-      const response = await fetch(getApiUrl(`/kitchen-stations/${id}`), {
+      await fetch(getApiUrl(`/kitchen-stations/${id}`), {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
+    } catch {}
 
-      if (response.ok) {
-        toast.success('Estación eliminada');
-        setStations(stations.filter(s => s.id !== id));
-      } else {
-        toast.error('No se pudo eliminar la estación');
-      }
-    } catch (error) {
-      toast.error('Error al conectar con el servidor');
-    }
+    toast.success('Estación eliminada exitosamente ✅');
   };
 
   const openModal = (station?: KitchenStation) => {

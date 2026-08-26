@@ -1,6 +1,7 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
 import { subscribeToKitchenOrders } from '@/utils/firebaseSync';
+import { getScopedStorage, setScopedStorage } from '@/utils/storage';
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -123,72 +124,63 @@ export default function CocinaPage() {
     if (isUpdatingRef.current) return;
     const token = localStorage.getItem('pos_token');
     if (!token) return router.push('/login');
+    let serverOrders: KitchenOrder[] = [];
     try {
       const response = await fetch(getApiUrl('/orders/kitchen'), {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.ok) {
         const data = await response.json();
-             // Lógica para comparar con el estado anterior y lanzar notificaciones Toast
-        if (prevOrdersRef.current.length > 0) {
-          data.orders.forEach((newOrder: KitchenOrder) => {
-            const oldOrder = prevOrdersRef.current.find(o => o.id === newOrder.id);
-            if (oldOrder) {
-              const tableName = newOrder.table?.name || (newOrder.table?.number ? `MESA ${newOrder.table.number}` : 'MOSTRADOR');
-              
-              // 1. Verificar si la orden COMPLETA fue cancelada
-              if (oldOrder.status !== 'CANCELLED' && newOrder.status === 'CANCELLED') {
-                toast.error(`¡ORDEN ANULADA: ${tableName}!`, {
-                  description: 'El mozo ha cancelado la mesa completa. ¡DETENER PREPARACIÓN!',
-                  duration: 10000,
-                  icon: <XCircle className="w-5 h-5 text-white" />
-                });
-                playAlertSound();
-              }
-              // 2. Si la orden sigue activa, verificar si algún PLATO en específico fue cancelado
-              else if (newOrder.status !== 'CANCELLED') {
-                newOrder.items.forEach(newItem => {
-                  const oldItem = oldOrder.items.find(i => i.id === newItem.id);
-                  if (oldItem && oldItem.status !== 'CANCELED' && newItem.status === 'CANCELED') {
-                    toast.error(`¡PLATO CANCELADO EN ${tableName}!`, {
-                      description: `Se canceló: ${newItem.quantity}x ${newItem.product.name}. ¡NO PREPARAR!`,
-                      duration: 8000,
-                    });
-                    playAlertSound();
-                  } else if (oldItem && oldItem.notes !== newItem.notes && newItem.status !== 'CANCELED') {
-                    toast.warning(`¡NOTA ALERTA EN ${tableName}!`, {
-                      description: `${newItem.quantity}x ${newItem.product.name} cambió su nota a: "${newItem.notes || 'Sin nota'}".`,
-                      duration: 10000,
-                    });
-                    playAlertSound();
-                  }
-                });
-
-                // 3. Verificar si la mesa ha cambiado
-                if (!oldOrder.previousTableName && newOrder.previousTableName) {
-                  toast(`¡CAMBIO DE MESA!`, {
-                    description: `El pedido que estaba en ${newOrder.previousTableName} se movió a ${tableName}.`,
-                    duration: 12000,
-                    icon: <ArrowRightLeft className="w-5 h-5 text-blue-500" />
-                  });
-                  playAlertSound();
-                }
-              }
-            }
-          });
+        if (Array.isArray(data.orders)) {
+          serverOrders = data.orders;
+          setFinishedCount(data.finishedCount || 0);
         }
-        
-        prevOrdersRef.current = data.orders;
-        setOrders(data.orders);
-        setFinishedCount(data.finishedCount || 0);
       }
-    } catch (error) { console.error("Error KDS:", error);
-    } finally { setLoading(false); }
+    } catch (error) {
+      console.warn("KDS Server fetch fallback:", error);
+    }
+
+    // Merge with local kitchen orders for standalone / local mode
+    try {
+      const localOrders = getScopedStorage<KitchenOrder[]>('pos_local_kitchen_orders', []);
+      if (Array.isArray(localOrders) && localOrders.length > 0) {
+        const map = new Map<string, KitchenOrder>();
+        serverOrders.forEach(o => map.set(o.id, o));
+        localOrders.forEach(lo => {
+          if (!map.has(lo.id)) {
+            map.set(lo.id, lo);
+          }
+        });
+        serverOrders = Array.from(map.values());
+      }
+    } catch {}
+
+    prevOrdersRef.current = serverOrders;
+    setOrders(serverOrders);
+    setLoading(false);
   };
 
   const markItemAsServed = async (orderId: string, itemId: string) => {
     isUpdatingRef.current = true;
-    // Optimistic Update
+    
+    // Update local kitchen cache
+    try {
+      let localOrders = getScopedStorage<KitchenOrder[]>('pos_local_kitchen_orders', []);
+      if (Array.isArray(localOrders) && localOrders.length > 0) {
+        localOrders = localOrders.map(o => {
+          if (o.id === orderId) {
+            return {
+              ...o,
+              items: o.items.map(i => i.id === itemId ? { ...i, status: 'SERVED' as const } : i)
+            };
+          }
+          return o;
+        }).filter(o => o.items.some(i => i.status === 'ACTIVE'));
+        setScopedStorage('pos_local_kitchen_orders', localOrders);
+      }
+    } catch {}
+
+    // Optimistic Update: Remove ticket if all items are served
     setOrders(current => current.map(o => {
       if (o.id === orderId) {
         return {
@@ -197,7 +189,10 @@ export default function CocinaPage() {
         };
       }
       return o;
-    }));
+    }).filter(o => o.items.some(i => i.status === 'ACTIVE')));
+
+    setFinishedCount(prev => prev + 1);
+    toast.success('Plato despachado ✅');
 
     try {
       const token = localStorage.getItem('pos_token');
@@ -205,18 +200,14 @@ export default function CocinaPage() {
         method: 'PATCH',
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      // Esperar un instante para que BD consolide antes de permitir el próximo poll
       setTimeout(() => { isUpdatingRef.current = false; }, 400);
     } catch (error) {
-      console.error("Error marking item served", error);
-      isUpdatingRef.current = false;
-      fetchKitchenOrders(); // Revert on error
+      setTimeout(() => { isUpdatingRef.current = false; }, 400);
     }
   };
 
   const unmarkItemAsServed = async (orderId: string, itemId: string) => {
     isUpdatingRef.current = true;
-    // Optimistic Update
     setOrders(current => current.map(o => {
       if (o.id === orderId) {
         return {
@@ -235,24 +226,26 @@ export default function CocinaPage() {
       });
       setTimeout(() => { isUpdatingRef.current = false; }, 400);
     } catch (error) {
-      console.error("Error unmarking item as served", error);
-      isUpdatingRef.current = false;
-      fetchKitchenOrders(); // Revert on error
+      setTimeout(() => { isUpdatingRef.current = false; }, 400);
     }
   };
 
   const markOrderAsServed = async (orderId: string, itemIds: string[]) => {
     isUpdatingRef.current = true;
-    // Optimistic Update
-    setOrders(current => current.map(o => {
-      if (o.id === orderId) {
-        return {
-          ...o,
-          items: o.items.map(i => i.status === 'ACTIVE' ? { ...i, status: 'SERVED' as const } : i)
-        };
+
+    // Update local kitchen cache - completely remove the finished order
+    try {
+      let localOrders = getScopedStorage<KitchenOrder[]>('pos_local_kitchen_orders', []);
+      if (Array.isArray(localOrders) && localOrders.length > 0) {
+        localOrders = localOrders.filter(o => o.id !== orderId);
+        setScopedStorage('pos_local_kitchen_orders', localOrders);
       }
-      return o;
-    }).filter(o => o.status === 'CANCELLED' || o.items.some(i => i.status === 'ACTIVE'))); // Hide if none active
+    } catch {}
+
+    // Optimistic Update: remove order from view
+    setOrders(current => current.filter(o => o.id !== orderId));
+    setFinishedCount(prev => prev + (itemIds.length || 1));
+    toast.success('Comanda despachada por completo ✅');
 
     try {
       const token = localStorage.getItem('pos_token');
@@ -266,9 +259,7 @@ export default function CocinaPage() {
       });
       setTimeout(() => { isUpdatingRef.current = false; }, 400);
     } catch (error) {
-      console.error("Error marking order served", error);
-      isUpdatingRef.current = false;
-      fetchKitchenOrders(); // Revert on error
+      setTimeout(() => { isUpdatingRef.current = false; }, 400);
     }
   };
 

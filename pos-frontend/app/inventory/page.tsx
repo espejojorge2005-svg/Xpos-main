@@ -1,6 +1,6 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
-
+import { getScopedStorage, setScopedStorage } from '@/utils/storage';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -73,117 +73,84 @@ export default function InventoryPage() {
   const [historyMovements, setHistoryMovements] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // Default fallback data for offline / initial state
-  const DEFAULT_CATEGORIES: Category[] = [
-    { id: 'cat-1', name: 'Bebidas' },
-    { id: 'cat-2', name: 'Platos Principales' },
-    { id: 'cat-3', name: 'Entradas' },
-    { id: 'cat-4', name: 'Postres' },
-  ];
-
-  const DEFAULT_STATIONS: KitchenStation[] = [
-    { id: 'st-1', name: 'Cocina Principal' },
-    { id: 'st-2', name: 'Bar / Bebidas' },
-  ];
-
-  const DEFAULT_PRODUCTS: Product[] = [
-    { id: 'p-1', name: 'Ceviche Mixto', category: 'Platos Principales', categoryId: 'cat-2', price: 35, stock: 20, minStock: 5 },
-    { id: 'p-2', name: 'Lomo Saltado', category: 'Platos Principales', categoryId: 'cat-2', price: 32, stock: 15, minStock: 5 },
-    { id: 'p-3', name: 'Chicha Morada 1L', category: 'Bebidas', categoryId: 'cat-1', price: 12, stock: 30, minStock: 10 },
-    { id: 'p-4', name: 'Pisco Sour', category: 'Bebidas', categoryId: 'cat-1', price: 18, stock: 25, minStock: 8 },
-  ];
-
   // 1. LEER: Obtener productos del backend real o caché local
   const fetchProducts = async () => {
     const token = localStorage.getItem('pos_token');
-    let loadedProducts: Product[] = [];
+    let loadedProducts: Product[] | null = null;
     try {
       const response = await fetch(getApiUrl('/products'), {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.ok) {
         const data = await response.json();
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           loadedProducts = data;
-          localStorage.setItem('pos_registered_products', JSON.stringify(data));
+          setScopedStorage('pos_registered_products', data);
         }
       }
     } catch { /* ignore network error */ }
 
-    if (loadedProducts.length === 0) {
-      const cached = localStorage.getItem('pos_registered_products');
-      if (cached) {
-        try { loadedProducts = JSON.parse(cached); } catch {}
+    if (loadedProducts === null) {
+      const cached = getScopedStorage<Product[] | null>('pos_registered_products', null);
+      if (cached !== null) {
+        loadedProducts = cached;
       }
     }
 
-    if (loadedProducts.length === 0) {
-      loadedProducts = DEFAULT_PRODUCTS;
-      localStorage.setItem('pos_registered_products', JSON.stringify(DEFAULT_PRODUCTS));
-    }
-
-    setProducts(loadedProducts);
+    setProducts(loadedProducts || []);
     setLoading(false);
   };
 
   const fetchCategories = async () => {
     const token = localStorage.getItem('pos_token');
-    let loadedCats: Category[] = [];
+    let loadedCats: Category[] | null = null;
     try {
       const response = await fetch(getApiUrl('/inventory/categories'), {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.ok) {
         const data = await response.json();
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           loadedCats = data;
-          localStorage.setItem('pos_registered_categories', JSON.stringify(data));
+          setScopedStorage('pos_registered_categories', data);
         }
       }
     } catch {}
 
-    if (loadedCats.length === 0) {
-      const cached = localStorage.getItem('pos_registered_categories');
-      if (cached) {
-        try { loadedCats = JSON.parse(cached); } catch {}
+    if (loadedCats === null) {
+      const cached = getScopedStorage<Category[] | null>('pos_registered_categories', null);
+      if (cached !== null) {
+        loadedCats = cached;
       }
     }
 
-    if (loadedCats.length === 0) {
-      loadedCats = DEFAULT_CATEGORIES;
-    }
-
-    setCategories(loadedCats);
+    setCategories(loadedCats || []);
   };
 
   const fetchStations = async () => {
     const token = localStorage.getItem('pos_token');
-    let loadedStations: KitchenStation[] = [];
+    let loadedStations: KitchenStation[] | null = null;
     try {
       const response = await fetch(getApiUrl('/kitchen-stations'), {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.ok) {
         const data = await response.json();
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           loadedStations = data;
-          localStorage.setItem('pos_registered_stations', JSON.stringify(data));
+          setScopedStorage('pos_registered_stations', data);
         }
       }
     } catch {}
 
-    if (loadedStations.length === 0) {
-      const cached = localStorage.getItem('pos_registered_stations');
-      if (cached) {
-        try { loadedStations = JSON.parse(cached); } catch {}
+    if (loadedStations === null) {
+      const cached = getScopedStorage<KitchenStation[] | null>('pos_registered_stations', null);
+      if (cached !== null) {
+        loadedStations = cached;
       }
     }
 
-    if (loadedStations.length === 0) {
-      loadedStations = DEFAULT_STATIONS;
-    }
-
-    setStations(loadedStations);
+    setStations(loadedStations || []);
   };
 
   useEffect(() => {
@@ -246,8 +213,7 @@ export default function InventoryPage() {
 
     // Save to local cache so product list & POS menu update immediately
     try {
-      const existingProductsStr = localStorage.getItem('pos_registered_products');
-      let existingProducts: Product[] = existingProductsStr ? JSON.parse(existingProductsStr) : [...products];
+      let existingProducts: Product[] = getScopedStorage<Product[]>('pos_registered_products', [...products]);
       
       const newProductObj: Product = {
         id: isEditing ? formData.id : `p-${Date.now()}`,
@@ -267,7 +233,7 @@ export default function InventoryPage() {
         existingProducts.unshift(newProductObj);
       }
 
-      localStorage.setItem('pos_registered_products', JSON.stringify(existingProducts));
+      setScopedStorage('pos_registered_products', existingProducts);
       setProducts(existingProducts);
     } catch {}
 
@@ -276,26 +242,23 @@ export default function InventoryPage() {
     setIsSaving(false);
   };
 
-  // 3. ELIMINAR: Borrar de la base de datos
+  // 3. ELIMINAR: Borrar de la base de datos y memoria local
   const handleDelete = async (id: string) => {
     if (!window.confirm('¿Estás seguro de eliminar este producto del inventario?')) return;
     
+    const updatedProducts = products.filter(p => p.id !== id);
+    setProducts(updatedProducts);
+    setScopedStorage('pos_registered_products', updatedProducts);
+
     const token = localStorage.getItem('pos_token');
     try {
-      const response = await fetch(getApiUrl(`/products/${id}`), {
+      await fetch(getApiUrl(`/products/${id}`), {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
+    } catch {}
 
-      if (response.ok) {
-        toast.success('Producto eliminado');
-        setProducts(products.filter(p => p.id !== id));
-      } else {
-        toast.error('No se pudo eliminar el producto');
-      }
-    } catch (error) {
-      toast.error('Error al conectar con el servidor');
-    }
+    toast.success('Producto eliminado del inventario ✅');
   };
 
   // Controladores del Modal

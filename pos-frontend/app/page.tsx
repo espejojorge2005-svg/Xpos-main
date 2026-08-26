@@ -1,5 +1,6 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
+import { getScopedStorage } from '@/utils/storage';
 import { subscribeToTables } from '@/utils/firebaseSync';
 
 import { useEffect, useState, useRef } from 'react';
@@ -208,6 +209,7 @@ export default function Home() {
 
   const fetchZonas = async () => {
     const token = localStorage.getItem('pos_token');
+    let loadedZones: Zone[] = [];
     try {
       const response = await fetch(getApiUrl('/floor/zones'), {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -216,38 +218,67 @@ export default function Home() {
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data) && data.length > 0) {
-          setZones(data);
-          setLoading(false);
-          return;
+          loadedZones = data;
         }
       }
     } catch (error) {
-      console.error("Error reconectando al backend:", error);
-    } finally {
-      setLoading(false);
+      console.warn("Plano de sala: cargando zonas locales:", error);
     }
 
-    // Zonas y mesas por defecto para que la pantalla del plano de sala siempre cargue fluida
-    setZones([
-      {
-        id: 'zone-1',
-        name: 'SALA PRINCIPAL',
-        tables: [
-          { id: 't-1', name: 'Mesa 1', number: 1, capacity: 4, status: 'FREE', posX: 40, posY: 40, zoneId: 'zone-1' },
-          { id: 't-2', name: 'Mesa 2', number: 2, capacity: 2, status: 'FREE', posX: 200, posY: 40, zoneId: 'zone-1' },
-          { id: 't-3', name: 'Mesa 3', number: 3, capacity: 6, status: 'FREE', posX: 360, posY: 40, zoneId: 'zone-1' },
-          { id: 't-4', name: 'Mesa 4', number: 4, capacity: 4, status: 'FREE', posX: 40, posY: 200, zoneId: 'zone-1' },
-        ]
-      },
-      {
-        id: 'zone-2',
-        name: 'TERRAZA',
-        tables: [
-          { id: 't-5', name: 'Mesa T1', number: 5, capacity: 4, status: 'FREE', posX: 40, posY: 40, zoneId: 'zone-2' },
-          { id: 't-6', name: 'Mesa T2', number: 6, capacity: 2, status: 'FREE', posX: 200, posY: 40, zoneId: 'zone-2' },
-        ]
-      }
-    ]);
+    if (loadedZones.length === 0) {
+      loadedZones = [
+        {
+          id: 'zone-1',
+          name: 'SALA PRINCIPAL',
+          tables: [
+            { id: 't-1', name: 'Mesa 1', number: 1, capacity: 4, status: 'FREE', posX: 40, posY: 40, zoneId: 'zone-1' },
+            { id: 't-2', name: 'Mesa 2', number: 2, capacity: 2, status: 'FREE', posX: 200, posY: 40, zoneId: 'zone-1' },
+            { id: 't-3', name: 'Mesa 3', number: 3, capacity: 6, status: 'FREE', posX: 360, posY: 40, zoneId: 'zone-1' },
+            { id: 't-4', name: 'Mesa 4', number: 4, capacity: 4, status: 'FREE', posX: 40, posY: 200, zoneId: 'zone-1' },
+          ]
+        },
+        {
+          id: 'zone-2',
+          name: 'TERRAZA',
+          tables: [
+            { id: 't-5', name: 'Mesa T1', number: 5, capacity: 4, status: 'FREE', posX: 40, posY: 40, zoneId: 'zone-2' },
+            { id: 't-6', name: 'Mesa T2', number: 6, capacity: 2, status: 'FREE', posX: 200, posY: 40, zoneId: 'zone-2' },
+          ]
+        }
+      ];
+    }
+
+    // Merge with active table orders (Tracked until waiter/cashier frees the table)
+    try {
+      const activeTableOrders = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
+
+      loadedZones = loadedZones.map(zone => ({
+        ...zone,
+        tables: zone.tables.map(table => {
+          const hasActiveOrder = activeTableOrders[table.id] || (table.orders && table.orders.length > 0 && table.status === 'OCCUPIED');
+          if (hasActiveOrder) {
+            const orderInfo = activeTableOrders[table.id] || (table.orders ? table.orders[0] : null);
+            return {
+              ...table,
+              status: 'OCCUPIED' as const,
+              orders: [{
+                id: orderInfo?.orderId || orderInfo?.id || `ord-${table.id}`,
+                createdAt: orderInfo?.createdAt || new Date().toISOString(),
+                totalAmount: orderInfo?.total || 0,
+              }]
+            };
+          }
+          return {
+            ...table,
+            status: 'FREE' as const,
+            orders: []
+          };
+        })
+      }));
+    } catch {}
+
+    setZones(loadedZones);
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -274,7 +305,7 @@ export default function Home() {
     }
 
     // NUEVO: Verificamos si existe el turno guardado en LocalStorage
-    const shiftData = localStorage.getItem('mock_cash_shift');
+    const shiftData = getScopedStorage<any>('mock_cash_shift', null);
     setIsShiftOpen(!!shiftData);
 
     // Detección automática de vista según dispositivo
