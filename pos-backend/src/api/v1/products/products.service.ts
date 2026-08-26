@@ -1,30 +1,60 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-// Ajusta esta ruta de importación para que apunte a donde tienes tu PrismaService
 import { PrismaService } from '../../../prisma/prisma.service'; 
+import { ClsService } from 'nestjs-cls';
 
 @Injectable()
 export class ProductsService {
-  // Inyectamos el servicio de Prisma que ya usas para tus usuarios
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cls: ClsService
+  ) {}
 
-  async create(createProductDto: any) {
-    const { modifierGroups, stationIds, ...productData } = createProductDto;
+  private getTenantRestaurantId(reqUser?: any): string | null {
+    return this.cls.get('restaurantId') || reqUser?.restaurantId || null;
+  }
+
+  async create(createProductDto: any, reqUser?: any) {
+    const restaurantId = this.getTenantRestaurantId(reqUser);
+    const { modifierGroups, stationIds, categoryId, ...productData } = createProductDto;
+
+    let validCategoryId = categoryId;
+    if (categoryId) {
+      const catExists = await this.prisma.category.findFirst({
+        where: { id: categoryId, ...(restaurantId ? { restaurantId } : {}) }
+      });
+      if (!catExists) {
+        const firstCat = await this.prisma.category.findFirst({
+          where: restaurantId ? { restaurantId } : {}
+        });
+        validCategoryId = firstCat ? firstCat.id : undefined;
+      }
+    } else {
+      const firstCat = await this.prisma.category.findFirst({
+        where: restaurantId ? { restaurantId } : {}
+      });
+      validCategoryId = firstCat ? firstCat.id : undefined;
+    }
 
     const newProduct = await this.prisma.product.create({
       data: {
         ...productData,
+        stock: productData.stock ?? 0,
+        minStock: productData.minStock ?? 0,
+        price: Number(productData.price) || 0,
+        ...(restaurantId ? { restaurantId } : {}),
+        ...(validCategoryId ? { category: { connect: { id: validCategoryId } } } : {}),
         ...(stationIds?.length > 0 && {
-          stations: { connect: stationIds.map(id => ({ id })) }
+          stations: { connect: stationIds.map((id: string) => ({ id })) }
         }),
         modifierGroups: modifierGroups && modifierGroups.length > 0 ? {
-          create: modifierGroups.map(mg => ({
+          create: modifierGroups.map((mg: any) => ({
             name: mg.name,
-            minSelect: mg.minSelect,
-            maxSelect: mg.maxSelect,
+            minSelect: mg.minSelect ?? 0,
+            maxSelect: mg.maxSelect ?? 1,
             options: {
-              create: mg.options.map(opt => ({
+              create: (mg.options || []).map((opt: any) => ({
                 targetProductId: opt.targetProductId,
                 priceOverride: opt.priceOverride
               }))
@@ -48,8 +78,15 @@ export class ProductsService {
     };
   }
 
-  async findAll() {
+  async findAll(reqUser?: any) {
+    const restaurantId = this.getTenantRestaurantId(reqUser);
+    const whereClause: any = { isActive: true };
+    if (restaurantId && reqUser?.role !== 'SUPER_ADMIN') {
+      whereClause.restaurantId = restaurantId;
+    }
+
     const products = await this.prisma.product.findMany({
+      where: whereClause,
       orderBy: { name: 'asc' },
       include: { 
         category: true, 
@@ -67,9 +104,15 @@ export class ProductsService {
     }));
   }
 
-  async findOne(id: string) {
-    const product = await this.prisma.product.findUnique({ 
-      where: { id },
+  async findOne(id: string, reqUser?: any) {
+    const restaurantId = this.getTenantRestaurantId(reqUser);
+    const whereClause: any = { id };
+    if (restaurantId && reqUser?.role !== 'SUPER_ADMIN') {
+      whereClause.restaurantId = restaurantId;
+    }
+
+    const product = await this.prisma.product.findFirst({ 
+      where: whereClause,
       include: { 
         category: true, 
         stations: true,
@@ -87,19 +130,17 @@ export class ProductsService {
     };
   }
 
-  async update(id: string, updateProductDto: UpdateProductDto) {
-    await this.findOne(id);
+  async update(id: string, updateProductDto: UpdateProductDto, reqUser?: any) {
+    await this.findOne(id, reqUser);
     
-    // Si viene la propiedad modifierGroups en el DTO, reescribimos los modificadores
-    // Prisma permite borrar los existentes (deleteMany) y recrearlos en una sola operación.
-    const { modifierGroups, stationIds, ...productData } = updateProductDto as any; // Cast avoid TS strict partial checks
+    const { modifierGroups, stationIds, ...productData } = updateProductDto as any;
 
     const updatedProduct = await this.prisma.product.update({
       where: { id },
       data: {
         ...productData,
         stations: {
-          set: [], // Resetea primero (quita relaciones anteriores)
+          set: [],
           connect: stationIds?.map((id: string) => ({ id })) || []
         },
         modifierGroups: modifierGroups !== undefined ? {
@@ -133,16 +174,16 @@ export class ProductsService {
     };
   }
 
-  async remove(id: string) {
-    await this.findOne(id);
+  async remove(id: string, reqUser?: any) {
+    await this.findOne(id, reqUser);
     return await this.prisma.product.update({
       where: { id },
       data: { isActive: false }
     });
   }
 
-  async adjustStock(id: string, delta: number, reason?: string) {
-    const product = await this.findOne(id);
+  async adjustStock(id: string, delta: number, reason?: string, reqUser?: any) {
+    const product = await this.findOne(id, reqUser);
     const stockBefore = product.stock;
     const stockAfter = stockBefore + delta;
 
@@ -167,7 +208,8 @@ export class ProductsService {
     return updated;
   }
 
-  async getStockHistory(id: string, days = 7) {
+  async getStockHistory(id: string, days = 7, reqUser?: any) {
+    await this.findOne(id, reqUser);
     const since = new Date();
     since.setDate(since.getDate() - days);
     since.setHours(0, 0, 0, 0);
@@ -183,57 +225,60 @@ export class ProductsService {
     return movements;
   }
 
-  async getKardex(days = 7) {
+  async getKardex(days = 7, reqUser?: any) {
+    const restaurantId = this.getTenantRestaurantId(reqUser);
     const since = new Date();
     since.setDate(since.getDate() - (days - 1));
     since.setHours(0, 0, 0, 0);
 
-    // Fetch all movements in period along with product info
-    const movements = await this.prisma.stockMovement.findMany({
-      where: { createdAt: { gte: since } },
-      include: { product: { select: { id: true, name: true, stock: true, minStock: true, category: { select: { name: true } } } } },
-      orderBy: { createdAt: 'asc' },
-    });
+    const whereProductClause: any = { isActive: true };
+    if (restaurantId && reqUser?.role !== 'SUPER_ADMIN') {
+      whereProductClause.restaurantId = restaurantId;
+    }
 
-    // Also fetch all active products to include ones with no movements
     const allProducts = await this.prisma.product.findMany({
-      where: { isActive: true },
+      where: whereProductClause,
       select: { id: true, name: true, stock: true, minStock: true, category: { select: { name: true } } },
       orderBy: { name: 'asc' },
     });
 
-    // Build list of dates (last `days` days, oldest first)
+    const productIds = allProducts.map(p => p.id);
+
+    const movements = await this.prisma.stockMovement.findMany({
+      where: { 
+        productId: { in: productIds },
+        createdAt: { gte: since } 
+      },
+      include: { product: { select: { id: true, name: true, stock: true, minStock: true, category: { select: { name: true } } } } },
+      orderBy: { createdAt: 'asc' },
+    });
+
     const dates: string[] = [];
     for (let i = days - 1; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
-      dates.push(d.toISOString().slice(0, 10)); // 'YYYY-MM-DD'
+      dates.push(d.toISOString().slice(0, 10));
     }
 
-    // Group: productId -> dateString -> last stockAfter of that day
     const closingByProductDate: Record<string, Record<string, number>> = {};
 
     for (const mov of movements) {
       const dateKey = mov.createdAt.toISOString().slice(0, 10);
       const pid = mov.productId;
       if (!closingByProductDate[pid]) closingByProductDate[pid] = {};
-      // Overwrite — since ordered asc, last one wins = closing of day (last shift)
       closingByProductDate[pid][dateKey] = mov.stockAfter;
     }
 
-    // Build result: for each product, carry forward last known stock if no movement on a day
     const kardex = allProducts.map((product) => {
       const dailyClosing: Record<string, number | null> = {};
       let lastKnown: number | null = null;
 
-      // Walk dates oldest → newest, carry stock forward
       for (const date of dates) {
         const closing = closingByProductDate[product.id]?.[date];
         if (closing !== undefined) {
           lastKnown = closing;
           dailyClosing[date] = closing;
         } else {
-          // No movement today: carry forward (null if we have no data at all yet)
           dailyClosing[date] = lastKnown;
         }
       }
@@ -244,7 +289,7 @@ export class ProductsService {
         category: product.category?.name ?? 'Sin Categoría',
         currentStock: product.stock,
         minStock: product.minStock,
-        dailyClosing, // { 'YYYY-MM-DD': number | null }
+        dailyClosing,
       };
     });
 

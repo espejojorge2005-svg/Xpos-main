@@ -1,38 +1,38 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { JwtAuthGuard } from '../../../modules/auth/jwt-auth.guard'; 
 
-@Controller('products') // Se usa global prefix 'api/v1' en main.ts, así que la ruta final será /api/v1/products
-@UseGuards(JwtAuthGuard) // Protegemos todas las rutas del inventario
+@Controller('products')
+@UseGuards(JwtAuthGuard)
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
   @Post()
-  create(@Body() createProductDto: CreateProductDto) {
-    return this.productsService.create(createProductDto);
+  create(@Req() req: any, @Body() createProductDto: CreateProductDto) {
+    return this.productsService.create(createProductDto, req.user);
   }
 
   @Get()
-  findAll() {
-    return this.productsService.findAll();
+  findAll(@Req() req: any) {
+    return this.productsService.findAll(req.user);
   }
 
   @Get('kardex')
-  getKardex() {
-    return this.productsService.getKardex();
+  getKardex(@Req() req: any) {
+    return this.productsService.getKardex(7, req.user);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.productsService.findOne(id);
+  findOne(@Req() req: any, @Param('id') id: string) {
+    return this.productsService.findOne(id, req.user);
   }
 
   @Patch(':id')
-  async update(@Param('id') id: string, @Body() updateProductDto: UpdateProductDto) {
+  async update(@Req() req: any, @Param('id') id: string, @Body() updateProductDto: UpdateProductDto) {
     try {
-      return await this.productsService.update(id, updateProductDto);
+      return await this.productsService.update(id, updateProductDto, req.user);
     } catch (e: any) {
       console.error(`Error updating product ${id}:`, e);
       return { error: e.message, stack: e.stack };
@@ -40,20 +40,21 @@ export class ProductsController {
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.productsService.remove(id);
+  remove(@Req() req: any, @Param('id') id: string) {
+    return this.productsService.remove(id, req.user);
   }
 
   @Patch(':id/stock')
   async adjustStock(
+    @Req() req: any,
     @Param('id') id: string,
     @Body() body: { delta: number; reason?: string }
   ) {
-    return this.productsService.adjustStock(id, body.delta, body.reason);
+    return this.productsService.adjustStock(id, body.delta, body.reason, req.user);
   }
 
   @Get(':id/stock-history')
-  async getStockHistory(@Param('id') id: string) {
-    return this.productsService.getStockHistory(id);
+  async getStockHistory(@Req() req: any, @Param('id') id: string) {
+    return this.productsService.getStockHistory(id, 7, req.user);
   }
 }
