@@ -60,74 +60,36 @@ export default function SuperAdminPage() {
 
   const getMergedRestaurants = (dbTenants: Restaurant[]) => {
     try {
+      const deletedStr = localStorage.getItem('pos_deleted_tenants');
+      const deletedIds: string[] = deletedStr ? JSON.parse(deletedStr) : [];
+      
       const cachedStr = localStorage.getItem('pos_saas_tenants_cache');
       const cachedTenants: Restaurant[] = cachedStr ? JSON.parse(cachedStr) : [];
       const mergedMap = new Map<string, Restaurant>();
       
-      // Servidor primero
+      // 1. Servidor primero
       if (Array.isArray(dbTenants)) {
-        dbTenants.forEach((r: Restaurant) => mergedMap.set(r.id, r));
-      }
-      // Luego caché local
-      if (Array.isArray(cachedTenants)) {
-        cachedTenants.forEach((r: Restaurant) => {
-          if (!mergedMap.has(r.id)) mergedMap.set(r.id, r);
+        dbTenants.forEach((r: Restaurant) => {
+          if (!deletedIds.includes(r.id)) {
+            mergedMap.set(r.id, r);
+          }
         });
       }
-
-      // Si no hay ninguno guardado en servidor ni local, inicializar restaurantes por defecto
-      if (mergedMap.size === 0) {
-        const defaultTenants: Restaurant[] = [
-          {
-            id: 'rest-demo-1',
-            name: 'Restaurante Central Demo',
-            slogan: 'El sabor tradicional de la cocina',
-            isActive: true,
-            createdAt: new Date().toISOString(),
-            planId: 'p-pro',
-            plan: { name: 'Plan Profesional', code: 'PRO' },
-            subscriptionEndDate: new Date(Date.now() + 30*24*60*60*1000).toISOString(),
-            ownerName: 'Juan Pérez',
-            ownerPhone: '+51 987 654 321',
-            _count: { users: 4, orders: 120 }
-          },
-          {
-            id: 'rest-florcita-1',
-            name: 'Carpita de Florcita',
-            slogan: 'Comida criolla y marina',
-            isActive: true,
-            createdAt: new Date().toISOString(),
-            planId: 'p-premium',
-            plan: { name: 'Plan Premium', code: 'PREMIUM' },
-            subscriptionEndDate: new Date(Date.now() + 60*24*60*60*1000).toISOString(),
-            ownerName: 'Xander / Florcita Ramos',
-            ownerPhone: '+51 912 345 678',
-            _count: { users: 6, orders: 350 }
+      
+      // 2. Caché local (negocios creados)
+      if (Array.isArray(cachedTenants)) {
+        cachedTenants.forEach((r: Restaurant) => {
+          if (!deletedIds.includes(r.id) && !mergedMap.has(r.id)) {
+            mergedMap.set(r.id, r);
           }
-        ];
-        defaultTenants.forEach(r => mergedMap.set(r.id, r));
-        localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(defaultTenants));
+        });
       }
 
       const list = Array.from(mergedMap.values());
       localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(list));
       return list;
     } catch {
-      return dbTenants.length > 0 ? dbTenants : [
-        {
-          id: 'rest-demo-1',
-          name: 'Restaurante Central Demo',
-          slogan: 'El sabor tradicional de la cocina',
-          isActive: true,
-          createdAt: new Date().toISOString(),
-          planId: 'p-pro',
-          plan: { name: 'Plan Profesional', code: 'PRO' },
-          subscriptionEndDate: new Date(Date.now() + 30*24*60*60*1000).toISOString(),
-          ownerName: 'Juan Pérez',
-          ownerPhone: '+51 987 654 321',
-          _count: { users: 4, orders: 120 }
-        }
-      ];
+      return dbTenants;
     }
   };
 
@@ -239,6 +201,17 @@ export default function SuperAdminPage() {
         headers: { Authorization: `Bearer ${token}` }
       }).catch(() => {});
 
+      // Registrar ID en pos_deleted_tenants para que NUNCA vuelva a aparecer
+      try {
+        const deletedStr = localStorage.getItem('pos_deleted_tenants');
+        const deletedIds: string[] = deletedStr ? JSON.parse(deletedStr) : [];
+        if (!deletedIds.includes(id)) {
+          deletedIds.push(id);
+          localStorage.setItem('pos_deleted_tenants', JSON.stringify(deletedIds));
+        }
+      } catch {}
+
+      // Actualizar estado local y caché
       setRestaurants(prev => {
         const updated = prev.filter(r => r.id !== id);
         localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(updated));
