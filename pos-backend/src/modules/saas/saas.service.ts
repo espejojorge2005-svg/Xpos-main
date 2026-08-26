@@ -124,12 +124,14 @@ export class SaasService {
     const restaurant = await this.prisma.restaurant.findUnique({ where: { id: restaurantId } });
     if (!restaurant) throw new NotFoundException('Restaurante no encontrado');
     
-    const hashedPassword = await bcrypt.hash(dto.password, 10);
-    const exists = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const cleanEmail = dto.email.trim().toLowerCase();
+    const cleanPassword = dto.password.trim();
+    const hashedPassword = await bcrypt.hash(cleanPassword, 10);
+    const exists = await this.prisma.user.findUnique({ where: { email: cleanEmail } });
     
     if (exists) {
       return this.prisma.user.update({
-        where: { email: dto.email },
+        where: { email: cleanEmail },
         data: {
           name: dto.name,
           password: hashedPassword,
@@ -144,7 +146,7 @@ export class SaasService {
     return this.prisma.user.create({
        data: {
           name: dto.name,
-          email: dto.email,
+          email: cleanEmail,
           password: hashedPassword,
           role: 'ADMIN',
           restaurantId: restaurantId,
@@ -189,14 +191,17 @@ export class SaasService {
     if (!admin) throw new NotFoundException('No existe administrador asignado para este restaurante');
 
     const updateData: any = {};
-    if (dto.email && dto.email !== admin.email) {
-      const emailExists = await this.prisma.user.findUnique({ where: { email: dto.email } });
-      if (emailExists) throw new BadRequestException('El correo ya está en uso por otro usuario');
-      updateData.email = dto.email;
+    if (dto.email) {
+      const cleanEmail = dto.email.trim().toLowerCase();
+      if (cleanEmail !== admin.email) {
+        const emailExists = await this.prisma.user.findUnique({ where: { email: cleanEmail } });
+        if (emailExists) throw new BadRequestException('El correo ya está en uso por otro usuario');
+        updateData.email = cleanEmail;
+      }
     }
 
-    if (dto.password) {
-      updateData.password = await bcrypt.hash(dto.password, 10);
+    if (dto.password && dto.password.trim().length > 0) {
+      updateData.password = await bcrypt.hash(dto.password.trim(), 10);
     }
 
     if (Object.keys(updateData).length === 0) return { message: 'No hay cambios' };

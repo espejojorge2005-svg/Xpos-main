@@ -227,23 +227,7 @@ export default function SuperAdminPage() {
     };
 
     // Guardar cuenta del Administrador cliente para la autenticación
-    if (adminEmail && adminPassword) {
-      try {
-        const cleanEmail = adminEmail.trim().toLowerCase();
-        const newAdminAccount = {
-          email: cleanEmail,
-          password: adminPassword.trim(),
-          name: adminName || ownerName || 'Administrador',
-          restaurantName: tenantName,
-          restaurantId: newMockRestaurant.id,
-        };
-        const existingStr = localStorage.getItem('pos_registered_admins');
-        const existing: any[] = existingStr ? JSON.parse(existingStr) : [];
-        const filtered = existing.filter(a => a.email !== cleanEmail);
-        filtered.push(newAdminAccount);
-        localStorage.setItem('pos_registered_admins', JSON.stringify(filtered));
-      } catch {}
-    }
+    let finalRestaurantId = newMockRestaurant.id;
 
     try {
       const token = localStorage.getItem('pos_token') || 'superadmin-token-master';
@@ -257,16 +241,40 @@ export default function SuperAdminPage() {
       
       if (res1.ok) {
         const createdOnServer = await res1.json();
+        if (createdOnServer?.id) {
+          finalRestaurantId = createdOnServer.id;
+          newMockRestaurant.id = createdOnServer.id;
+        }
         if (adminEmail && adminPassword) {
+          const cleanEmail = adminEmail.trim().toLowerCase();
+          const cleanPassword = adminPassword.trim();
           await fetch(getApiUrl(`/saas/restaurants/${createdOnServer.id}/admins`), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ name: adminName || ownerName || 'Admin', email: adminEmail, password: adminPassword })
+            body: JSON.stringify({ name: adminName || ownerName || 'Admin', email: cleanEmail, password: cleanPassword })
           }).catch(() => {});
         }
       }
     } catch {
       // ignore network errors
+    }
+
+    if (adminEmail && adminPassword) {
+      try {
+        const cleanEmail = adminEmail.trim().toLowerCase();
+        const newAdminAccount = {
+          email: cleanEmail,
+          password: adminPassword.trim(),
+          name: adminName || ownerName || 'Administrador',
+          restaurantName: tenantName,
+          restaurantId: finalRestaurantId,
+        };
+        const existingStr = localStorage.getItem('pos_registered_admins');
+        const existing: any[] = existingStr ? JSON.parse(existingStr) : [];
+        const filtered = existing.filter(a => a.email !== cleanEmail);
+        filtered.push(newAdminAccount);
+        localStorage.setItem('pos_registered_admins', JSON.stringify(filtered));
+      } catch {}
     }
 
     setRestaurants(prev => {
@@ -360,9 +368,10 @@ export default function SuperAdminPage() {
     setIsSubmitting(true);
     try {
       const token = localStorage.getItem('pos_token');
-      const payload: any = { email: editAdminEmail };
+      const cleanEmail = editAdminEmail.trim().toLowerCase();
+      const payload: any = { email: cleanEmail };
       if (editAdminPassword.trim().length > 0) {
-         payload.password = editAdminPassword;
+         payload.password = editAdminPassword.trim();
       }
 
       const res = await fetch(getApiUrl(`/saas/restaurants/${editingId}/admin`), {
@@ -373,6 +382,19 @@ export default function SuperAdminPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Error al actualizar credenciales');
       
+      try {
+        const registeredAdminsStr = localStorage.getItem('pos_registered_admins');
+        if (registeredAdminsStr) {
+          const registeredAdmins: any[] = JSON.parse(registeredAdminsStr);
+          const idx = registeredAdmins.findIndex(a => a.restaurantId === editingId);
+          if (idx !== -1) {
+            if (cleanEmail) registeredAdmins[idx].email = cleanEmail;
+            if (payload.password) registeredAdmins[idx].password = payload.password;
+            localStorage.setItem('pos_registered_admins', JSON.stringify(registeredAdmins));
+          }
+        }
+      } catch {}
+
       toast.success('Credenciales maestras actualizadas');
       setEditAdminPassword('');
     } catch (err: any) {
