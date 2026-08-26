@@ -51,32 +51,41 @@ export class UsersService {
   }
 
   async create(dto: CreateUserDto, reqUser?: any) {
-    const exists = await this.prisma.user.findUnique({ where: { email: dto.email } });
-    if (exists) throw new BadRequestException('El correo ya está registrado');
+    const cleanEmail = dto.email.trim().toLowerCase();
+    const exists = await this.prisma.user.findUnique({ where: { email: cleanEmail } });
+    if (exists) throw new BadRequestException('El correo ya está registrado en la plataforma');
 
-    let restaurantId = this.cls.get('restaurantId') || reqUser?.restaurantId || null;
+    // Extraer automáticamente el restaurantId del JWT del Administrador o CLS context
+    let restaurantId = reqUser?.restaurantId || this.cls.get('restaurantId');
     if (!restaurantId) {
       const firstRest = await this.prisma.restaurant.findFirst();
       if (firstRest) restaurantId = firstRest.id;
     }
 
-    if (restaurantId) {
-      const restaurant = await this.prisma.restaurant.findUnique({ 
-        where: { id: restaurantId },
-        include: { plan: true } 
+    if (!restaurantId) {
+      throw new BadRequestException('No se pudo determinar el restaurante asignado al usuario');
+    }
+
+    // Verificar límite de usuarios según el plan de suscripción activo
+    const restaurant = await this.prisma.restaurant.findUnique({ 
+      where: { id: restaurantId },
+      include: { plan: true } 
+    });
+    if (restaurant && restaurant.plan) {
+      const activeUsers = await this.prisma.user.count({ 
+        where: { restaurantId, isActive: true } 
       });
-      if (restaurant && restaurant.plan) {
-        const activeUsers = await this.prisma.user.count({ 
-          where: { restaurantId, isActive: true } 
-        });
-        const limit = restaurant.plan.maxUsers;
-        if (activeUsers >= limit) {
-          throw new ForbiddenException(`Límite de usuarios (${limit}) alcanzado para el plan ${restaurant.plan.name}. Mejore su plan para añadir más.`);
-        }
+      const limit = restaurant.plan.maxUsers;
+      if (activeUsers >= limit) {
+        throw new ForbiddenException(`Límite de usuarios (${limit}) alcanzado para el plan ${restaurant.plan.name}. Mejore su plan para añadir más.`);
       }
     }
 
-    const hashedPassword = await bcrypt.hash(dto.password, 10);
+    // ENCRIPTACIÓN CRÍTICA CON BCRYPT ANTES DE PRISMA.USER.CREATE()
+    const rawPassword = dto.password ? dto.password.trim() : '123456';
+    const hashedPassword = await bcrypt.hash(rawPassword, 10);
+    const cleanPin = dto.pin ? dto.pin.trim().replace(/\D/g, '') : null;
+
     const role = dto.role ?? 'CASHIER';
     let defaultViews: string[] = ['pos', 'cocina', 'caja'];
     if (role === 'ADMIN') defaultViews = ['*'];
@@ -86,13 +95,14 @@ export class UsersService {
 
     const user = await this.prisma.user.create({
       data: {
-        name: dto.name,
-        email: dto.email,
+        name: dto.name.trim(),
+        email: cleanEmail,
         password: hashedPassword,
-        pin: dto.pin || null,
+        pin: cleanPin,
         role: role as any,
         allowedViews,
         restaurantId,
+        isActive: true,
       },
     });
     const { password, ...result } = user;
@@ -104,10 +114,17 @@ export class UsersService {
     if (!user) throw new NotFoundException('Usuario no encontrado');
 
     const data: any = { ...dto };
-    if (dto.password) {
-      data.password = await bcrypt.hash(dto.password, 10);
+    if (dto.name) data.name = dto.name.trim();
+    if (dto.email) data.email = dto.email.trim().toLowerCase();
+
+    if (dto.password && dto.password.trim().length > 0) {
+      data.password = await bcrypt.hash(dto.password.trim(), 10);
     } else {
       delete data.password;
+    }
+
+    if (dto.pin !== undefined) {
+      data.pin = dto.pin ? dto.pin.trim().replace(/\D/g, '') : null;
     }
 
     const updated = await this.prisma.user.update({ where: { id }, data });
