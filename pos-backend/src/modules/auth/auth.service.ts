@@ -141,10 +141,13 @@ export class AuthService {
     // 3. Verificar estado activo
     if (!user.isActive) throw new UnauthorizedException('Usuario desactivado. Contacte al soporte.');
     
-    // 4. Verificar suscripción del restaurante
+    // 4. Verificar suscripción y estado del restaurante
     if (user.restaurantId && user.restaurant) {
       if (!user.restaurant.isActive) {
-        throw new UnauthorizedException('El restaurante se encuentra suspendido. Contacte a soporte.');
+        throw new UnauthorizedException('El restaurante se encuentra suspendido. Contacte al Administrador SaaS.');
+      }
+      if (user.restaurant.subscriptionEndDate && new Date(user.restaurant.subscriptionEndDate) < new Date()) {
+        throw new UnauthorizedException('La suscripción del restaurante ha expirado. Contacte al Administrador SaaS para renovar.');
       }
     }
 
@@ -185,6 +188,9 @@ export class AuthService {
     if (user.restaurantId && user.restaurant) {
       if (!user.restaurant.isActive) {
         throw new UnauthorizedException('El restaurante se encuentra suspendido.');
+      }
+      if (user.restaurant.subscriptionEndDate && new Date(user.restaurant.subscriptionEndDate) < new Date()) {
+        throw new UnauthorizedException('La suscripción del restaurante ha expirado.');
       }
     }
 

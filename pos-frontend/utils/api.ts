@@ -25,31 +25,8 @@ export const apiFetch = async (endpoint: string, options: RequestInit = {}): Pro
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(url, {
+  return fetch(url, {
     ...options,
     headers,
   });
-
-  // Si la petición devuelve 401 y el usuario no está en la página de login, evaluar si se debe redirigir
-  if (response.status === 401 && typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-    let userRole = '';
-    try {
-      const userStr = localStorage.getItem('pos_user');
-      if (userStr) {
-        userRole = JSON.parse(userStr).role || '';
-      }
-    } catch {}
-
-    // Los SuperAdmins y peticiones opcionales como /restaurant-config o /saas NO deben expulsar la sesión
-    const isExcludedEndpoint = endpoint.includes('/auth/login') || endpoint.includes('/restaurant-config') || endpoint.includes('/saas');
-
-    if (!isExcludedEndpoint && userRole !== 'SUPER_ADMIN') {
-      console.warn('Sesión expirada o no autorizada. Redirigiendo a /login...');
-      localStorage.removeItem('pos_token');
-      localStorage.removeItem('pos_user');
-      window.location.href = '/login';
-    }
-  }
-
-  return response;
 };

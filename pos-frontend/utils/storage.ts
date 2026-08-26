@@ -52,16 +52,10 @@ export const clearCurrentRestaurantData = (): void => {
     'pos_user',
     'pos_restaurant_id',
     'pos_restaurant_config',
-    'pos_registered_staff',
-    'pos_registered_products',
-    'pos_registered_categories',
-    'pos_registered_stations',
     'pos_orders',
     'pos_closed_items',
     'pos_shift_history',
     'pos_cash_shift',
-    'pos_registered_admins',
-    'pos_saas_tenants_cache',
   ];
 
   const restId = getRestaurantId();

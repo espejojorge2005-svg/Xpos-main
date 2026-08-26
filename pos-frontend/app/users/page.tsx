@@ -1,5 +1,5 @@
 'use client';
-import { getApiUrl } from '@/utils/api';
+import { getApiUrl, apiFetch } from '@/utils/api';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -50,7 +50,7 @@ const emptyForm = {
   password: '',
   pin: '',
   role: 'CASHIER' as User['role'],
-  allowedViews: ['pos', 'cocina'] as string[],
+  allowedViews: ['pos', 'cocina', 'caja'] as string[],
 };
 
 export default function UsersPage() {
@@ -62,15 +62,11 @@ export default function UsersPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [form, setForm] = useState({ ...emptyForm });
 
-  const token = () => localStorage.getItem('pos_token');
-
   const fetchUsers = async () => {
     setLoading(true);
     let serverUsers: User[] = [];
     try {
-      const res = await fetch(getApiUrl('/users'), {
-        headers: { Authorization: `Bearer ${token()}` },
-      });
+      const res = await apiFetch('/users');
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
@@ -79,23 +75,15 @@ export default function UsersPage() {
       }
     } catch { /* ignore network error */ }
 
-    // Merge with registered admins & staff from localStorage for seamless offline/standalone support
+    // Merge with registered staff from localStorage for standalone/offline support
     try {
-      const cachedAdminsStr = localStorage.getItem('pos_registered_admins');
-      const cachedAdmins: any[] = cachedAdminsStr ? JSON.parse(cachedAdminsStr) : [];
       const cachedStaffStr = localStorage.getItem('pos_registered_staff');
       const cachedStaff: any[] = cachedStaffStr ? JSON.parse(cachedStaffStr) : [];
+      const currentRestId = localStorage.getItem('pos_restaurant_id') || (typeof window !== 'undefined' && localStorage.getItem('pos_user') ? JSON.parse(localStorage.getItem('pos_user') || '{}').restaurantId : null);
 
-      const localUsers: User[] = [
-        ...cachedAdmins.map((a: any) => ({
-          id: `admin-${a.restaurantId || Date.now()}`,
-          name: a.name,
-          email: a.email,
-          role: 'ADMIN' as const,
-          isActive: true,
-          allowedViews: ['*'],
-        })),
-        ...cachedStaff.map((s: any) => ({
+      const localUsers: User[] = cachedStaff
+        .filter((s: any) => !s.restaurantId || !currentRestId || s.restaurantId === currentRestId)
+        .map((s: any) => ({
           id: s.id || `staff-${Date.now()}`,
           name: s.name,
           email: s.email || `${s.name.toLowerCase().replace(/\s+/g, '')}@restaurante.com`,
@@ -103,8 +91,7 @@ export default function UsersPage() {
           pin: s.pin,
           isActive: s.isActive ?? true,
           allowedViews: s.allowedViews || ['pos', 'cocina', 'caja'],
-        }))
-      ];
+        }));
 
       const mergedMap = new Map<string, User>();
       serverUsers.forEach(u => mergedMap.set(u.email.toLowerCase(), u));
@@ -156,41 +143,71 @@ export default function UsersPage() {
     e.preventDefault();
     setIsSaving(true);
     const isEditing = form.id !== '';
-    const url = isEditing
-      ? getApiUrl(`/users/${form.id}`)
-      : getApiUrl('/users');
+    const endpoint = isEditing ? `/users/${form.id}` : '/users';
     const method = isEditing ? 'PATCH' : 'POST';
 
-    const body: any = { name: form.name, email: form.email, role: form.role, allowedViews: form.allowedViews };
-    if (form.password) body.password = form.password;
-    if (form.pin) body.pin = form.pin;
-    if (!isEditing && !body.password) body.password = '123456';
+    const cleanEmail = form.email.trim().toLowerCase();
+    const body: any = { 
+      name: form.name.trim(), 
+      email: cleanEmail, 
+      role: form.role, 
+      allowedViews: form.allowedViews 
+    };
+
+    if (form.password && form.password.trim().length > 0) {
+      body.password = form.password.trim();
+    } else if (!isEditing) {
+      body.password = '123456';
+    }
+
+    if (form.pin && form.pin.trim().length > 0) {
+      body.pin = form.pin.trim().replace(/\D/g, '');
+    }
 
     try {
-      await fetch(url, {
+      const res = await apiFetch(endpoint, {
         method,
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
         body: JSON.stringify(body),
-      }).catch(() => {});
-    } catch { /* ignore network error */ }
+      });
 
-    // Save to local staff cache for PIN login
+      if (!res.ok) {
+        if (res.status === 401) {
+          console.warn('Backend API returned 401 Unauthorized. Falling back to local staff persistence.');
+        } else {
+          let errMsg = 'Error al guardar el usuario en el servidor';
+          try {
+            const errData = await res.json();
+            errMsg = Array.isArray(errData.message) ? errData.message.join(', ') : errData.message || errMsg;
+          } catch {}
+          toast.error(errMsg);
+          setIsSaving(false);
+          return;
+        }
+      }
+    } catch (err: any) {
+      console.warn('Network error saving user:', err);
+    }
+
+    // Save to local staff cache with restaurantId for permanent persistence
     try {
+      const userRestaurantId = localStorage.getItem('pos_restaurant_id') || (typeof window !== 'undefined' && localStorage.getItem('pos_user') ? JSON.parse(localStorage.getItem('pos_user') || '{}').restaurantId : null);
       const existingStaffStr = localStorage.getItem('pos_registered_staff');
       const existingStaff: any[] = existingStaffStr ? JSON.parse(existingStaffStr) : [];
       if (isEditing) {
-        const idx = existingStaff.findIndex(s => s.id === form.id || s.email === form.email);
+        const idx = existingStaff.findIndex(s => s.id === form.id || s.email === cleanEmail);
         if (idx !== -1) {
-          existingStaff[idx] = { ...existingStaff[idx], ...body, name: form.name, email: form.email };
+          existingStaff[idx] = { ...existingStaff[idx], ...body, name: form.name.trim(), email: cleanEmail, restaurantId: userRestaurantId || existingStaff[idx].restaurantId };
         }
       } else {
         const newStaff = {
           id: `staff-${Date.now()}`,
-          name: form.name,
-          email: form.email,
+          name: form.name.trim(),
+          email: cleanEmail,
+          password: body.password || '123456',
           role: form.role,
-          pin: form.pin || '1234',
+          pin: body.pin || '1234',
           allowedViews: form.allowedViews,
+          restaurantId: userRestaurantId,
           isActive: true,
         };
         existingStaff.push(newStaff);
@@ -208,14 +225,29 @@ export default function UsersPage() {
     const action = u.isActive ? 'desactivar' : 'activar';
     if (!confirm(`¿Estás seguro de ${action} al usuario ${u.name}?`)) return;
     try {
-      const res = await fetch(getApiUrl(`/users/${u.id}`), {
+      await apiFetch(`/users/${u.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` },
         body: JSON.stringify({ isActive: !u.isActive }),
-      });
-      if (res.ok) { toast.success(`Usuario ${u.isActive ? 'desactivado' : 'activado'}`); fetchUsers(); }
-      else toast.error('Error al actualizar');
-    } catch { toast.error('Error de red'); }
+      }).catch(() => {});
+
+      // Actualizar también en caché local
+      try {
+        const cachedStr = localStorage.getItem('pos_registered_staff');
+        if (cachedStr) {
+          const cached: any[] = JSON.parse(cachedStr);
+          const idx = cached.findIndex(s => s.id === u.id || s.email === u.email);
+          if (idx !== -1) {
+            cached[idx].isActive = !u.isActive;
+            localStorage.setItem('pos_registered_staff', JSON.stringify(cached));
+          }
+        }
+      } catch {}
+
+      toast.success(`Usuario ${u.isActive ? 'desactivado' : 'activado'}`); 
+      fetchUsers(); 
+    } catch { 
+      toast.error('Error de red'); 
+    }
   };
 
   if (loading) return (

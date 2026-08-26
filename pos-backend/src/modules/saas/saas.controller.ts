@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards } from '@nestjs/common';
-import { SaasService, CreateRestaurantSaaS, UpdateRestaurantSaaS, UpdateAdminSaaS } from './saas.service';
+import { SaasService, CreateRestaurantSaaS, UpdateRestaurantSaaS, UpdateAdminSaaS, RenewSubscriptionDto } from './saas.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('saas')
@@ -42,8 +42,8 @@ export class SaasController {
   }
 
   @Patch('restaurants/:id/renew')
-  async renewSubscription(@Param('id') id: string, @Body() body: { days: number }) {
-    return this.saasService.renewSubscription(id, body.days);
+  async renewSubscription(@Param('id') id: string, @Body() body: RenewSubscriptionDto) {
+    return this.saasService.renewSubscription(id, Number(body.days));
   }
 
   @Patch('restaurants/:id')

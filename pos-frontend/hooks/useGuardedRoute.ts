@@ -54,9 +54,35 @@ export function useGuardedRoute(viewKey: string | null) {
         ? user.allowedViews 
         : (role === 'ADMIN' || role === 'SUPER_ADMIN' ? ['*'] : ['pos', 'cocina']);
 
+      // Si no es SuperAdmin, verificar que el restaurante no esté suspendido o vencido
+      if (role !== 'SUPER_ADMIN' && user.restaurantId) {
+        try {
+          const tenantsStr = localStorage.getItem('pos_saas_tenants_cache');
+          if (tenantsStr) {
+            const tenants: any[] = JSON.parse(tenantsStr);
+            const found = tenants.find(t => t.id === user.restaurantId);
+            if (found) {
+              const isSuspended = found.isActive === false || (found.subscriptionEndDate && new Date(found.subscriptionEndDate) < new Date());
+              if (isSuspended) {
+                localStorage.removeItem('pos_token');
+                localStorage.removeItem('pos_user');
+                router.push('/login');
+                return;
+              }
+            }
+          }
+        } catch {}
+      }
+
       // ADMIN and SUPER_ADMIN have full access
       const isAdmin = role === 'ADMIN' || role === 'SUPER_ADMIN' || allowedViews.includes('*');
       if (isAdmin) return;
+
+      // El Cajero siempre tiene acceso autorizado a Caja / Reporte de Turno
+      if (role === 'CASHIER' && viewKey === 'caja') return;
+
+      // Si la vista solicitada está explícitamente en allowedViews, permitir acceso
+      if (viewKey && allowedViews.includes(viewKey)) return;
 
       // Restricción estricta de rutas administrativas para Cajeros y Meseros
       const adminOnlyKeys = ['usuarios', 'configuracion', 'analytics', 'kardex'];
@@ -66,7 +92,7 @@ export function useGuardedRoute(viewKey: string | null) {
         return;
       }
 
-      // If a specific view key is required, check permission
+      // If a specific view key is required and not allowed, redirect to first allowed path
       if (viewKey && !allowedViews.includes(viewKey)) {
         const firstPath = getFirstAllowedPath(allowedViews);
         router.replace(firstPath);

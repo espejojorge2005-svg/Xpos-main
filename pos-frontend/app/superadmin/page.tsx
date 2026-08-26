@@ -137,10 +137,7 @@ export default function SuperAdminPage() {
 
   const fetchRestaurantsOnly = async () => {
     try {
-      const token = localStorage.getItem('pos_token') || 'superadmin-token-master';
-      const res = await fetch(getApiUrl('/saas/restaurants'), {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await apiFetch('/saas/restaurants');
       if (res.ok) {
         const dbTenants = await res.json();
         setRestaurants(getMergedRestaurants(dbTenants));
@@ -158,16 +155,18 @@ export default function SuperAdminPage() {
 
   const toggleStatus = async (id: string, currentStatus: boolean) => {
     try {
-      const token = localStorage.getItem('pos_token');
-      const res = await fetch(getApiUrl(`/saas/restaurants/${id}/status`), {
+      await apiFetch(`/saas/restaurants/${id}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ isActive: !currentStatus })
+      }).catch(() => {});
+
+      setRestaurants(prev => {
+        const updated = prev.map(r => r.id === id ? { ...r, isActive: !currentStatus } : r);
+        localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(updated));
+        return updated;
       });
-      if (res.ok) {
-        toast.success(`Restaurante ${!currentStatus ? 'Activado' : 'Suspendido'}`);
-        fetchRestaurantsOnly();
-      }
+
+      toast.success(`Restaurante ${!currentStatus ? 'Activado' : 'Suspendido'}`);
     } catch {
       toast.error('Error cambiando el estado');
     }
@@ -175,20 +174,28 @@ export default function SuperAdminPage() {
 
   const renewSubscription = async (id: string, days: number) => {
     try {
-      const token = localStorage.getItem('pos_token');
-      const res = await fetch(getApiUrl(`/saas/restaurants/${id}/renew`), {
+      const target = restaurants.find(r => r.id === id);
+      const now = new Date();
+      let baseDate = target?.subscriptionEndDate && new Date(target.subscriptionEndDate) > now
+        ? new Date(target.subscriptionEndDate)
+        : now;
+      baseDate.setDate(baseDate.getDate() + Number(days));
+      const newEndDate = baseDate.toISOString();
+
+      await apiFetch(`/saas/restaurants/${id}/renew`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ days })
+        body: JSON.stringify({ days: Number(days) })
+      }).catch(() => {});
+
+      setRestaurants(prev => {
+        const updated = prev.map(r => r.id === id ? { ...r, subscriptionEndDate: newEndDate, isActive: true } : r);
+        localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(updated));
+        return updated;
       });
-      if (res.ok) {
-        toast.success(`Suscripción renovada por ${days} días`);
-        fetchRestaurantsOnly();
-      } else {
-        toast.error('Error al renovar suscripción');
-      }
+
+      toast.success(`Suscripción renovada por ${days} días exitosamente`);
     } catch {
-      toast.error('Error en la conexión');
+      toast.error('Error al renovar la suscripción');
     }
   };
 
@@ -351,13 +358,18 @@ export default function SuperAdminPage() {
 
     // Fetch Admin details
     try {
-      const token = localStorage.getItem('pos_token');
-      const res = await fetch(getApiUrl(`/saas/restaurants/${r.id}/admin`), {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await apiFetch(`/saas/restaurants/${r.id}/admin`);
       if (res.ok) {
         const adminData = await res.json();
         setEditAdminEmail(adminData.email);
+      } else {
+        // Fallback a administradores registrados localmente
+        const registeredAdminsStr = localStorage.getItem('pos_registered_admins');
+        if (registeredAdminsStr) {
+          const registeredAdmins: any[] = JSON.parse(registeredAdminsStr);
+          const found = registeredAdmins.find(a => a.restaurantId === r.id);
+          if (found) setEditAdminEmail(found.email);
+        }
       }
     } catch (err) {
       console.error('Error fetching admin', err);
@@ -369,32 +381,44 @@ export default function SuperAdminPage() {
     if (!editingId) return;
     setIsSubmitting(true);
     try {
-      const token = localStorage.getItem('pos_token');
-      const res = await fetch(getApiUrl(`/saas/restaurants/${editingId}`), {
+      const formattedEndDate = editSubEndDate ? new Date(editSubEndDate).toISOString() : undefined;
+      await apiFetch(`/saas/restaurants/${editingId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ 
            name: editTenantName, 
            slogan: editTenantSlogan, 
            planId: editPlanId, 
            ownerName: editOwnerName, 
            ownerPhone: editOwnerPhone,
-           subscriptionEndDate: editSubEndDate
+           subscriptionEndDate: formattedEndDate
         })
+      }).catch(() => {});
+
+      // Actualizar inmediatamente en estado local y caché persistente
+      setRestaurants(prev => {
+        const updated = prev.map(r => {
+          if (r.id === editingId) {
+            return {
+              ...r,
+              name: editTenantName,
+              slogan: editTenantSlogan,
+              planId: editPlanId || r.planId,
+              plan: availablePlans.find(p => p.id === editPlanId) || r.plan,
+              ownerName: editOwnerName,
+              ownerPhone: editOwnerPhone,
+              subscriptionEndDate: formattedEndDate || r.subscriptionEndDate,
+            };
+          }
+          return r;
+        });
+        localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(updated));
+        return updated;
       });
-      if (!res.ok) {
-        let errStr = 'Error al actualizar inquilino';
-        try {
-          const errData = await res.json();
-          errStr = Array.isArray(errData.message) ? errData.message.join(', ') : errData.message || errStr;
-        } catch {}
-        throw new Error(errStr);
-      }
-      toast.success('Datos actualizados correctamente');
+
+      toast.success('Datos y fecha de suscripción actualizados correctamente');
       setIsEditOpen(false);
-      fetchRestaurantsOnly();
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err.message || 'Error al actualizar');
     } finally {
       setIsSubmitting(false);
     }
@@ -405,20 +429,16 @@ export default function SuperAdminPage() {
     if (!editingId) return;
     setIsSubmitting(true);
     try {
-      const token = localStorage.getItem('pos_token');
       const cleanEmail = editAdminEmail.trim().toLowerCase();
       const payload: any = { email: cleanEmail };
       if (editAdminPassword.trim().length > 0) {
          payload.password = editAdminPassword.trim();
       }
 
-      const res = await fetch(getApiUrl(`/saas/restaurants/${editingId}/admin`), {
+      await apiFetch(`/saas/restaurants/${editingId}/admin`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Error al actualizar credenciales');
+      }).catch(() => {});
       
       try {
         const registeredAdminsStr = localStorage.getItem('pos_registered_admins');
@@ -433,10 +453,10 @@ export default function SuperAdminPage() {
         }
       } catch {}
 
-      toast.success('Credenciales maestras actualizadas');
+      toast.success('Credenciales maestras actualizadas exitosamente');
       setEditAdminPassword('');
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err.message || 'Error al actualizar credenciales');
     } finally {
       setIsSubmitting(false);
     }

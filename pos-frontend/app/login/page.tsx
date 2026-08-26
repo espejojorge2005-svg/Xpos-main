@@ -15,6 +15,7 @@ interface StaffMember {
   role: string;
   pin?: string;
   allowedViews?: string[];
+  restaurantId?: string | null;
 }
 
 export default function LoginPage() {
@@ -61,9 +62,13 @@ export default function LoginPage() {
       const localStaffStr = localStorage.getItem('pos_registered_staff');
       const localStaff: any[] = localStaffStr ? JSON.parse(localStaffStr) : [];
       if (localStaff.length > 0) {
+        const filteredStaff = restId 
+          ? localStaff.filter(s => !s.restaurantId || s.restaurantId === restId) 
+          : localStaff;
+
         const map = new Map<string, StaffMember>();
         loadedStaff.forEach(s => map.set(s.id || s.name.toLowerCase(), s));
-        localStaff.forEach(s => {
+        filteredStaff.forEach(s => {
           const key = s.id || s.name.toLowerCase();
           if (!map.has(key)) {
             map.set(key, {
@@ -73,7 +78,12 @@ export default function LoginPage() {
               role: s.role || 'CASHIER',
               pin: s.pin,
               allowedViews: s.allowedViews || ['pos', 'cocina', 'caja'],
+              restaurantId: s.restaurantId || restId,
             });
+          } else {
+            const existing = map.get(key)!;
+            if (s.pin) existing.pin = s.pin;
+            if (s.restaurantId) existing.restaurantId = s.restaurantId;
           }
         });
         loadedStaff = Array.from(map.values());
@@ -105,31 +115,17 @@ export default function LoginPage() {
   const unlinkDevice = () => {
     localStorage.removeItem('pos_restaurant_id');
     localStorage.removeItem('pos_restaurant_config');
-    localStorage.removeItem('pos_registered_staff');
-    localStorage.removeItem('pos_registered_products');
-    localStorage.removeItem('pos_registered_categories');
-    localStorage.removeItem('pos_registered_stations');
     localStorage.removeItem('pos_token');
     localStorage.removeItem('pos_user');
-
     setRestaurantId(null);
     setStaff([]);
     setSelectedUser(null);
-    setPin('');
     setMode('ADMIN');
     setIsStaffLoading(false);
-    toast.success('Terminal desvinculada. Se eliminó la información del local anterior.');
+    toast.success('Terminal desvinculada. Se cerró la sesión del restaurante.');
   };
 
   const syncRestaurantSession = (newRestId?: string | null, newRestName?: string | null) => {
-    const oldRestId = localStorage.getItem('pos_restaurant_id');
-    if (oldRestId && newRestId && oldRestId !== newRestId) {
-      localStorage.removeItem('pos_registered_staff');
-      localStorage.removeItem('pos_registered_products');
-      localStorage.removeItem('pos_registered_categories');
-      localStorage.removeItem('pos_registered_stations');
-    }
-
     if (newRestId) {
       localStorage.setItem('pos_restaurant_id', newRestId);
     } else {
@@ -167,6 +163,22 @@ export default function LoginPage() {
     window.location.href = dest;
   };
 
+  const checkIsRestaurantSuspended = (restId?: string | null): boolean => {
+    if (!restId) return false;
+    try {
+      const tenantsStr = localStorage.getItem('pos_saas_tenants_cache');
+      if (tenantsStr) {
+        const tenants: any[] = JSON.parse(tenantsStr);
+        const found = tenants.find(t => t.id === restId);
+        if (found) {
+          if (found.isActive === false) return true;
+          if (found.subscriptionEndDate && new Date(found.subscriptionEndDate) < new Date()) return true;
+        }
+      }
+    } catch {}
+    return false;
+  };
+
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -191,6 +203,13 @@ export default function LoginPage() {
       }
 
       if (response && response.ok && data.access_token && data.user) {
+        // Verificar suspensión antes de conceder acceso
+        if (data.user.role !== 'SUPER_ADMIN' && checkIsRestaurantSuspended(data.user.restaurantId)) {
+          toast.error('Este restaurante se encuentra suspendido. Contacte al Administrador del Sistema.');
+          setLoading(false);
+          return;
+        }
+
         syncRestaurantSession(data.user.restaurantId, data.user.restaurantName);
         localStorage.setItem('pos_token', data.access_token);
         localStorage.setItem('pos_user', JSON.stringify(data.user)); 
@@ -207,6 +226,16 @@ export default function LoginPage() {
         const dest = data.user.role === 'SUPER_ADMIN' ? '/superadmin' : getFirstAllowedPath(data.user.allowedViews ?? ['*']);
         window.location.href = dest;
         return;
+      }
+
+      // Si el backend notificó explícitamente que el restaurante está suspendido o expirado
+      if (response && !response.ok && data.message) {
+        const msgLower = String(data.message).toLowerCase();
+        if (msgLower.includes('suspendido') || msgLower.includes('expirado') || msgLower.includes('expirada') || msgLower.includes('suscripción') || msgLower.includes('desactivado')) {
+          toast.error(data.message);
+          setLoading(false);
+          return;
+        }
       }
 
       // Fallback A: SuperAdmin SaaS Master
@@ -233,6 +262,13 @@ export default function LoginPage() {
       const matchedAdmin = registeredAdmins.find(a => a.email === cleanEmail);
 
       if (matchedAdmin) {
+        // Bloquear si el restaurante está suspendido
+        if (checkIsRestaurantSuspended(matchedAdmin.restaurantId)) {
+          toast.error('Este restaurante se encuentra suspendido. Contacte al Administrador del Sistema.');
+          setLoading(false);
+          return;
+        }
+
         if (matchedAdmin.password === cleanPassword) {
           const clientAdminUser = {
             id: `user-${matchedAdmin.restaurantId}`,
@@ -262,6 +298,12 @@ export default function LoginPage() {
       const matchedStaff = registeredStaff.find(s => s.email?.toLowerCase() === cleanEmail);
 
       if (matchedStaff) {
+        if (checkIsRestaurantSuspended(matchedStaff.restaurantId || restaurantId)) {
+          toast.error('El restaurante se encuentra suspendido por falta de pago o vencimiento.');
+          setLoading(false);
+          return;
+        }
+
         if (matchedStaff.password === cleanPassword || cleanPassword === '123456') {
           const loggedStaffUser = {
             id: matchedStaff.id || `staff-${Date.now()}`,
@@ -298,6 +340,14 @@ export default function LoginPage() {
     if (!selectedUser) return;
     setLoading(true);
 
+    const targetRestId = selectedUser.restaurantId || restaurantId;
+    if (checkIsRestaurantSuspended(targetRestId)) {
+      toast.error('Acceso bloqueado: El restaurante se encuentra suspendido.');
+      setLoading(false);
+      setPin('');
+      return;
+    }
+
     try {
       if (restaurantId) {
         const response = await fetch(getApiUrl('/auth/login/pin'), {
@@ -314,15 +364,37 @@ export default function LoginPage() {
           const dest = getFirstAllowedPath(data.user.allowedViews ?? ['*']);
           window.location.href = dest;
           return;
+        } else {
+          try {
+            const errData = await response.json();
+            if (errData.message && (errData.message.includes('suspendido') || errData.message.includes('expirado'))) {
+              toast.error(errData.message);
+              setLoading(false);
+              setPin('');
+              return;
+            }
+          } catch {}
         }
       }
     } catch (error) {
       console.warn('Network PIN authentication attempt:', error);
     }
 
-    // Local PIN authentication fallback
-    const expectedPin = selectedUser.pin || '1234';
-    if (enteredPin === expectedPin || enteredPin === '1234' || enteredPin === '2020') {
+    // Local PIN authentication fallback - Validación ESTRICTA del PIN
+    let expectedPin = selectedUser.pin;
+    if (!expectedPin) {
+      try {
+        const localStaffStr = localStorage.getItem('pos_registered_staff');
+        if (localStaffStr) {
+          const localStaff: any[] = JSON.parse(localStaffStr);
+          const found = localStaff.find(s => s.id === selectedUser.id || (s.email && s.email.toLowerCase() === selectedUser.email?.toLowerCase()));
+          if (found && found.pin) expectedPin = found.pin;
+        }
+      } catch {}
+    }
+
+    // Coincidencia ESTRICTA: solo ingresa si coincide exactamente con el PIN configurado
+    if (expectedPin && enteredPin === expectedPin) {
       const loggedUser = {
         id: selectedUser.id,
         name: selectedUser.name,

@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
-import { IsString, IsOptional, IsDateString, IsEnum } from 'class-validator';
+import { IsString, IsOptional, IsDateString, IsEnum, IsNumber } from 'class-validator';
 
 export class CreateRestaurantSaaS {
   @IsString()
@@ -70,6 +70,11 @@ export class UpdateAdminSaaS {
   @IsOptional()
   @IsString()
   password?: string;
+}
+
+export class RenewSubscriptionDto {
+  @IsNumber()
+  days: number;
 }
 
 @Injectable()
@@ -220,6 +225,26 @@ export class SaasService {
     return this.prisma.restaurant.update({
       where: { id },
       data: { isActive }
+    });
+  }
+
+  async renewSubscription(id: string, days: number) {
+    const restaurant = await this.prisma.restaurant.findUnique({ where: { id } });
+    if (!restaurant) throw new NotFoundException('Restaurante no encontrado');
+
+    const now = new Date();
+    let baseDate = restaurant.subscriptionEndDate && new Date(restaurant.subscriptionEndDate) > now 
+      ? new Date(restaurant.subscriptionEndDate) 
+      : now;
+
+    baseDate.setDate(baseDate.getDate() + Number(days));
+
+    return this.prisma.restaurant.update({
+      where: { id },
+      data: {
+        subscriptionEndDate: baseDate,
+        isActive: true,
+      }
     });
   }
 

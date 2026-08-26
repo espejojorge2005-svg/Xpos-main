@@ -93,9 +93,13 @@ export default function Sidebar() {
 
   if (pathname === '/login' || pathname === '/register' || pathname.startsWith('/superadmin')) return null;
 
-  // Filter menu: ADMIN ('*') sees everything, others see only their allowed views
+  // Filter menu: ADMIN ('*') sees everything, others see only their allowed views (CASHIER has caja by default)
   const isAdmin = role === 'ADMIN' || role === 'SUPER_ADMIN' || allowedViews.includes('*');
-  const menuItems = ALL_MENU_ITEMS.filter(item => isAdmin || allowedViews.includes(item.key));
+  const menuItems = ALL_MENU_ITEMS.filter(item => 
+    isAdmin || 
+    allowedViews.includes(item.key) || 
+    (role === 'CASHIER' && item.key === 'caja')
+  );
 
   const ROLE_UI: Record<string, any> = {
     SUPER_ADMIN: { label: 'Super Admin', bg: 'bg-violet-50 border-violet-100', text: 'text-violet-600', icon: Shield },
