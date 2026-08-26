@@ -249,14 +249,18 @@ export default function SuperAdminPage() {
       });
 
       if (!res1.ok) {
-        let errStr = 'Error al crear el restaurante';
-        try {
-          const errData = await res1.json();
-          errStr = Array.isArray(errData.message) ? errData.message.join(', ') : errData.message || errStr;
-        } catch {}
-        toast.error(errStr);
-        setIsSubmitting(false);
-        return;
+        if (res1.status === 401) {
+          console.warn('Backend API returned 401 Unauthorized. Fallback to local tenant creation.');
+        } else {
+          let errStr = 'Error al crear el restaurante';
+          try {
+            const errData = await res1.json();
+            errStr = Array.isArray(errData.message) ? errData.message.join(', ') : errData.message || errStr;
+          } catch {}
+          toast.error(errStr);
+          setIsSubmitting(false);
+          return;
+        }
       }
       
       const createdOnServer = await res1.json();

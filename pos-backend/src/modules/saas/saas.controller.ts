@@ -1,7 +1,9 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards } from '@nestjs/common';
 import { SaasService, CreateRestaurantSaaS, UpdateRestaurantSaaS, UpdateAdminSaaS } from './saas.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('saas')
+@UseGuards(JwtAuthGuard)
 export class SaasController {
   constructor(private readonly saasService: SaasService) {}
 

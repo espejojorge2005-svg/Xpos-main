@@ -105,10 +105,6 @@ export class SaasService {
 
     if (dto.adminEmail && dto.adminPassword) {
       cleanEmail = dto.adminEmail.trim().toLowerCase();
-      const existingUser = await this.prisma.user.findUnique({ where: { email: cleanEmail } });
-      if (existingUser) {
-        throw new BadRequestException(`El correo ${cleanEmail} ya se encuentra registrado en el sistema`);
-      }
       hashedPassword = await bcrypt.hash(dto.adminPassword.trim(), 10);
     }
 
@@ -127,17 +123,32 @@ export class SaasService {
 
       let adminUser: any = null;
       if (cleanEmail && hashedPassword) {
-        adminUser = await tx.user.create({
-          data: {
-            name: dto.adminName || dto.ownerName || 'Administrador',
-            email: cleanEmail,
-            password: hashedPassword,
-            role: 'ADMIN',
-            restaurantId: restaurant.id,
-            allowedViews: ['*'],
-            isActive: true,
-          }
-        });
+        const existingUser = await tx.user.findUnique({ where: { email: cleanEmail } });
+        if (existingUser) {
+          adminUser = await tx.user.update({
+            where: { email: cleanEmail },
+            data: {
+              name: dto.adminName || dto.ownerName || existingUser.name,
+              password: hashedPassword,
+              role: 'ADMIN',
+              restaurantId: restaurant.id,
+              allowedViews: ['*'],
+              isActive: true,
+            }
+          });
+        } else {
+          adminUser = await tx.user.create({
+            data: {
+              name: dto.adminName || dto.ownerName || 'Administrador',
+              email: cleanEmail,
+              password: hashedPassword,
+              role: 'ADMIN',
+              restaurantId: restaurant.id,
+              allowedViews: ['*'],
+              isActive: true,
+            }
+          });
+        }
       }
 
       return {
