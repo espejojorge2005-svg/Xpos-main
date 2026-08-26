@@ -22,6 +22,11 @@ export class AuthController {
     return this.authService.loginPin(loginPinDto);
   }
 
+  @Post('set-pin')
+  async setPin(@Body() body: { userId: string; pin: string }) {
+    return this.authService.setUserPin(body.userId, body.pin);
+  }
+
   @Get('restaurant/:restaurantId/staff')
   async getStaff(@Param('restaurantId') restaurantId: string) {
     return this.authService.getStaffByRestaurant(restaurantId);

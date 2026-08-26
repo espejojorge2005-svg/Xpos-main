@@ -134,7 +134,7 @@ export class AuthService {
     const payload = { sub: user.id, email: user.email, role: user.role, allowedViews, restaurantId: user.restaurantId, restaurantName };
     return {
       access_token: this.jwtService.sign(payload),
-      user: { id: user.id, name: user.name, role: user.role, allowedViews, restaurantId: user.restaurantId, restaurantName }
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, pin: user.pin || null, allowedViews, restaurantId: user.restaurantId, restaurantName }
     };
   }
 
@@ -163,8 +163,20 @@ export class AuthService {
     const payload = { sub: user.id, email: user.email, role: user.role, allowedViews, restaurantId: user.restaurantId, restaurantName };
     return {
       access_token: this.jwtService.sign(payload),
-      user: { id: user.id, name: user.name, role: user.role, allowedViews, restaurantId: user.restaurantId, restaurantName }
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, pin: user.pin || null, allowedViews, restaurantId: user.restaurantId, restaurantName }
     };
+  }
+
+  async setUserPin(userId: string, pin: string) {
+    const cleanPin = pin.trim().replace(/\D/g, '');
+    if (cleanPin.length < 4 || cleanPin.length > 6) {
+      throw new BadRequestException('El PIN debe ser de 4 a 6 dígitos');
+    }
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { pin: cleanPin }
+    });
+    return { message: 'PIN configurado correctamente', pin: updated.pin };
   }
 
   async getStaffByRestaurant(restaurantId: string) {

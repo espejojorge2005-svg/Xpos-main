@@ -31,6 +31,11 @@ export default function LoginPage() {
   // PIN form
   const [pin, setPin] = useState('');
   
+  // PIN Setup Modal State for First Login
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [newPin, setNewPin] = useState('');
+  const [pendingSession, setPendingSession] = useState<any>(null);
+
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
@@ -90,6 +95,9 @@ export default function LoginPage() {
     const savedRestaurantId = localStorage.getItem('pos_restaurant_id');
     if (savedRestaurantId) {
       setRestaurantId(savedRestaurantId);
+      setMode('STAFF'); // Terminal vinculada: mostrar directo teclado PIN de personal
+    } else {
+      setMode('ADMIN'); // Terminal nueva: pedir correo y contraseña primero
     }
     fetchStaff(savedRestaurantId);
   }, []);
@@ -116,7 +124,6 @@ export default function LoginPage() {
   const syncRestaurantSession = (newRestId?: string | null, newRestName?: string | null) => {
     const oldRestId = localStorage.getItem('pos_restaurant_id');
     if (oldRestId && newRestId && oldRestId !== newRestId) {
-      // Switching to a different business! Clear previous business local cache
       localStorage.removeItem('pos_registered_staff');
       localStorage.removeItem('pos_registered_products');
       localStorage.removeItem('pos_registered_categories');
@@ -132,6 +139,32 @@ export default function LoginPage() {
     if (newRestName) {
       localStorage.setItem('pos_restaurant_config', JSON.stringify({ name: newRestName }));
     }
+  };
+
+  const handleSaveNewPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pendingSession || newPin.length < 4) {
+      toast.error('El PIN debe contener al menos 4 dígitos');
+      return;
+    }
+
+    try {
+      await fetch(getApiUrl('/auth/set-pin'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${pendingSession.access_token}`
+        },
+        body: JSON.stringify({ userId: pendingSession.user.id, pin: newPin })
+      });
+    } catch {}
+
+    const updatedUser = { ...pendingSession.user, pin: newPin };
+    localStorage.setItem('pos_user', JSON.stringify(updatedUser));
+
+    toast.success('¡PIN de acceso rápido configurado exitosamente!');
+    const dest = updatedUser.role === 'SUPER_ADMIN' ? '/superadmin' : getFirstAllowedPath(updatedUser.allowedViews ?? ['*']);
+    window.location.href = dest;
   };
 
   const handleAdminLogin = async (e: React.FormEvent) => {
@@ -161,6 +194,14 @@ export default function LoginPage() {
         syncRestaurantSession(data.user.restaurantId, data.user.restaurantName);
         localStorage.setItem('pos_token', data.access_token);
         localStorage.setItem('pos_user', JSON.stringify(data.user)); 
+
+        // Si el usuario no tiene PIN configurado, solicitar configuración rápida de PIN
+        if (!data.user.pin && data.user.role !== 'SUPER_ADMIN') {
+          setPendingSession(data);
+          setShowPinModal(true);
+          setLoading(false);
+          return;
+        }
         
         toast.success(`¡Bienvenido, ${data.user.name}!`);
         const dest = data.user.role === 'SUPER_ADMIN' ? '/superadmin' : getFirstAllowedPath(data.user.allowedViews ?? ['*']);
@@ -523,6 +564,45 @@ export default function LoginPage() {
 
         </div>
       </div>
+
+      {/* PIN SETUP MODAL FOR FIRST LOGIN */}
+      {showPinModal && pendingSession && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl space-y-6">
+            <div className="w-16 h-16 bg-emerald-500/20 rounded-2xl flex items-center justify-center mx-auto text-emerald-400 border border-emerald-500/30">
+              <KeyRound className="w-8 h-8" />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-white">Configura tu PIN Rápido</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Hola <strong className="text-white">{pendingSession.user.name}</strong>. Asigna un PIN de 4 dígitos para ingresar rápido en este celular o terminal sin escribir tu correo.
+              </p>
+            </div>
+
+            <form onSubmit={handleSaveNewPin} className="space-y-4">
+              <div>
+                <input
+                  type="password"
+                  maxLength={6}
+                  pattern="[0-9]*"
+                  required
+                  value={newPin}
+                  onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ''))}
+                  placeholder="Ej. 1234"
+                  className="w-full py-4 text-center font-black text-2xl tracking-[0.5em] bg-slate-800 border border-slate-700 text-emerald-400 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3.5 rounded-2xl shadow-lg shadow-emerald-500/20 transition-all text-sm"
+              >
+                Guardar PIN e Ingresar
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
