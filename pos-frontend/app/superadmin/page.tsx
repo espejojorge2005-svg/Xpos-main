@@ -1,5 +1,5 @@
 'use client';
-import { getApiUrl } from '@/utils/api';
+import { getApiUrl, apiFetch } from '@/utils/api';
 
 import { useState, useEffect } from 'react';
 import { Plus, Search, Store, Users, Receipt, Building, Mail, Lock, User, Check, X, Building2, Phone, Crown, CalendarPlus, Edit, LayoutDashboard, Settings, Trash2 } from 'lucide-react';
@@ -232,10 +232,8 @@ export default function SuperAdminPage() {
     let finalRestaurantId = newMockRestaurant.id;
 
     try {
-      const token = localStorage.getItem('pos_token') || 'superadmin-token-master';
-      const res1 = await fetch(getApiUrl('/saas/restaurants'), {
+      const res1 = await apiFetch('/saas/restaurants', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ 
            name: tenantName,
            slogan: tenantSlogan,
