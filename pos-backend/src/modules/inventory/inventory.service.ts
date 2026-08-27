@@ -9,18 +9,27 @@ import { CreateRecipeItemDto } from './dto/create-recipe-item.dto';
 export class InventoryService {
   constructor(private prisma: PrismaService) {}
 
-  async createCategory(data: CreateCategoryDto) {
+  async createCategory(data: CreateCategoryDto, restaurantId?: string | null) {
+    const isUuid = restaurantId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(restaurantId);
     return this.prisma.category.create({
       data: {
         name: data.name,
+        ...(isUuid ? { restaurantId } : {}),
       },
     });
   }
 
-  async findAllCategories() {
+  async findAllCategories(restaurantId?: string | null) {
+    const isUuid = restaurantId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(restaurantId);
+    if (!isUuid) {
+      return []; // Si es un negocio nuevo o mock local, empieza completamente vacío sin categorías de otros
+    }
     return this.prisma.category.findMany({
+      where: {
+        restaurantId,
+      },
       include: {
-        products: true, // Para que cuando pidamos las categorías, nos traiga sus platos
+        products: true,
       },
     });
   }

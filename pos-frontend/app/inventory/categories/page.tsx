@@ -1,6 +1,6 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
-import { getScopedStorage, setScopedStorage } from '@/utils/storage';
+import { getRestaurantId, getScopedStorage, setScopedStorage } from '@/utils/storage';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -11,6 +11,7 @@ import { useGuardedRoute } from '@/hooks/useGuardedRoute';
 interface Category {
   id: string;
   name: string;
+  restaurantId?: string | null;
 }
 
 export default function CategoriesPage() {
@@ -27,17 +28,25 @@ export default function CategoriesPage() {
   });
 
   const fetchCategories = async () => {
-    const token = localStorage.getItem('pos_token');
+    const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
+    const currentRestId = getRestaurantId();
     let loadedCats: Category[] | null = null;
     try {
       const response = await fetch(getApiUrl('/inventory/categories'), {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'x-restaurant-id': currentRestId || ''
+        }
       });
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
-          loadedCats = data;
-          setScopedStorage('pos_registered_categories', data);
+          // Filtrar estrictamente para que negocios nuevos no reciban categorías globales ni de otros negocios
+          const filtered = currentRestId
+            ? data.filter((c: any) => c.restaurantId === currentRestId)
+            : data;
+          loadedCats = filtered;
+          setScopedStorage('pos_registered_categories', filtered);
         }
       }
     } catch {}
@@ -61,7 +70,8 @@ export default function CategoriesPage() {
     e.preventDefault();
     if (!formData.name.trim()) return toast.error('El nombre de la categoría es obligatorio');
     setIsSaving(true);
-    const token = localStorage.getItem('pos_token');
+    const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
+    const currentRestId = getRestaurantId();
     
     const isEditing = Boolean(formData.id);
     const catId = isEditing ? formData.id : `cat-${Date.now()}`;
@@ -69,22 +79,33 @@ export default function CategoriesPage() {
       ? getApiUrl(`/inventory/category/${formData.id}`) : getApiUrl(`/inventory/category`);
     
     const method = isEditing ? 'PATCH' : 'POST';
-    const bodyData = { name: formData.name.trim() };
+    const bodyData = { 
+      name: formData.name.trim(),
+      restaurantId: currentRestId || undefined
+    };
 
-    // Update locally immediately
+    // Update locally immediately with restaurant scope
+    const newCategory: Category = { 
+      id: catId, 
+      name: formData.name.trim(),
+      restaurantId: currentRestId || undefined
+    };
+
     const updatedCats = isEditing
       ? categories.map(c => c.id === formData.id ? { ...c, name: formData.name.trim() } : c)
-      : [...categories, { id: catId, name: formData.name.trim() }];
+      : [...categories, newCategory];
     
     setCategories(updatedCats);
     setScopedStorage('pos_registered_categories', updatedCats);
+    window.dispatchEvent(new Event('storage'));
 
     try {
       await fetch(url, {
         method,
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
+          'Authorization': `Bearer ${token}`,
+          'x-restaurant-id': currentRestId || ''
         },
         body: JSON.stringify(bodyData),
       });
@@ -98,15 +119,20 @@ export default function CategoriesPage() {
   const handleDelete = async (id: string) => {
     if (!window.confirm('¿Estás seguro de eliminar esta categoría?')) return;
     
+    const currentRestId = getRestaurantId();
     const updatedCats = categories.filter(c => c.id !== id);
     setCategories(updatedCats);
     setScopedStorage('pos_registered_categories', updatedCats);
+    window.dispatchEvent(new Event('storage'));
 
-    const token = localStorage.getItem('pos_token');
+    const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
     try {
       await fetch(getApiUrl(`/inventory/category/${id}`), {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'x-restaurant-id': currentRestId || ''
+        }
       });
     } catch {}
 
@@ -197,7 +223,17 @@ export default function CategoriesPage() {
               ))}
               {filteredCategories.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="p-10 text-center text-slate-400">No hay categorías registradas.</td>
+                  <td colSpan={2} className="p-12 text-center">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <div className="p-3 bg-slate-100 rounded-2xl text-slate-400 mb-1">
+                        <Layers className="w-8 h-8 stroke-[1.5]" />
+                      </div>
+                      <p className="font-black text-slate-700 text-base">No hay categorías registradas en este negocio</p>
+                      <p className="text-xs font-medium text-slate-400 max-w-sm">
+                        Este negocio inicia con el catálogo limpio. Pulsa en <span className="font-bold text-indigo-600">"Nueva Categoría"</span> para agregar tu primera sección.
+                      </p>
+                    </div>
+                  </td>
                 </tr>
               )}
             </tbody>

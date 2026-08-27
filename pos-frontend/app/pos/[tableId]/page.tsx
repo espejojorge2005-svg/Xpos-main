@@ -1,6 +1,6 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
-import { getScopedStorage, setScopedStorage } from '@/utils/storage';
+import { getRestaurantId, getScopedStorage, setScopedStorage } from '@/utils/storage';
 
 import { useEffect, useState, use } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -147,8 +147,12 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
       let loadedCats: Category[] = [];
       let loadedProds: Product[] = [];
 
+      const currentRestId = getRestaurantId();
       try {
-        const headers = { 'Authorization': `Bearer ${token}` };
+        const headers: Record<string, string> = { 
+          'Authorization': `Bearer ${token}`,
+          'x-restaurant-id': currentRestId || ''
+        };
         
         const [categoriesRes, productsRes, activeOrderRes] = await Promise.all([
           fetch(getApiUrl('/inventory/categories'), { headers }).catch(() => null),
@@ -159,7 +163,11 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         if (categoriesRes && categoriesRes.ok) {
           try {
             const catsData = await categoriesRes.json();
-            if (Array.isArray(catsData) && catsData.length > 0) loadedCats = catsData;
+            if (Array.isArray(catsData) && catsData.length > 0) {
+              loadedCats = currentRestId
+                ? catsData.filter((c: any) => c.restaurantId === currentRestId)
+                : catsData;
+            }
           } catch {}
         }
 

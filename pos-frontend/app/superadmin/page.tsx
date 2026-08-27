@@ -335,6 +335,16 @@ export default function SuperAdminPage() {
       } catch {}
     }
 
+    // Inicializar colecciones 100% vacías para el nuevo negocio
+    try {
+      localStorage.setItem(`pos_registered_categories_${finalRestaurantId}`, JSON.stringify([]));
+      localStorage.setItem(`pos_registered_products_${finalRestaurantId}`, JSON.stringify([]));
+      localStorage.setItem(`pos_registered_stations_${finalRestaurantId}`, JSON.stringify([]));
+      localStorage.setItem(`pos_stock_movements_${finalRestaurantId}`, JSON.stringify([]));
+      localStorage.setItem(`pos_active_table_orders_${finalRestaurantId}`, JSON.stringify({}));
+      localStorage.setItem(`pos_local_kitchen_orders_${finalRestaurantId}`, JSON.stringify([]));
+    } catch {}
+
     setRestaurants(prev => {
       const updated = [newMockRestaurant, ...prev];
       localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(updated));
@@ -585,12 +595,26 @@ export default function SuperAdminPage() {
                  </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 pb-4">
+              <div className="grid grid-cols-2 gap-3 pb-3">
                  <button onClick={() => renewSubscription(r.id, 30)} className="flex items-center justify-center gap-1.5 py-2 text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900 rounded-lg transition-colors">
                    <CalendarPlus className="w-3.5 h-3.5" /> +1 Mes
                  </button>
                  <button onClick={() => renewSubscription(r.id, 365)} className="flex items-center justify-center gap-1.5 py-2 text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900 rounded-lg transition-colors">
                    <Crown className="w-3.5 h-3.5" /> +1 Año
+                 </button>
+              </div>
+
+              <div className="pb-3">
+                 <button 
+                   onClick={() => {
+                     localStorage.setItem('pos_restaurant_id', r.id);
+                     localStorage.setItem('pos_restaurant_config', JSON.stringify({ name: r.name, slogan: r.slogan }));
+                     toast.success(`Ingresando al contexto de: ${r.name}`);
+                     window.location.href = '/inventory/categories';
+                   }} 
+                   className="w-full flex items-center justify-center gap-2 py-2.5 text-xs font-black uppercase tracking-wider bg-slate-900 hover:bg-indigo-600 text-white rounded-xl transition-all shadow-sm active:scale-95"
+                 >
+                   <Store className="w-3.5 h-3.5" /> Administrar Negocio / Categorías
                  </button>
               </div>
               

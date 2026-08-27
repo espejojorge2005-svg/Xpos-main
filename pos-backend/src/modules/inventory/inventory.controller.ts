@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Patch, Delete, Param } from '@nestjs/common';
+import { Controller, Post, Body, Get, Patch, Delete, Param, Req, Headers } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
@@ -11,8 +11,13 @@ export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
   @Post('category') // POST /api/v1/inventory/category
-  async createCategory(@Body() createCategoryDto: CreateCategoryDto) {
-    return this.inventoryService.createCategory(createCategoryDto);
+  async createCategory(
+    @Body() createCategoryDto: CreateCategoryDto,
+    @Req() req?: any,
+    @Headers('x-restaurant-id') restHeader?: string
+  ) {
+    const restaurantId = req?.user?.restaurantId || restHeader || (createCategoryDto as any)?.restaurantId || null;
+    return this.inventoryService.createCategory(createCategoryDto, restaurantId);
   }
 
   @Post('product') // Ruta final: POST /api/v1/inventory/product
@@ -31,9 +36,13 @@ export class InventoryController {
   }
 
   @Get('categories') // GET /api/v1/inventory/categories
-  async getCategories() {
+  async getCategories(
+    @Req() req?: any,
+    @Headers('x-restaurant-id') restHeader?: string
+  ) {
     try {
-      return await this.inventoryService.findAllCategories();
+      const restaurantId = req?.user?.restaurantId || restHeader || null;
+      return await this.inventoryService.findAllCategories(restaurantId);
     } catch (e: any) {
       console.error('Error fetching categories:', e);
       return { error: e.message || 'Unknown error', stack: e.stack };

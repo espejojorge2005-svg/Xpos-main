@@ -1,6 +1,6 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
-import { getScopedStorage, setScopedStorage } from '@/utils/storage';
+import { getRestaurantId, getScopedStorage, setScopedStorage } from '@/utils/storage';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -38,6 +38,7 @@ interface ModifierGroup {
 interface Category {
   id: string;
   name: string;
+  restaurantId?: string | null;
 }
 
 interface KitchenStation {
@@ -102,17 +103,24 @@ export default function InventoryPage() {
   };
 
   const fetchCategories = async () => {
-    const token = localStorage.getItem('pos_token');
+    const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
+    const currentRestId = getRestaurantId();
     let loadedCats: Category[] | null = null;
     try {
       const response = await fetch(getApiUrl('/inventory/categories'), {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'x-restaurant-id': currentRestId || ''
+        }
       });
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
-          loadedCats = data;
-          setScopedStorage('pos_registered_categories', data);
+          const filtered = currentRestId
+            ? data.filter((c: any) => c.restaurantId === currentRestId)
+            : data;
+          loadedCats = filtered;
+          setScopedStorage('pos_registered_categories', filtered);
         }
       }
     } catch {}
