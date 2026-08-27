@@ -78,96 +78,137 @@ export default function UsersPage() {
     } catch { /* ignore network error */ }
 
     // Merge with registered staff from localStorage for standalone/offline support
-    try {
-      const cachedStaffStr = localStorage.getItem('pos_registered_staff');
-      const cachedStaff: any[] = cachedStaffStr ? JSON.parse(cachedStaffStr) : [];
-      const currentRestId = localStorage.getItem('pos_restaurant_id') || (typeof window !== 'undefined' && localStorage.getItem('pos_user') ? JSON.parse(localStorage.getItem('pos_user') || '{}').restaurantId : null);
+    if (typeof window !== 'undefined') {
+      try {
+        const cachedStaffStr = localStorage.getItem('pos_registered_staff');
+        const cachedStaff: any[] = cachedStaffStr ? JSON.parse(cachedStaffStr) : [];
+        const currentRestId = localStorage.getItem('pos_restaurant_id') || 
+          (localStorage.getItem('pos_user') ? JSON.parse(localStorage.getItem('pos_user') || '{}').restaurantId : null);
 
-      const localUsers: User[] = cachedStaff
-        .filter((s: any) => !s.restaurantId || !currentRestId || s.restaurantId === currentRestId)
-        .map((s: any) => ({
-          id: s.id || `staff-${Date.now()}`,
-          name: s.name,
-          email: s.email || `${s.name.toLowerCase().replace(/\s+/g, '')}@restaurante.com`,
-          role: s.role || 'CASHIER',
-          pin: s.pin,
-          isActive: s.isActive ?? true,
-          allowedViews: s.allowedViews || ['pos', 'cocina', 'caja'],
-        }));
+        const localUsers: User[] = cachedStaff
+          .filter((s: any) => !s.restaurantId || !currentRestId || s.restaurantId === currentRestId)
+          .map((s: any) => ({
+            id: s.id || `staff-${Date.now()}`,
+            name: s.name,
+            email: s.email || `${s.name.toLowerCase().replace(/\s+/g, '')}@restaurante.com`,
+            role: s.role || 'CASHIER',
+            pin: s.pin,
+            isActive: s.isActive ?? true,
+            allowedViews: s.allowedViews || ['pos', 'cocina', 'caja'],
+          }));
 
-      const mergedMap = new Map<string, User>();
-      serverUsers.forEach(u => mergedMap.set(u.email.toLowerCase(), u));
-      localUsers.forEach(u => {
-        if (!mergedMap.has(u.email.toLowerCase())) {
-          mergedMap.set(u.email.toLowerCase(), u);
+        const mergedMap = new Map<string, User>();
+        serverUsers.forEach(u => mergedMap.set(u.email.toLowerCase(), u));
+        localUsers.forEach(u => {
+          if (!mergedMap.has(u.email.toLowerCase())) {
+            mergedMap.set(u.email.toLowerCase(), u);
+          }
+        });
+
+        const finalUsers = Array.from(mergedMap.values());
+        if (finalUsers.length > 0) {
+          setUsers(finalUsers);
+        } else {
+          setUsers([{
+            id: 'admin-master',
+            name: 'Administrador Maestro',
+            email: 'admin@restaurante.com',
+            role: 'ADMIN',
+            isActive: true,
+            allowedViews: ['*'],
+          }]);
         }
-      });
-
-      const finalUsers = Array.from(mergedMap.values());
-      if (finalUsers.length > 0) {
-        setUsers(finalUsers);
-      } else {
-        // Fallback default admin user if list is empty
-        setUsers([{
-          id: 'admin-master',
-          name: 'Administrador Maestro',
-          email: 'admin@restaurante.com',
-          role: 'ADMIN',
-          isActive: true,
-          allowedViews: ['*'],
-        }]);
+      } catch {
+        setUsers(serverUsers);
+      } finally {
+        setLoading(false);
       }
-    } catch {
+    } else {
       setUsers(serverUsers);
-    } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchUsers(); }, []);
-
-  // Obtener información estricta de la suscripción y límite de usuarios del plan
+  // Obtener información estricta de la suscripción y límite de usuarios del plan de forma segura para SSR
   const getSubscriptionInfo = () => {
-    const currentRestId = localStorage.getItem('pos_restaurant_id') || 
-      (typeof window !== 'undefined' && localStorage.getItem('pos_user') ? JSON.parse(localStorage.getItem('pos_user') || '{}').restaurantId : null);
-    
-    let tenant: any = null;
+    if (typeof window === 'undefined') {
+      return {
+        tenant: null,
+        planName: 'Plan Básico',
+        maxUsers: 3,
+        isSuspended: false,
+        isExpired: false,
+        subscriptionEndDate: null
+      };
+    }
+
     try {
+      const currentRestId = localStorage.getItem('pos_restaurant_id') || 
+        (localStorage.getItem('pos_user') ? JSON.parse(localStorage.getItem('pos_user') || '{}').restaurantId : null);
+      
+      let tenant: any = null;
       const cachedTenantsStr = localStorage.getItem('pos_saas_tenants_cache');
       if (cachedTenantsStr) {
         const tenants: any[] = JSON.parse(cachedTenantsStr);
         tenant = tenants.find(t => t.id === currentRestId) || tenants[0];
       }
-    } catch {}
 
-    let plan: any = tenant?.plan || null;
-    if (!plan?.maxUsers && tenant?.planId) {
-      try {
+      let plan: any = tenant?.plan || null;
+      if (!plan?.maxUsers && tenant?.planId) {
         const cachedPlansStr = localStorage.getItem('pos_saas_plans_cache');
         if (cachedPlansStr) {
           const plans: any[] = JSON.parse(cachedPlansStr);
           plan = plans.find(p => p.id === tenant.planId);
         }
-      } catch {}
+      }
+
+      const planName = plan?.name || 'Plan Básico';
+      const maxUsers = Number(plan?.maxUsers) || 3;
+      const isSuspended = tenant?.isActive === false;
+      const isExpired = tenant?.subscriptionEndDate ? new Date(tenant.subscriptionEndDate) < new Date() : false;
+      const subscriptionEndDate = tenant?.subscriptionEndDate || null;
+
+      return {
+        tenant,
+        planName,
+        maxUsers,
+        isSuspended,
+        isExpired,
+        subscriptionEndDate
+      };
+    } catch {
+      return {
+        tenant: null,
+        planName: 'Plan Básico',
+        maxUsers: 3,
+        isSuspended: false,
+        isExpired: false,
+        subscriptionEndDate: null
+      };
     }
-
-    const planName = plan?.name || 'Plan Básico';
-    const maxUsers = Number(plan?.maxUsers) || 3;
-    const isSuspended = tenant?.isActive === false;
-    const isExpired = tenant?.subscriptionEndDate ? new Date(tenant.subscriptionEndDate) < new Date() : false;
-    const subscriptionEndDate = tenant?.subscriptionEndDate || null;
-
-    return {
-      tenant,
-      planName,
-      maxUsers,
-      isSuspended,
-      isExpired,
-      subscriptionEndDate
-    };
   };
 
-  const subInfo = getSubscriptionInfo();
+  const [subInfo, setSubInfo] = useState({
+    tenant: null as any,
+    planName: 'Plan Básico',
+    maxUsers: 3,
+    isSuspended: false,
+    isExpired: false,
+    subscriptionEndDate: null as string | null
+  });
+
+  useEffect(() => { 
+    fetchUsers(); 
+    setSubInfo(getSubscriptionInfo());
+
+    const handleStorageChange = () => {
+      fetchUsers();
+      setSubInfo(getSubscriptionInfo());
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   const activeUsersCount = users.filter(u => u.isActive !== false).length;
   const isLimitReached = activeUsersCount >= subInfo.maxUsers;
   const isSubscriptionBlocked = subInfo.isSuspended || subInfo.isExpired;
