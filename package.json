@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "npm --prefix pos-frontend run dev",
+    "print": "npm --prefix pos-print-agent start",
+    "dev:print": "npm --prefix pos-print-agent start",
     "dev:all": "concurrently \"npm --prefix pos-frontend run dev\" \"npm --prefix pos-backend run start:dev\"",
     "dev:backend": "npm --prefix pos-backend run start:dev",
     "postinstall": "cd pos-backend && npm install && npx prisma generate",

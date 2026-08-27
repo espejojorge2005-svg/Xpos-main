@@ -13,6 +13,7 @@ import {
 import { toast } from 'sonner';
 import { useGuardedRoute } from '@/hooks/useGuardedRoute';
 import { getApiUrl } from '@/utils/api';
+import { getScopedStorage } from '@/utils/storage';
 
 interface KPI {
   totalRevenue: number;
@@ -32,6 +33,182 @@ interface AnalyticsData {
 
 const COLORS = ['#8b5cf6', '#10b981', '#f59e0b', '#3b82f6', '#ec4899'];
 
+function parseLocalDate(dateInput: any): Date | null {
+  if (!dateInput) return null;
+  if (dateInput instanceof Date) return isNaN(dateInput.getTime()) ? null : dateInput;
+  if (typeof dateInput === 'number') {
+    const d = new Date(dateInput);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof dateInput === 'string') {
+    if (dateInput.includes('/')) {
+      const parts = dateInput.split(/[/,\s:]+/);
+      if (parts.length >= 3) {
+        const d = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10) - 1;
+        const y = parseInt(parts[2], 10);
+        const h = parts[3] ? parseInt(parts[3], 10) : 0;
+        const min = parts[4] ? parseInt(parts[4], 10) : 0;
+        const dateObj = new Date(y, m, d, h, min);
+        if (!isNaN(dateObj.getTime())) return dateObj;
+      }
+    }
+    const d = new Date(dateInput);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return null;
+}
+
+function computeLocalAnalytics(fromStr: string, toStr: string): AnalyticsData {
+  const fromParts = fromStr.split('-');
+  const fromDate = new Date(Number(fromParts[0]), Number(fromParts[1]) - 1, Number(fromParts[2]), 0, 0, 0, 0);
+  const toParts = toStr.split('-');
+  const toDate = new Date(Number(toParts[0]), Number(toParts[1]) - 1, Number(toParts[2]), 23, 59, 59, 999);
+
+  const currentShift = getScopedStorage<any>('mock_cash_shift', null);
+  const pastClosures = getScopedStorage<any[]>('pos_shift_history', []);
+
+  let totalRevenue = 0;
+  let totalTips = 0;
+  let totalOrders = 0;
+  const methodTotals: Record<string, { amount: number; count: number }> = {};
+  const byDay: Record<string, { date: string; revenue: number; orders: number }> = {};
+  const prodMap: Record<string, { name: string; category: string; quantity: number; revenue: number }> = {};
+  const hourlyMap: Record<number, { hour: number; orders: number; revenue: number }> = {};
+  for (let h = 0; h < 24; h++) hourlyMap[h] = { hour: h, orders: 0, revenue: 0 };
+
+  const processedOrderIds = new Set<string>();
+
+  // 1. Pagos del turno actual
+  if (currentShift && Array.isArray(currentShift.payments)) {
+    for (const p of currentShift.payments) {
+      const pDate = parseLocalDate(p.timestamp) || new Date();
+      if (pDate >= fromDate && pDate <= toDate) {
+        const amt = Number(p.amount) || 0;
+        const tip = Number(p.tipAmount) || 0;
+        totalRevenue += amt;
+        totalTips += tip;
+
+        const orderId = p.orderId || p.id;
+        if (orderId && !processedOrderIds.has(orderId)) {
+          processedOrderIds.add(orderId);
+          totalOrders += 1;
+        }
+
+        let method = String(p.method || 'EFECTIVO').toUpperCase();
+        if (method === 'CASH') method = 'EFECTIVO';
+        if (method === 'CARD') method = 'TARJETA';
+        if (method === 'TRANSFER' || method === 'YAPE' || method === 'PLIN') method = 'TRANSFERENCIA';
+        if (!methodTotals[method]) methodTotals[method] = { amount: 0, count: 0 };
+        methodTotals[method].amount += amt;
+        methodTotals[method].count += 1;
+
+        const dayStr = pDate.toISOString().slice(0, 10);
+        if (!byDay[dayStr]) byDay[dayStr] = { date: dayStr, revenue: 0, orders: 0 };
+        byDay[dayStr].revenue += amt;
+        byDay[dayStr].orders += 1;
+
+        const h = pDate.getHours();
+        if (hourlyMap[h]) {
+          hourlyMap[h].revenue += amt;
+          hourlyMap[h].orders += 1;
+        }
+
+        if (Array.isArray(p.items)) {
+          for (const item of p.items) {
+            const name = item.name || 'Producto';
+            const cat = item.category || 'General';
+            const qty = Number(item.quantity) || 1;
+            const rev = (Number(item.price) || 0) * qty;
+            if (!prodMap[name]) prodMap[name] = { name, category: cat, quantity: 0, revenue: 0 };
+            prodMap[name].quantity += qty;
+            prodMap[name].revenue += rev;
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Historial de cierres de caja pasados
+  if (Array.isArray(pastClosures)) {
+    for (const closure of pastClosures) {
+      const cDate = parseLocalDate(closure.date) || parseLocalDate(closure.id) || new Date();
+      if (cDate >= fromDate && cDate <= toDate) {
+        const rep = closure.report || {};
+        const orders = rep.ordersDetail || [];
+
+        for (const order of orders) {
+          const orderId = order.id;
+          if (orderId && processedOrderIds.has(orderId)) continue;
+          if (orderId) processedOrderIds.add(orderId);
+
+          const amt = Number(order.amount) || 0;
+          totalRevenue += amt;
+          totalOrders += 1;
+
+          const dayStr = cDate.toISOString().slice(0, 10);
+          if (!byDay[dayStr]) byDay[dayStr] = { date: dayStr, revenue: 0, orders: 0 };
+          byDay[dayStr].revenue += amt;
+          byDay[dayStr].orders += 1;
+
+          if (Array.isArray(order.payments)) {
+            for (const p of order.payments) {
+              let method = String(p.method || 'EFECTIVO').toUpperCase();
+              if (method === 'CASH') method = 'EFECTIVO';
+              if (method === 'CARD') method = 'TARJETA';
+              if (method === 'TRANSFER' || method === 'YAPE' || method === 'PLIN') method = 'TRANSFERENCIA';
+              if (!methodTotals[method]) methodTotals[method] = { amount: 0, count: 0 };
+              methodTotals[method].amount += Number(p.amount) || 0;
+              methodTotals[method].count += 1;
+            }
+          }
+        }
+
+        totalTips += Number(rep.totalTips) || 0;
+
+        if (Array.isArray(rep.soldProducts)) {
+          for (const sp of rep.soldProducts) {
+            const name = sp.name || 'Producto';
+            const cat = sp.category || 'General';
+            const qty = Number(sp.quantity) || 0;
+            const rev = (Number(sp.price) || 0) * qty;
+            if (!prodMap[name]) prodMap[name] = { name, category: cat, quantity: 0, revenue: 0 };
+            prodMap[name].quantity += qty;
+            prodMap[name].revenue += rev;
+          }
+        }
+      }
+    }
+  }
+
+  const avgTicket = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+  const topMethodEntry = Object.entries(methodTotals).sort((a, b) => b[1].amount - a[1].amount)[0];
+  const topPaymentMethod = topMethodEntry ? topMethodEntry[0] : 'N/A';
+
+  const revenueByDay = Object.values(byDay).sort((a, b) => a.date.localeCompare(b.date));
+  const topProducts = Object.values(prodMap).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+  const paymentMethods = Object.entries(methodTotals).map(([method, val]) => ({
+    method,
+    amount: val.amount,
+    count: val.count
+  }));
+  const hourlyHeatmap = Object.values(hourlyMap);
+
+  return {
+    kpis: {
+      totalRevenue,
+      totalTips,
+      totalOrders,
+      avgTicket,
+      topPaymentMethod
+    },
+    revenueByDay,
+    topProducts,
+    paymentMethods,
+    hourlyHeatmap
+  };
+}
+
 export default function AnalyticsPage() {
   const router = useRouter();
   useGuardedRoute('analytics');
@@ -45,19 +222,24 @@ export default function AnalyticsPage() {
 
   const fetchAnalytics = async (from: string, to: string) => {
     setLoading(true);
+    let serverData: AnalyticsData | null = null;
     try {
-      const token = localStorage.getItem('pos_token');
+      const token = localStorage.getItem('pos_token') || '';
       const res = await fetch(getApiUrl(`/analytics?from=${from}&to=${to}`), {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
-        setData(await res.json());
-      } else {
-        toast.error('Error al cargar datos');
+        serverData = await res.json();
       }
-    } catch {
-      toast.error('Error de red');
+    } catch (err) {
+      console.warn('Backend no disponible para métricas analíticas, calculando desde datos locales:', err);
     } finally {
+      if (serverData) {
+        setData(serverData);
+      } else {
+        const localData = computeLocalAnalytics(from, to);
+        setData(localData);
+      }
       setLoading(false);
     }
   };

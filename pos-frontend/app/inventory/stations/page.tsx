@@ -43,31 +43,45 @@ export default function KitchenStationsPage() {
   const [agentOnline, setAgentOnline] = useState<boolean | null>(null);
 
   const fetchStations = async () => {
-    const token = localStorage.getItem('pos_token');
     let loadedStations: KitchenStation[] | null = null;
+
+    // 1. Carga inmediata de almacenamiento local (scoped y raw)
+    try {
+      const cached = getScopedStorage<KitchenStation[] | null>('pos_registered_stations', null);
+      if (Array.isArray(cached) && cached.length > 0) {
+        loadedStations = cached;
+      } else {
+        const raw = localStorage.getItem('pos_registered_stations');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) loadedStations = parsed;
+        }
+      }
+    } catch {}
+
+    if (loadedStations) {
+      setStations(loadedStations);
+    }
+
+    // 2. Sincronización silenciosa con backend
+    const token = localStorage.getItem('pos_token');
     try {
       const response = await fetch(getApiUrl('/kitchen-stations'), {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.ok) {
         const data = await response.json();
-        if (Array.isArray(data)) {
+        if (Array.isArray(data) && data.length > 0) {
           loadedStations = data;
           setScopedStorage('pos_registered_stations', data);
+          try { localStorage.setItem('pos_registered_stations', JSON.stringify(data)); } catch {}
+          setStations(data);
         }
       }
     } catch (error) {
       console.warn('Backend stations notice:', error);
     }
 
-    if (loadedStations === null) {
-      const cached = getScopedStorage<KitchenStation[] | null>('pos_registered_stations', null);
-      if (cached !== null) {
-        loadedStations = cached;
-      }
-    }
-
-    setStations(loadedStations || []);
     setLoading(false);
   };
 
@@ -117,6 +131,10 @@ export default function KitchenStationsPage() {
     
     setStations(updatedStations);
     setScopedStorage('pos_registered_stations', updatedStations);
+    try {
+      localStorage.setItem('pos_registered_stations', JSON.stringify(updatedStations));
+      window.dispatchEvent(new Event('storage'));
+    } catch {}
 
     try {
       await fetch(url, {
@@ -140,6 +158,10 @@ export default function KitchenStationsPage() {
     const updated = stations.filter(s => s.id !== id);
     setStations(updated);
     setScopedStorage('pos_registered_stations', updated);
+    try {
+      localStorage.setItem('pos_registered_stations', JSON.stringify(updated));
+      window.dispatchEvent(new Event('storage'));
+    } catch {}
 
     const token = localStorage.getItem('pos_token');
     try {

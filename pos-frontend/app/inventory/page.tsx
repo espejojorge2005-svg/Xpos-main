@@ -193,6 +193,7 @@ export default function InventoryPage() {
       })),
     };
 
+    let savedBackendProduct: any = null;
     try {
       const response = await fetch(url, {
         method,
@@ -203,7 +204,9 @@ export default function InventoryPage() {
         body: JSON.stringify(bodyData),
       });
 
-      if (!response.ok) {
+      if (response.ok) {
+        savedBackendProduct = await response.json();
+      } else {
         const err = await response.json().catch(() => ({}));
         console.warn('Backend product save notice:', err);
       }
@@ -214,9 +217,10 @@ export default function InventoryPage() {
     // Save to local cache so product list & POS menu update immediately
     try {
       let existingProducts: Product[] = getScopedStorage<Product[]>('pos_registered_products', [...products]);
+      const resolvedStations = stations.filter(s => formData.stationIds?.includes(s.id));
       
       const newProductObj: Product = {
-        id: isEditing ? formData.id : `p-${Date.now()}`,
+        id: isEditing ? formData.id : (savedBackendProduct?.id || `p-${Date.now()}`),
         name: formData.name,
         category: catName,
         categoryId: catId,
@@ -224,6 +228,7 @@ export default function InventoryPage() {
         stock: Number(formData.stock) || 0,
         minStock: Number(formData.minStock) || 0,
         stationIds: formData.stationIds || [],
+        stations: resolvedStations,
         modifierGroups: formData.modifierGroups || [],
       };
 
@@ -235,6 +240,25 @@ export default function InventoryPage() {
 
       setScopedStorage('pos_registered_products', existingProducts);
       setProducts(existingProducts);
+
+      // Registrar movimiento de stock inicial si es producto nuevo con stock
+      if (!isEditing && newProductObj.stock > 0) {
+        const initialMov = {
+          id: `mov-${Date.now()}-init`,
+          productId: newProductObj.id,
+          productName: newProductObj.name,
+          delta: newProductObj.stock,
+          reason: 'Stock inicial / Alta de producto',
+          stockBefore: 0,
+          stockAfter: newProductObj.stock,
+          type: 'ADJUSTMENT',
+          createdAt: new Date().toISOString(),
+        };
+        let currentMovs = getScopedStorage<any[]>('pos_stock_movements', []);
+        currentMovs.unshift(initialMov);
+        setScopedStorage('pos_stock_movements', currentMovs);
+        window.dispatchEvent(new Event('storage'));
+      }
     } catch {}
 
     toast.success(isEditing ? 'Producto actualizado exitosamente' : '¡Producto creado con éxito!');
@@ -267,7 +291,7 @@ export default function InventoryPage() {
     if (product) {
       setFormData({ 
         ...product, 
-        stationIds: product.stations?.map(s => s.id) || [],
+        stationIds: (product.stations && product.stations.length > 0) ? product.stations.map(s => s.id) : (product.stationIds || []),
         modifierGroups: product.modifierGroups || [] 
       }); // Editar
     } else {
@@ -288,47 +312,105 @@ export default function InventoryPage() {
   const handleStockAdjust = async () => {
     if (!adjustingProduct || stockDelta === 0) return;
     setIsAdjusting(true);
-    const token = localStorage.getItem('pos_token');
+
+    const oldStock = Number(adjustingProduct.stock) || 0;
+    const newStock = Math.max(0, oldStock + stockDelta);
+    const reasonText = adjustReason.trim() || (stockDelta > 0 ? 'Producción / Alta manual' : 'Merma / Baja manual');
+    const nowIso = new Date().toISOString();
+
+    // 1. ACTUALIZAR LOCALMENTE EN TIEMPO REAL (Garantizado sin error de red)
     try {
-      const response = await fetch(getApiUrl(`/products/${adjustingProduct.id}/stock`),
-        {
+      let registeredProducts = getScopedStorage<Product[]>('pos_registered_products', []);
+      if (!Array.isArray(registeredProducts) || registeredProducts.length === 0) {
+        registeredProducts = [...products];
+      }
+      registeredProducts = registeredProducts.map(p => 
+        String(p.id) === String(adjustingProduct.id) ? { ...p, stock: newStock } : p
+      );
+      setScopedStorage('pos_registered_products', registeredProducts);
+      setProducts(prev => prev.map(p => 
+        String(p.id) === String(adjustingProduct.id) ? { ...p, stock: newStock } : p
+      ));
+
+      // Registrar movimiento en el kardex e historial local
+      const movement = {
+        id: `mov-${Date.now()}`,
+        productId: adjustingProduct.id,
+        productName: adjustingProduct.name,
+        delta: stockDelta,
+        reason: reasonText,
+        stockBefore: oldStock,
+        stockAfter: newStock,
+        type: 'ADJUSTMENT',
+        createdAt: nowIso,
+      };
+
+      let stockMovements = getScopedStorage<any[]>('pos_stock_movements', []);
+      stockMovements.unshift(movement);
+      setScopedStorage('pos_stock_movements', stockMovements);
+
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {
+      console.warn('Error guardando ajuste localmente:', e);
+    }
+
+    // 2. SINCRONIZAR CON EL BACKEND SI ESTÁ DISPONIBLE
+    const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
+    if (token) {
+      try {
+        const response = await fetch(getApiUrl(`/products/${adjustingProduct.id}/stock`), {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ delta: stockDelta, reason: adjustReason })
+          body: JSON.stringify({ delta: stockDelta, reason: reasonText })
+        });
+        if (response.ok) {
+          const updated = await response.json();
+          if (updated?.id && typeof updated?.stock === 'number') {
+            setProducts(prev => prev.map(p => p.id === updated.id ? { ...p, stock: updated.stock } : p));
+          }
         }
-      );
-      if (response.ok) {
-        const updated = await response.json();
-        setProducts(prev => prev.map(p => p.id === updated.id ? { ...p, stock: updated.stock } : p));
-        toast.success(`Stock de "${adjustingProduct.name}" actualizado: ${stockDelta > 0 ? '+' : ''}${stockDelta} unidades`);
-        setAdjustingProduct(null);
-      } else {
-        toast.error('Error al ajustar el stock');
+      } catch {
+        // En modo local el backend puede estar apagado; la operación ya se guardó localmente con éxito
       }
-    } catch {
-      toast.error('Error de red');
-    } finally {
-      setIsAdjusting(false);
     }
+
+    toast.success(`Stock de "${adjustingProduct.name}" actualizado: ${stockDelta > 0 ? '+' : ''}${stockDelta} unidades (${newStock} en total) ✅`);
+    setAdjustingProduct(null);
+    setIsAdjusting(false);
   };
 
   // Ver historial de movimientos de stock
   const openHistory = async (product: Product) => {
     setHistoryProduct(product);
     setLoadingHistory(true);
-    setHistoryMovements([]);
+    
+    // 1. Cargar historial local
+    let localHistory: any[] = [];
+    try {
+      const allMovements = getScopedStorage<any[]>('pos_stock_movements', []);
+      localHistory = allMovements.filter((m: any) => m.productId === product.id);
+    } catch {}
+
+    // 2. Intentar combinar con remoto si está disponible
     const token = localStorage.getItem('pos_token');
     try {
       const res = await fetch(getApiUrl(`/products/${product.id}/stock-history`), {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (res.ok) setHistoryMovements(await res.json());
-    } catch { /* silently fail */ }
+      if (res.ok) {
+        const remoteMovements = await res.json();
+        if (Array.isArray(remoteMovements) && remoteMovements.length > 0) {
+          localHistory = remoteMovements;
+        }
+      }
+    } catch { /* silencioso si el backend está offline */ }
+
+    setHistoryMovements(localHistory);
     setLoadingHistory(false);
   };
 
   // Cálculos y Filtros
-  const lowStockCount = products.filter(p => p.stock <= p.minStock).length;
+  const lowStockCount = products.filter(p => (Number(p.stock) || 0) <= (Number(p.minStock) || 0)).length;
   const filteredProducts = products.filter(p => 
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.category.toLowerCase().includes(searchTerm.toLowerCase())
@@ -400,19 +482,31 @@ export default function InventoryPage() {
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
               {filteredProducts.map((product) => {
-                const isLowStock = product.stock <= product.minStock;
+                const stockNum = Number(product.stock) || 0;
+                const minStockNum = Number(product.minStock) || 0;
+                const isLowStock = stockNum <= minStockNum;
                 return (
                   <tr key={product.id} className="hover:bg-slate-50/80 transition-colors group">
                     <td className="p-5 font-bold text-slate-800">
                       {product.name}
-                      {isLowStock && <span className="ml-3 px-2 py-0.5 rounded text-[10px] bg-rose-100 text-rose-700 uppercase tracking-wider">Bajo</span>}
+                      {isLowStock ? (
+                        <span className="ml-3 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-700 border border-rose-200 uppercase tracking-wider inline-flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                          Bajo
+                        </span>
+                      ) : (
+                        <span className="ml-3 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase tracking-wider inline-flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                          Alta
+                        </span>
+                      )}
                     </td>
                     <td className="p-5 font-medium">
                       <span className="px-3 py-1 bg-slate-100 rounded-lg text-xs uppercase tracking-wider">{product.category}</span>
                     </td>
                     <td className="p-5 font-black text-slate-700">{Number(product.price).toFixed(2)}</td>
                     <td className="p-5">
-                      <span className={`font-bold ${isLowStock ? 'text-rose-600' : 'text-slate-700'}`}>{product.stock} un.</span>
+                      <span className={`font-black ${isLowStock ? 'text-rose-600' : 'text-emerald-600'}`}>{stockNum} un.</span>
                     </td>
                     <td className="p-5 text-center">
                       <div className="flex justify-center gap-2">
@@ -750,14 +844,24 @@ export default function InventoryPage() {
               <div className="flex items-center justify-between bg-slate-50 rounded-2xl p-4 border border-slate-100">
                 <div className="text-center flex-1">
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Antes</p>
-                  <p className="text-3xl font-black text-slate-400">{adjustingProduct.stock}</p>
+                  <p className="text-3xl font-black text-slate-400">{Number(adjustingProduct.stock) || 0}</p>
+                  <span className={`mt-1 inline-block text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase ${
+                    (Number(adjustingProduct.stock) || 0) <= (Number(adjustingProduct.minStock) || 0) ? 'bg-rose-100 text-rose-700 border border-rose-200' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                  }`}>
+                    {(Number(adjustingProduct.stock) || 0) <= (Number(adjustingProduct.minStock) || 0) ? 'Bajo' : 'Alta'}
+                  </span>
                 </div>
                 <div className="text-slate-300 text-2xl font-black">→</div>
                 <div className="text-center flex-1">
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Después</p>
                   <p className={`text-3xl font-black ${stockDelta > 0 ? 'text-emerald-600' : stockDelta < 0 ? 'text-rose-600' : 'text-slate-800'}`}>
-                    {adjustingProduct.stock + stockDelta}
+                    {Math.max(0, (Number(adjustingProduct.stock) || 0) + stockDelta)}
                   </p>
+                  <span className={`mt-1 inline-block text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase ${
+                    Math.max(0, (Number(adjustingProduct.stock) || 0) + stockDelta) <= (Number(adjustingProduct.minStock) || 0) ? 'bg-rose-100 text-rose-700 border border-rose-200' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                  }`}>
+                    {Math.max(0, (Number(adjustingProduct.stock) || 0) + stockDelta) <= (Number(adjustingProduct.minStock) || 0) ? 'Bajo' : 'Alta'}
+                  </span>
                 </div>
               </div>
 

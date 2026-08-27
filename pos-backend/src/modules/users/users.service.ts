@@ -66,18 +66,26 @@ export class UsersService {
       throw new BadRequestException('No se pudo determinar el restaurante asignado al usuario');
     }
 
-    // Verificar límite de usuarios según el plan de suscripción activo
+    // Verificar estado, vigencia de suscripción y límite estricto de usuarios según el plan
     const restaurant = await this.prisma.restaurant.findUnique({ 
       where: { id: restaurantId },
       include: { plan: true } 
     });
-    if (restaurant && restaurant.plan) {
-      const activeUsers = await this.prisma.user.count({ 
-        where: { restaurantId, isActive: true } 
-      });
-      const limit = restaurant.plan.maxUsers;
-      if (activeUsers >= limit) {
-        throw new ForbiddenException(`Límite de usuarios (${limit}) alcanzado para el plan ${restaurant.plan.name}. Mejore su plan para añadir más.`);
+    if (restaurant) {
+      if (restaurant.isActive === false) {
+        throw new ForbiddenException('El restaurante se encuentra suspendido. No es posible registrar nuevos usuarios.');
+      }
+      if (restaurant.subscriptionEndDate && new Date(restaurant.subscriptionEndDate) < new Date()) {
+        throw new ForbiddenException(`La suscripción de este restaurante expiró el ${new Date(restaurant.subscriptionEndDate).toLocaleDateString()}. Renueve el plan para continuar.`);
+      }
+      if (restaurant.plan) {
+        const activeUsers = await this.prisma.user.count({ 
+          where: { restaurantId, isActive: true } 
+        });
+        const limit = restaurant.plan.maxUsers;
+        if (activeUsers >= limit) {
+          throw new ForbiddenException(`Límite estricto de usuarios (${limit}) alcanzado para el plan ${restaurant.plan.name}. Mejore su plan en SuperAdmin para añadir más personal.`);
+        }
       }
     }
 
@@ -90,6 +98,7 @@ export class UsersService {
     let defaultViews: string[] = ['pos', 'cocina', 'caja'];
     if (role === 'ADMIN') defaultViews = ['*'];
     else if (role === 'WAITER') defaultViews = ['pos', 'cocina'];
+    else if (role === 'COOK') defaultViews = ['cocina'];
 
     const allowedViews = dto.allowedViews && dto.allowedViews.length > 0 ? dto.allowedViews : defaultViews;
 

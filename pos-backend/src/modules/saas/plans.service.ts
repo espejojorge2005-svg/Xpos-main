@@ -56,9 +56,21 @@ export class PlansService {
   constructor(private prisma: PrismaService) {}
 
   async findAll() {
-    return this.prisma.subscriptionPlan.findMany({
+    const plans = await this.prisma.subscriptionPlan.findMany({
       orderBy: { price: 'asc' }
     });
+    if (plans.length === 0) {
+      await this.prisma.subscriptionPlan.createMany({
+        data: [
+          { name: 'Plan Básico', code: 'BASIC', price: 29, maxUsers: 3, features: ['POS Móvil y Tablet', 'Monitor de Cocina (KDS)', 'Hasta 3 usuarios concurrentes', 'Gestión de Mesas'], isActive: true },
+          { name: 'Plan Profesional', code: 'PRO', price: 59, maxUsers: 10, features: ['POS + Monitor de Cocina', 'Control de Inventario y Kardex', 'Cierre de Caja y Arqueo', 'Hasta 10 usuarios concurrentes', 'Reportes de Ventas'], isActive: true },
+          { name: 'Plan Premium', code: 'PREMIUM', price: 99, maxUsers: 99, features: ['Acceso total a todos los módulos', 'Usuarios ilimitados', 'Inventario, Kardex, Analíticas', 'Múltiples áreas de preparación', 'Soporte 24/7'], isActive: true },
+        ],
+        skipDuplicates: true
+      });
+      return this.prisma.subscriptionPlan.findMany({ orderBy: { price: 'asc' } });
+    }
+    return plans;
   }
 
   async findOne(id: string) {

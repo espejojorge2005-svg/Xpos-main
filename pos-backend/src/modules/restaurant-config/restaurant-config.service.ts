@@ -1,15 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClsService } from 'nestjs-cls';
-
-export interface UpdateRestaurantConfigDto {
-  name?: string;
-  slogan?: string;
-  address?: string;
-  phone?: string;
-  ruc?: string;
-  logoUrl?: string;
-}
+import { UpdateRestaurantConfigDto } from './dto/update-restaurant-config.dto';
 
 @Injectable()
 export class RestaurantConfigService {
@@ -17,8 +9,26 @@ export class RestaurantConfigService {
 
   async getConfig() {
     const restaurantId = this.cls.get('restaurantId');
-    const res = await this.prisma.restaurant.findUnique({ where: { id: restaurantId } });
-    if (!res) throw new NotFoundException('Configuración no disponible');
+    let res = restaurantId ? await this.prisma.restaurant.findUnique({ where: { id: restaurantId } }) : null;
+
+    if (!res) {
+      // Fallback: Si no tiene restaurantId o no se encuentra, obtener el primer restaurante activo
+      res = await this.prisma.restaurant.findFirst({
+        orderBy: { createdAt: 'asc' },
+      });
+    }
+
+    if (!res) {
+      // Crear uno por defecto en caso la base de datos esté vacía
+      res = await this.prisma.restaurant.create({
+        data: {
+          name: 'Mi Restaurante',
+          subscriptionEndDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+          isActive: true,
+        },
+      });
+    }
+
     return res;
   }
 
@@ -30,3 +40,4 @@ export class RestaurantConfigService {
     });
   }
 }
+

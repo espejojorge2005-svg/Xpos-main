@@ -3,7 +3,7 @@ import { getApiUrl } from '@/utils/api';
 import { getScopedStorage, setScopedStorage } from '@/utils/storage';
 
 import { useEffect, useState, use } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Search, Plus, Minus, Trash2, ShoppingCart, UtensilsCrossed, ReceiptText, ChefHat, CheckCircle2, AlertTriangle, X, Printer, CreditCard, Banknote, Smartphone, Edit2, Heart, ArrowRightLeft, Scissors } from 'lucide-react';
 import { toast } from 'sonner';
 import ComboModal from '@/components/ComboModal';
@@ -52,6 +52,8 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
   const resolvedParams = use(params);
   const tableId = resolvedParams.tableId;
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isCashierMode = searchParams.get('mode') === 'caja' || searchParams.get('checkout') === 'true';
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -104,7 +106,17 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
   const [restaurantConfig, setRestaurantConfig] = useState<{
     name: string; slogan?: string; address?: string; phone?: string; ruc?: string; logoUrl?: string;
   }>({ name: '' });
-  const [userRole, setUserRole] = useState<string>('');
+  const [userRole, setUserRole] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    try {
+      const userStr = localStorage.getItem('pos_user');
+      if (userStr) {
+        const u = JSON.parse(userStr);
+        return u.role || '';
+      }
+    } catch {}
+    return '';
+  });
 
   useEffect(() => {
     const cached = localStorage.getItem('pos_restaurant_config');
@@ -230,14 +242,30 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
       }
 
       if (!tableName) {
-        setTableName(`Mesa ${tableId.replace(/[^0-9]/g, '') || tableId.slice(0, 4)}`);
+        try {
+          const registeredZones = getScopedStorage<any[]>('pos_registered_zones', []);
+          let foundName = '';
+          for (const z of registeredZones) {
+            const t = (z.tables || []).find((tbl: any) => tbl.id === tableId);
+            if (t) {
+              foundName = t.name || (t.number ? `Mesa ${t.number}` : '');
+              break;
+            }
+          }
+          setTableName(foundName || `Mesa ${tableId.replace(/[^0-9]/g, '') || tableId.slice(0, 4)}`);
+        } catch {
+          setTableName(`Mesa ${tableId.replace(/[^0-9]/g, '') || tableId.slice(0, 4)}`);
+        }
       }
 
       setLoading(false);
+      if (isCashierMode) {
+        setShowCheckout(true);
+      }
     };
 
     fetchData();
-  }, [router, tableId]);
+  }, [router, tableId, isCashierMode]);
 
   const filteredProducts = products.filter(p => {
     const matchesCategory = selectedCategoryId ? p.categoryId === selectedCategoryId : true;
@@ -245,7 +273,33 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
     return matchesCategory && matchesSearch;
   });
 
+  const getProductUsage = (productId: string) => {
+    const inCart = cart
+      .filter(item => item.productId === productId)
+      .reduce((sum, item) => sum + item.quantity, 0);
+    const inExisting = existingItems
+      .filter(item => item.productId === productId)
+      .reduce((sum, item) => sum + item.quantity, 0);
+    return inCart + inExisting;
+  };
+
+  const getAvailableStock = (product: Product) => {
+    if (typeof product.stock !== 'number') return 999999;
+    const currentUsage = getProductUsage(product.id);
+    return Math.max(0, product.stock - currentUsage);
+  };
+
   const addToCart = (product: Product, customItem?: CartItem) => {
+    // Control estricto de inventario / stock disponible
+    if (typeof product.stock === 'number') {
+      const available = getAvailableStock(product);
+      const requestedQty = customItem ? customItem.quantity : 1;
+      if (available < requestedQty) {
+        toast.warning(`Stock insuficiente para "${product.name}". Disponibles: ${available} de ${product.stock}`);
+        return;
+      }
+    }
+
     // Si pasamos un customItem (como el resultado del ComboModal), lo insertamos directo como un row nuevo
     if (customItem) {
       setCart(prev => [...prev, customItem]);
@@ -278,6 +332,17 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
   };
 
   const updateQuantity = (productId: string, delta: number) => {
+    if (delta > 0) {
+      const prod = products.find(p => p.id === productId);
+      if (prod && typeof prod.stock === 'number') {
+        const available = getAvailableStock(prod);
+        if (available <= 0) {
+          toast.warning(`Stock máximo alcanzado para "${prod.name}" (${prod.stock} disponibles en inventario)`);
+          return;
+        }
+      }
+    }
+
     setCart(prev => prev.map(item => {
       if (item.productId === productId) {
         const newQty = Math.max(0, item.quantity + delta);
@@ -311,12 +376,153 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
     }
 
     setSubmitting(true);
-    const token = localStorage.getItem('pos_token');
+    const token = localStorage.getItem('pos_token') || '';
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`
     };
+
+    const effectiveTableName = tableName || `Mesa ${tableId.replace(/[^0-9]/g, '') || tableId.slice(0, 4)}`;
+    const effectiveOrderId = activeOrderId || `ord-${Date.now()}`;
+
+    // 1. SINCRONIZACIÓN LOCAL GARANTIZADA PARA COCINA (KDS)
+    const newKitchenItems = cart.map((cartItem, idx) => {
+      const prod = products.find(p => p.id === cartItem.productId);
+      const cat = categories.find(c => c.id === prod?.categoryId);
+      return {
+        id: `item-${Date.now()}-${idx}`,
+        quantity: cartItem.quantity,
+        notes: cartItem.notes || '',
+        status: 'ACTIVE' as const,
+        product: {
+          name: cartItem.name,
+          category: { name: cat?.name || 'General' },
+          stations: (() => {
+            if (prod?.stations && prod.stations.length > 0) return prod.stations;
+            // Lookup in pos_registered_stations by stationIds
+            let allStations: any[] = getScopedStorage<any[]>('pos_registered_stations', []);
+            if (!allStations || allStations.length === 0) {
+              try {
+                const raw = localStorage.getItem('pos_registered_stations');
+                if (raw) allStations = JSON.parse(raw);
+              } catch {}
+            }
+            if (Array.isArray(allStations) && allStations.length > 0) {
+              if (prod?.stationIds && prod.stationIds.length > 0) {
+                const matched = allStations.filter((s: any) => prod.stationIds?.includes(s.id));
+                if (matched.length > 0) return matched;
+              }
+              return [allStations[0]];
+            }
+            return [{ id: 'st-1', name: 'Cocina', colorHex: '#10b981' }];
+          })()
+        }
+      };
+    });
+
+    try {
+      let kitchenOrders: any[] = getScopedStorage<any[]>('pos_local_kitchen_orders', []);
+      const existingOrderIdx = kitchenOrders.findIndex(
+        o => o.id === effectiveOrderId || (o.table && (o.table.name === effectiveTableName || o.table.id === tableId))
+      );
+
+      if (existingOrderIdx !== -1) {
+        kitchenOrders[existingOrderIdx].items = [
+          ...(kitchenOrders[existingOrderIdx].items || []),
+          ...newKitchenItems
+        ];
+        kitchenOrders[existingOrderIdx].status = 'OPEN';
+      } else {
+        kitchenOrders.unshift({
+          id: effectiveOrderId,
+          createdAt: new Date().toISOString(),
+          status: 'OPEN',
+          table: { 
+            id: tableId,
+            name: effectiveTableName, 
+            number: parseInt(tableId.replace(/[^0-9]/g, '') || '1', 10) 
+          },
+          items: newKitchenItems
+        });
+      }
+      setScopedStorage('pos_local_kitchen_orders', kitchenOrders);
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {
+      console.warn('Error guardando en pos_local_kitchen_orders:', e);
+    }
+
+    // 1.1 DESCONTAR INVENTARIO / STOCK LOCALMENTE Y REGISTRAR EN KARDEX
+    try {
+      let storedProducts = getScopedStorage<Product[]>('pos_registered_products', []);
+      let stockMovements = getScopedStorage<any[]>('pos_stock_movements', []);
+      if (Array.isArray(storedProducts) && storedProducts.length > 0) {
+        storedProducts = storedProducts.map(p => {
+          const cartItems = cart.filter(c => c.productId === p.id);
+          const totalDeduction = cartItems.reduce((sum, it) => sum + it.quantity, 0);
+          if (totalDeduction > 0 && typeof p.stock === 'number') {
+            const oldStock = p.stock;
+            const newStock = Math.max(0, oldStock - totalDeduction);
+            stockMovements.unshift({
+              id: `mov-${Date.now()}-${p.id}`,
+              productId: p.id,
+              productName: p.name,
+              delta: -totalDeduction,
+              reason: `Venta Mesa ${tableName || tableId}`,
+              stockBefore: oldStock,
+              stockAfter: newStock,
+              type: 'SALE',
+              createdAt: new Date().toISOString(),
+            });
+            return {
+              ...p,
+              stock: newStock
+            };
+          }
+          return p;
+        });
+        setScopedStorage('pos_stock_movements', stockMovements);
+        setScopedStorage('pos_registered_products', storedProducts);
+        setProducts(storedProducts);
+      }
+    } catch (e) {
+      console.warn('Error descontando inventario:', e);
+    }
+
+    // 2. SINCRONIZACIÓN LOCAL GARANTIZADA PARA MESAS ACTIVAS (PLANO DE SALA)
+    const combinedExistingItems: ExistingItem[] = [
+      ...existingItems,
+      ...cart.map((c, idx) => ({
+        id: `item-${Date.now()}-${idx}`,
+        productId: c.productId,
+        name: c.name,
+        quantity: c.quantity,
+        unitPrice: c.unitPrice,
+        notes: c.notes,
+        subItems: c.subItems,
+        isPaid: false
+      }))
+    ];
     
+    const newTotal = combinedExistingItems.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0);
+
+    try {
+      const activeTableOrders = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
+      activeTableOrders[tableId] = {
+        orderId: effectiveOrderId,
+        tableName: effectiveTableName,
+        createdAt: activeTableOrders[tableId]?.createdAt || new Date().toISOString(),
+        total: newTotal,
+        status: 'OCCUPIED',
+        items: combinedExistingItems,
+        payments: payments || []
+      };
+      setScopedStorage('pos_active_table_orders', activeTableOrders);
+    } catch (e) {
+      console.warn('Error guardando en pos_active_table_orders:', e);
+    }
+
+    // 3. INTENTO DE ENVÍO AL BACKEND REMOTO (Si está disponible)
+    let backendOrder: any = null;
     try {
       let response;
       if (activeOrderId) {
@@ -360,138 +566,66 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         });
       }
 
-      // Local Kitchen order sync for KDS and station monitors
-      const effectiveTableName = tableName || `Mesa ${tableId.replace(/[^0-9]/g, '') || tableId.slice(0, 4)}`;
-      try {
-        let kitchenOrders: any[] = getScopedStorage<any[]>('pos_local_kitchen_orders', []);
-        
-        const newKitchenItems = cart.map((cartItem, idx) => {
-          const prod = products.find(p => p.id === cartItem.productId);
-          const cat = categories.find(c => c.id === prod?.categoryId);
-          return {
-            id: `item-${Date.now()}-${idx}`,
-            quantity: cartItem.quantity,
-            notes: cartItem.notes || '',
-            status: 'ACTIVE',
-            product: {
-              name: cartItem.name,
-              category: { name: cat?.name || 'General' },
-              stations: prod?.stations || [{ id: 'st-1', name: 'Cocina', colorHex: '#10b981' }]
+      if (response && response.ok) {
+        backendOrder = await response.json().catch(() => null);
+        if (backendOrder?.id && backendOrder.id !== effectiveOrderId) {
+          try {
+            const activeTableOrders = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
+            if (activeTableOrders[tableId]) {
+              activeTableOrders[tableId].orderId = backendOrder.id;
+              setScopedStorage('pos_active_table_orders', activeTableOrders);
             }
-          };
-        });
+          } catch {}
+        }
+      }
+    } catch (netErr) {
+      console.warn('Backend remoto offline al registrar pedido, funcionando en modo local:', netErr);
+    }
 
-        const existingOrderIdx = kitchenOrders.findIndex(o => o.id === activeOrderId || (o.table && o.table.name === effectiveTableName));
-        if (existingOrderIdx !== -1) {
-          kitchenOrders[existingOrderIdx].items = [...kitchenOrders[existingOrderIdx].items, ...newKitchenItems];
-          kitchenOrders[existingOrderIdx].status = 'OPEN';
-        } else {
-          kitchenOrders.unshift({
-            id: activeOrderId || `ord-${Date.now()}`,
-            createdAt: new Date().toISOString(),
-            status: 'OPEN',
-            table: { name: effectiveTableName, number: parseInt(tableId.replace(/[^0-9]/g, '') || '1', 10) },
-            items: newKitchenItems
+    // 4. IMPRESIÓN EN COMANDERAS DE COCINA
+    try {
+      const printJobs = new Map<string, any[]>();
+      cart.forEach(cartItem => {
+        const product = products.find(p => p.id === cartItem.productId);
+        if (product && product.stations && product.stations.length > 0) {
+          product.stations.forEach(station => {
+            if (station.printerName) {
+              let itemsForPrinter = printJobs.get(station.printerName);
+              if (!itemsForPrinter) {
+                itemsForPrinter = [];
+                printJobs.set(station.printerName, itemsForPrinter);
+              }
+              itemsForPrinter.push({
+                quantity: cartItem.quantity,
+                name: cartItem.name,
+                notes: cartItem.notes || ''
+              });
+            }
           });
         }
-        setScopedStorage('pos_local_kitchen_orders', kitchenOrders);
-      } catch {}
+      });
 
-      const combinedExistingItems: ExistingItem[] = [
-        ...existingItems,
-        ...cart.map((c, idx) => ({
-          id: `item-${Date.now()}-${idx}`,
-          productId: c.productId,
-          name: c.name,
-          quantity: c.quantity,
-          unitPrice: c.unitPrice,
-          notes: c.notes,
-          subItems: c.subItems,
-          isPaid: false
-        }))
-      ];
-      
-      const newTotal = combinedExistingItems.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0);
-
-      // Mark Table as OCCUPIED with its items until waiter or cashier releases it
-      try {
-        const activeTableOrders = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
-        activeTableOrders[tableId] = {
-          orderId: activeOrderId || `ord-${Date.now()}`,
-          tableName: effectiveTableName,
-          createdAt: activeTableOrders[tableId]?.createdAt || new Date().toISOString(),
-          total: newTotal,
-          status: 'OCCUPIED',
-          items: combinedExistingItems,
-          payments: payments || []
-        };
-        setScopedStorage('pos_active_table_orders', activeTableOrders);
-      } catch {}
-
-      if (response && response.ok) {
-        toast.success(activeOrderId ? 'Productos agregados al pedido ✅' : 'Pedido enviado a cocina ✅');
-        
-        // --- PRINT TO KITCHEN LOGIC ---
-        const printJobs = new Map<string, any[]>();
-
-        cart.forEach(cartItem => {
-          const product = products.find(p => p.id === cartItem.productId);
-          if (product && product.stations && product.stations.length > 0) {
-            product.stations.forEach(station => {
-              if (station.printerName) {
-                let itemsForPrinter = printJobs.get(station.printerName);
-                if (!itemsForPrinter) {
-                  itemsForPrinter = [];
-                  printJobs.set(station.printerName, itemsForPrinter);
-                }
-                itemsForPrinter.push({
-                  quantity: cartItem.quantity,
-                  name: cartItem.name,
-                  notes: cartItem.notes || ''
-                });
-              }
-            });
-          }
-        });
-
-        // Send print jobs to local agent
-        for (const [printerName, items] of printJobs.entries()) {
-          try {
-            const printRes = await fetch('http://localhost:4001/print/kitchen', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                printerName,
-                tableName: tableName || tableId.slice(0, 4),
-                time: new Date().toLocaleTimeString('es-PE'),
-                items,
-              })
-            }).catch(() => null);
-
-            if (!printRes) {
-              console.warn(`No se pudo conectar con el agente de impresión en el puerto 4001 para la impresora ${printerName}.`);
-            } else if (!printRes.ok) {
-              const errData = await printRes.json().catch(() => ({}));
-              toast.error(`Error imprimiendo en ${printerName}: ${errData.error || printRes.statusText}`);
-            }
-          } catch (printErr) {
-            console.error(`Error inesperado imprimiendo en ${printerName}:`, printErr);
-          }
-        }
-        // ------------------------------
-
-        router.push('/');
-      } else {
-        // Fallback local: aun si el backend remoto estuviera sin conexión, se guarda la orden localmente
-        toast.success(activeOrderId ? 'Productos agregados al pedido (Local) ✅' : 'Pedido enviado a cocina y estaciones ✅');
-        router.push('/');
+      for (const [printerName, items] of printJobs.entries()) {
+        try {
+          await fetch('http://localhost:4001/print/kitchen', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              printerName,
+              tableName: effectiveTableName,
+              time: new Date().toLocaleTimeString('es-PE'),
+              items,
+            })
+          }).catch(() => null);
+        } catch {}
       }
-    } catch (error) {
-      toast.success('Pedido enviado a cocina y estaciones (Local) ✅');
-      router.push('/');
-    } finally {
-      setSubmitting(false);
-    }
+    } catch {}
+
+    // 5. NOTIFICACIÓN Y NAVEGACIÓN
+    window.dispatchEvent(new Event('storage'));
+    toast.success(activeOrderId ? 'Productos agregados al pedido ✅' : 'Pedido enviado a cocina y estaciones ✅');
+    setSubmitting(false);
+    router.push('/');
   };
 
   const handleRemoveExistingItemRequest = (item: ExistingItem) => {
@@ -515,6 +649,23 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
       if (response.ok) {
         toast.success("Producto eliminado");
+        
+        // Restaurar stock del producto eliminado
+        const removedItem = existingItems.find(item => item.id === confirmAction.itemId);
+        if (removedItem) {
+          try {
+            let storedProducts = getScopedStorage<Product[]>('pos_registered_products', []);
+            storedProducts = storedProducts.map(p => {
+              if (p.id === removedItem.productId && typeof p.stock === 'number') {
+                return { ...p, stock: p.stock + removedItem.quantity };
+              }
+              return p;
+            });
+            setScopedStorage('pos_registered_products', storedProducts);
+            setProducts(storedProducts);
+          } catch {}
+        }
+
         setExistingItems(prev => prev.filter(item => item.id !== confirmAction.itemId));
         setConfirmAction(null);
         
@@ -546,10 +697,15 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
       let localKitchen = getScopedStorage<any[]>('pos_local_kitchen_orders', []);
       localKitchen = localKitchen.filter((o: any) => o.id !== activeOrderId && o.table?.name !== (tableName || `Mesa ${tableId}`));
       setScopedStorage('pos_local_kitchen_orders', localKitchen);
+      window.dispatchEvent(new Event('storage'));
     } catch {}
   };
 
   const handleFreeTable = async () => {
+    if (!isCashierMode) {
+      toast.warning('Las mesas con consumos solo se pueden liberar y desocupar desde el módulo de Caja tras registrar el cobro.');
+      return;
+    }
     if (!confirm('¿Deseas liberar y desocupar esta mesa?')) return;
     clearLocalTableOccupancy();
     if (activeOrderId) {
@@ -564,6 +720,20 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
   };
 
   const executeCancelOrder = async () => {
+    // Restaurar stock de los productos no cobrados
+    try {
+      let storedProducts = getScopedStorage<Product[]>('pos_registered_products', []);
+      storedProducts = storedProducts.map(p => {
+        const found = existingItems.find(it => it.productId === p.id && !it.isPaid);
+        if (found && typeof p.stock === 'number') {
+          return { ...p, stock: p.stock + found.quantity };
+        }
+        return p;
+      });
+      setScopedStorage('pos_registered_products', storedProducts);
+      setProducts(storedProducts);
+    } catch {}
+
     clearLocalTableOccupancy();
     if (!activeOrderId) {
       toast.success("Pedido cancelado exitosamente");
@@ -608,6 +778,9 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
   const fetchFreeTables = async () => {
     setLoadingTables(true);
+    let available: any[] = [];
+
+    // 1. Intento con backend remoto si está disponible
     try {
       const token = localStorage.getItem('pos_token');
       const res = await fetch(getApiUrl('/floor/zones'), {
@@ -615,47 +788,118 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
       });
       if (res.ok) {
         const zonesData = await res.json();
-        const available = zonesData.flatMap((z: any) => z.tables).filter((t: any) => t.status === 'FREE');
-        
-        // Ordenar alfabéticamente
-        available.sort((a: any, b: any) => {
-          const nameA = a.name || String(a.number);
-          const nameB = b.name || String(b.number);
-          return nameA.localeCompare(nameB);
-        });
-
-        setFreeTables(available);
+        available = zonesData.flatMap((z: any) => z.tables).filter((t: any) => t.status === 'FREE');
       }
     } catch (e) {
-      toast.error('Error cargando mesas libres');
-    } finally {
-      setLoadingTables(false);
+      console.warn('Backend offline para consultar zonas, usando almacenamiento local');
     }
+
+    // 2. Fallback local: Cargar de pos_registered_zones y pos_active_table_orders
+    if (available.length === 0) {
+      try {
+        const registeredZones = getScopedStorage<any[]>('pos_registered_zones', []);
+        const activeTableOrders = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
+        
+        let allTables: any[] = [];
+        if (Array.isArray(registeredZones) && registeredZones.length > 0) {
+          allTables = registeredZones.flatMap(z => (z.tables || []).map((t: any) => ({
+            ...t,
+            zoneName: z.name
+          })));
+        } else {
+          // Defaults estándar de salón y terraza
+          allTables = [
+            { id: 't-1', name: 'Mesa 1', number: 1, capacity: 4, zoneName: 'SALON' },
+            { id: 't-2', name: 'Mesa 2', number: 2, capacity: 2, zoneName: 'SALON' },
+            { id: 't-3', name: 'Mesa 3', number: 3, capacity: 6, zoneName: 'SALON' },
+            { id: 't-4', name: 'Mesa 4', number: 4, capacity: 4, zoneName: 'SALON' },
+            { id: 't-5', name: 'Mesa T1', number: 5, capacity: 4, zoneName: 'TERRAZA' },
+            { id: 't-6', name: 'Mesa T2', number: 6, capacity: 2, zoneName: 'TERRAZA' },
+          ];
+        }
+
+        // Filtrar solo las mesas que NO sean la mesa actual y que NO tengan pedido activo
+        available = allTables.filter((t: any) => {
+          if (t.id === tableId) return false;
+          const order = activeTableOrders[t.id];
+          const isOccupied = order && (order.status === 'OCCUPIED' || (Array.isArray(order.items) && order.items.length > 0));
+          return !isOccupied && t.status !== 'OCCUPIED';
+        });
+      } catch (err) {
+        console.warn('Error resolviendo mesas libres locales:', err);
+      }
+    }
+
+    // Ordenar alfabéticamente
+    available.sort((a: any, b: any) => {
+      const nameA = a.name || String(a.number || '');
+      const nameB = b.name || String(b.number || '');
+      return nameA.localeCompare(nameB, undefined, { numeric: true });
+    });
+
+    setFreeTables(available);
+    setLoadingTables(false);
   };
 
   const executeChangeTable = async () => {
-    if (!activeOrderId || !selectedNewTableId) return;
+    if (!selectedNewTableId) return;
     setSubmitting(true);
+
+    const targetTable = freeTables.find(t => t.id === selectedNewTableId);
+    const newTableName = targetTable?.name || (targetTable?.number ? `Mesa ${targetTable.number}` : `Mesa ${selectedNewTableId.slice(0, 4)}`);
+
+    // 1. ACTUALIZAR LOCALMENTE DE FORMA GARANTIZADA
     try {
-      const token = localStorage.getItem('pos_token');
-      const response = await fetch(getApiUrl(`/orders/${activeOrderId}/table`), {
-        method: 'PATCH',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newTableId: selectedNewTableId })
-      });
-      if (response.ok) {
-        toast.success("Mesa cambiada exitosamente");
-        setShowChangeTableModal(false);
-        router.push('/');
-      } else {
-        const data = await response.json();
-        toast.error(data.message || "Error al cambiar mesa");
+      const activeTableOrders = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
+      const currentOrder = activeTableOrders[tableId];
+
+      if (currentOrder) {
+        activeTableOrders[selectedNewTableId] = {
+          ...currentOrder,
+          tableName: newTableName
+        };
+        delete activeTableOrders[tableId];
+        setScopedStorage('pos_active_table_orders', activeTableOrders);
       }
-    } catch (e) {
-      toast.error("Error de red al cambiar mesa");
-    } finally {
-      setSubmitting(false);
+
+      // Actualizar comanda de cocina local
+      let localKitchen = getScopedStorage<any[]>('pos_local_kitchen_orders', []);
+      localKitchen = localKitchen.map((o: any) => {
+        if (o.id === activeOrderId || (o.table && o.table.name === (tableName || `Mesa ${tableId}`))) {
+          return {
+            ...o,
+            table: {
+              ...o.table,
+              id: selectedNewTableId,
+              name: newTableName,
+              number: parseInt(selectedNewTableId.replace(/[^0-9]/g, '') || '1', 10)
+            }
+          };
+        }
+        return o;
+      });
+      setScopedStorage('pos_local_kitchen_orders', localKitchen);
+      window.dispatchEvent(new Event('storage'));
+    } catch (localErr) {
+      console.warn('Error moviendo mesa localmente:', localErr);
     }
+
+    // 2. SINCRONIZAR CON BACKEND SI ESTÁ DISPONIBLE
+    if (activeOrderId) {
+      try {
+        const token = localStorage.getItem('pos_token');
+        await fetch(getApiUrl(`/orders/${activeOrderId}/table`), {
+          method: 'PATCH',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ newTableId: selectedNewTableId })
+        }).catch(() => null);
+      } catch {}
+    }
+
+    toast.success(`Mesa cambiada exitosamente a ${newTableName} ✅`);
+    setShowChangeTableModal(false);
+    setSubmitting(false);
+    router.push('/');
   };
 
   // ==========================================
@@ -774,7 +1018,11 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         clearLocalTableOccupancy();
         toast.success("Cuenta cobrada en su totalidad y mesa liberada ✅");
         setShowCheckout(false);
-        router.push('/');
+        if (isCashierMode) {
+          router.push('/report');
+        } else {
+          router.push('/');
+        }
       } else {
         // Update remaining balance in active table orders
         try {
@@ -981,27 +1229,65 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-              {filteredProducts.map(product => (
-                <button
-                  key={product.id}
-                  onClick={() => addToCart(product)}
-                  className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col items-center text-center hover:border-emerald-400 hover:shadow-lg hover:-translate-y-1 transition-all group active:scale-95"
-                >
-                  <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-3 group-hover:bg-emerald-50 transition-colors">
-                    <UtensilsCrossed className="w-8 h-8 text-slate-300 group-hover:text-emerald-500 transition-colors" />
-                  </div>
-                  <h3 className="font-bold text-slate-800 text-sm mb-1 line-clamp-2 min-h-[40px]">
-                    {product.name}
-                  </h3>
-                  <div className="mt-auto pt-2 flex items-center justify-between w-full">
-                    <span className="font-black text-emerald-600">
-                      S/ {product.price.toFixed(2)}
-                    </span>
-                    <div className={`w-2 h-2 rounded-full ${product.stock > 0 ? 'bg-emerald-400' : 'bg-rose-400'}`} 
-                          title={product.stock > 0 ? 'En stock' : 'Sin stock'}></div>
-                  </div>
-                </button>
-              ))}
+              {filteredProducts.map(product => {
+                const available = getAvailableStock(product);
+                const isOutOfStock = typeof product.stock === 'number' && available <= 0;
+                const isLowStock = typeof product.stock === 'number' && available > 0 && available <= 3;
+
+                return (
+                  <button
+                    key={product.id}
+                    onClick={() => {
+                      if (isOutOfStock) {
+                        toast.error(`"${product.name}" está agotado`);
+                        return;
+                      }
+                      addToCart(product);
+                    }}
+                    disabled={isOutOfStock}
+                    className={`border rounded-2xl p-4 flex flex-col items-center text-center transition-all group relative overflow-hidden ${
+                      isOutOfStock 
+                        ? 'bg-slate-50 border-slate-200 opacity-60 cursor-not-allowed' 
+                        : 'bg-white border-slate-200 hover:border-emerald-400 hover:shadow-lg hover:-translate-y-1 active:scale-95'
+                    }`}
+                  >
+                    {/* Badge de Stock */}
+                    {typeof product.stock === 'number' && (
+                      <div className="absolute top-2 right-2 z-10">
+                        {isOutOfStock ? (
+                          <span className="px-2 py-0.5 bg-rose-500 text-white font-black text-[10px] rounded-full shadow-sm">
+                            Agotado
+                          </span>
+                        ) : isLowStock ? (
+                          <span className="px-2 py-0.5 bg-amber-500 text-white font-black text-[10px] rounded-full shadow-sm">
+                            Quedan {available}
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 bg-slate-100 text-slate-600 font-bold text-[10px] rounded-full border border-slate-200">
+                            Stock: {available}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-3 transition-colors ${
+                      isOutOfStock ? 'bg-slate-100 text-slate-400' : 'bg-slate-50 group-hover:bg-emerald-50'
+                    }`}>
+                      <UtensilsCrossed className={`w-8 h-8 ${isOutOfStock ? 'text-slate-300' : 'text-slate-300 group-hover:text-emerald-500'}`} />
+                    </div>
+                    <h3 className={`font-bold text-sm mb-1 line-clamp-2 min-h-[40px] ${isOutOfStock ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                      {product.name}
+                    </h3>
+                    <div className="mt-auto pt-2 flex items-center justify-between w-full">
+                      <span className={`font-black ${isOutOfStock ? 'text-slate-400' : 'text-emerald-600'}`}>
+                        S/ {product.price.toFixed(2)}
+                      </span>
+                      <div className={`w-2 h-2 rounded-full ${available > 0 ? 'bg-emerald-400' : 'bg-rose-400'}`} 
+                            title={available > 0 ? `En stock (${available})` : 'Agotado'}></div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -1266,28 +1552,32 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                     <ArrowRightLeft className="w-3 h-3" />
                     Cambiar Mesa
                   </button>
-                  <button 
-                    onClick={handleFreeTable}
-                    className="flex-1 py-2 px-2 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 font-bold text-xs rounded-lg transition-all flex justify-center items-center gap-1.5 outline-none shadow-sm"
-                    title="Desocupar mesa y marcar como libre"
-                  >
-                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                    Liberar Mesa
-                  </button>
-                  <button 
-                    onClick={handleCancelOrderRequest}
-                    className="flex-1 py-2 px-2 bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 font-bold text-xs rounded-lg transition-all flex justify-center items-center gap-1.5 outline-none shadow-sm"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                    Anular
-                  </button>
+                  {isCashierMode && (
+                    <>
+                      <button 
+                        onClick={handleFreeTable}
+                        className="flex-1 py-2 px-2 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 font-bold text-xs rounded-lg transition-all flex justify-center items-center gap-1.5 outline-none shadow-sm"
+                        title="Desocupar mesa y marcar como libre"
+                      >
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        Liberar Mesa
+                      </button>
+                      <button 
+                        onClick={handleCancelOrderRequest}
+                        className="flex-1 py-2 px-2 bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 font-bold text-xs rounded-lg transition-all flex justify-center items-center gap-1.5 outline-none shadow-sm"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Anular
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
           </div>
 
           {cart.length === 0 && (activeOrderId || existingItems.length > 0) ? (
-            userRole === 'WAITER' ? (
+            !isCashierMode ? (
               <div className="flex flex-col gap-2 w-full">
                 <button 
                   onClick={() => {
@@ -1297,9 +1587,11 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                       if (activeTableOrders[tableId]) {
                         activeTableOrders[tableId].billRequested = true;
                         setScopedStorage('pos_active_table_orders', activeTableOrders);
+                        window.dispatchEvent(new Event('storage'));
                       }
                     } catch {}
-                    toast.success('Pre-cuenta enviada a Caja para cobro ✅');
+                    toast.success('Pre-cuenta impresa y enviada a Caja para cobro oficial ✅');
+                    router.push('/');
                   }}
                   disabled={existingItems.length === 0}
                   className="w-full py-4 rounded-xl font-black text-white bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-200 active:scale-[0.98]"
@@ -1307,9 +1599,10 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                   <Printer className="w-5 h-5" />
                   IMPRIMIR PRE-CUENTA / PEDIR A CAJA
                 </button>
-                <p className="text-[11px] text-center text-slate-400 font-medium">
-                  Los meseros solo imprimen la pre-cuenta. El cobro se realiza en Caja.
-                </p>
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 text-center text-amber-800 text-xs font-semibold flex items-center justify-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  Los meseros no cobran. La cuenta se cobra exclusivamente en Caja.
+                </div>
               </div>
             ) : (
               <div className="flex gap-2 w-full">
@@ -1367,8 +1660,8 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
       </div>
 
-      {/* MODAL DE COBRO AVANZADO */}
-      {showCheckout && (
+      {/* MODAL DE COBRO AVANZADO (Solo desde Caja) */}
+      {showCheckout && isCashierMode && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200 print:hidden">
           <div className="bg-white rounded-3xl overflow-hidden shadow-2xl w-[90%] max-w-lg flex flex-col animate-in zoom-in-95 duration-200 max-h-[90vh]">
             
@@ -1763,23 +2056,27 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                    <Printer className="w-6 h-6" />
                  </button>
                  <button
-                   onClick={() => {
-                     setCheckoutMode('SPLIT');
-                     const splitSum = selectedSplitItems.reduce((sum, id) => {
-                       const it = existingItems.find(i => i.id === id);
-                       return sum + (it ? (it.quantity * it.unitPrice) : 0);
-                     }, 0);
-                     setPaymentAmount(splitSum);
-                     setTipAmount(0);
-                     setPaymentMethod('CASH');
-                     setShowSplitBillModal(false);
-                     setShowCheckout(true);
-                   }}
-                   disabled={selectedSplitItems.length === 0}
-                   className={`flex-1 py-4 rounded-xl font-black text-lg text-white transition-all flex justify-center items-center gap-2 ${selectedSplitItems.length === 0 ? 'bg-slate-300 cursor-not-allowed shadow-none' : 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200 active:scale-[0.98]'}`}
-                 >
-                   Cobrar Selección
-                 </button>
+                    onClick={() => {
+                      if (!isCashierMode) {
+                        toast.warning('Los meseros no tienen autorización para cobrar. El cobro lo realiza el Cajero en Caja.');
+                        return;
+                      }
+                      setCheckoutMode('SPLIT');
+                      const splitSum = selectedSplitItems.reduce((sum, id) => {
+                        const it = existingItems.find(i => i.id === id);
+                        return sum + (it ? (it.quantity * it.unitPrice) : 0);
+                      }, 0);
+                      setPaymentAmount(splitSum);
+                      setTipAmount(0);
+                      setPaymentMethod('CASH');
+                      setShowSplitBillModal(false);
+                      setShowCheckout(true);
+                    }}
+                    disabled={selectedSplitItems.length === 0 || !isCashierMode}
+                    className={`flex-1 py-4 rounded-xl font-black text-lg text-white transition-all flex justify-center items-center gap-2 ${selectedSplitItems.length === 0 || !isCashierMode ? 'bg-slate-300 cursor-not-allowed shadow-none' : 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200 active:scale-[0.98]'}`}
+                  >
+                    {!isCashierMode ? 'Solo Caja puede cobrar' : 'Cobrar Selección'}
+                  </button>
                </div>
             </div>
           </div>

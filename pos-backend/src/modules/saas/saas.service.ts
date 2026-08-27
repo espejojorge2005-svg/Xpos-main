@@ -163,24 +163,6 @@ export class SaasService {
     });
   }
 
-  async renewSubscription(id: string, daysToAdd: number) {
-    const restaurant = await this.prisma.restaurant.findUnique({ where: { id } });
-    if (!restaurant) throw new NotFoundException('Restaurante no encontrado');
-
-    const currentEnd = new Date(restaurant.subscriptionEndDate);
-    const now = new Date();
-    
-    const baseDate = currentEnd < now ? now : currentEnd;
-    baseDate.setDate(baseDate.getDate() + daysToAdd);
-
-    return this.prisma.restaurant.update({
-      where: { id },
-      data: {
-        subscriptionEndDate: baseDate,
-        isActive: true
-      }
-    });
-  }
 
   async createAdminForRestaurant(restaurantId: string, dto: { name: string; email: string; password: string }) {
     const restaurant = await this.prisma.restaurant.findUnique({ where: { id: restaurantId } });

@@ -105,7 +105,8 @@ export default function Sidebar() {
     SUPER_ADMIN: { label: 'Super Admin', bg: 'bg-violet-50 border-violet-100', text: 'text-violet-600', icon: Shield },
     ADMIN:       { label: 'Administrador', bg: 'bg-violet-50 border-violet-100', text: 'text-violet-600', icon: Shield },
     CASHIER:     { label: 'Cajero/a',     bg: 'bg-blue-50 border-blue-100', text: 'text-blue-600', icon: Calculator },
-    WAITER:      { label: 'Mesero/a',     bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-600', icon: ClipboardList }
+    WAITER:      { label: 'Mesero/a',     bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-600', icon: ClipboardList },
+    COOK:        { label: 'Cocinero',     bg: 'bg-amber-50 border-amber-100', text: 'text-amber-600', icon: ChefHat }
   };
 
   const handleLogout = () => {

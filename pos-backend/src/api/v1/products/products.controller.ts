@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req } fro
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { AdjustStockDto } from './dto/adjust-stock.dto';
 import { JwtAuthGuard } from '../../../modules/auth/jwt-auth.guard'; 
 
 @Controller('products')
@@ -48,9 +49,9 @@ export class ProductsController {
   async adjustStock(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() body: { delta: number; reason?: string }
+    @Body() adjustStockDto: AdjustStockDto
   ) {
-    return this.productsService.adjustStock(id, body.delta, body.reason, req.user);
+    return this.productsService.adjustStock(id, adjustStockDto.delta, adjustStockDto.reason, req.user);
   }
 
   @Get(':id/stock-history')

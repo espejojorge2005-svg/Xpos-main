@@ -183,14 +183,19 @@ export class ProductsService {
   }
 
   async adjustStock(id: string, delta: number, reason?: string, reqUser?: any) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    if (!isUuid) {
+      throw new NotFoundException(`ID inválido: ${id}`);
+    }
+
     const product = await this.findOne(id, reqUser);
-    const stockBefore = product.stock;
-    const stockAfter = stockBefore + delta;
+    const stockBefore = product.stock ?? 0;
+    const stockAfter = Math.max(0, stockBefore + delta);
 
     const [updated] = await this.prisma.$transaction([
       this.prisma.product.update({
         where: { id },
-        data: { stock: { increment: delta } },
+        data: { stock: stockAfter },
         select: { id: true, name: true, stock: true }
       }),
       this.prisma.stockMovement.create({
@@ -209,6 +214,9 @@ export class ProductsService {
   }
 
   async getStockHistory(id: string, days = 7, reqUser?: any) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    if (!isUuid) return [];
+
     await this.findOne(id, reqUser);
     const since = new Date();
     since.setDate(since.getDate() - days);
@@ -226,73 +234,82 @@ export class ProductsService {
   }
 
   async getKardex(days = 7, reqUser?: any) {
-    const restaurantId = this.getTenantRestaurantId(reqUser);
-    const since = new Date();
-    since.setDate(since.getDate() - (days - 1));
-    since.setHours(0, 0, 0, 0);
+    try {
+      const restaurantId = this.getTenantRestaurantId(reqUser);
+      const since = new Date();
+      since.setDate(since.getDate() - (days - 1));
+      since.setHours(0, 0, 0, 0);
 
-    const whereProductClause: any = { isActive: true };
-    if (restaurantId && reqUser?.role !== 'SUPER_ADMIN') {
-      whereProductClause.restaurantId = restaurantId;
-    }
-
-    const allProducts = await this.prisma.product.findMany({
-      where: whereProductClause,
-      select: { id: true, name: true, stock: true, minStock: true, category: { select: { name: true } } },
-      orderBy: { name: 'asc' },
-    });
-
-    const productIds = allProducts.map(p => p.id);
-
-    const movements = await this.prisma.stockMovement.findMany({
-      where: { 
-        productId: { in: productIds },
-        createdAt: { gte: since } 
-      },
-      include: { product: { select: { id: true, name: true, stock: true, minStock: true, category: { select: { name: true } } } } },
-      orderBy: { createdAt: 'asc' },
-    });
-
-    const dates: string[] = [];
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      dates.push(d.toISOString().slice(0, 10));
-    }
-
-    const closingByProductDate: Record<string, Record<string, number>> = {};
-
-    for (const mov of movements) {
-      const dateKey = mov.createdAt.toISOString().slice(0, 10);
-      const pid = mov.productId;
-      if (!closingByProductDate[pid]) closingByProductDate[pid] = {};
-      closingByProductDate[pid][dateKey] = mov.stockAfter;
-    }
-
-    const kardex = allProducts.map((product) => {
-      const dailyClosing: Record<string, number | null> = {};
-      let lastKnown: number | null = null;
-
-      for (const date of dates) {
-        const closing = closingByProductDate[product.id]?.[date];
-        if (closing !== undefined) {
-          lastKnown = closing;
-          dailyClosing[date] = closing;
-        } else {
-          dailyClosing[date] = lastKnown;
-        }
+      const whereProductClause: any = { isActive: true };
+      if (restaurantId && reqUser?.role !== 'SUPER_ADMIN') {
+        whereProductClause.restaurantId = restaurantId;
       }
 
-      return {
-        productId: product.id,
-        productName: product.name,
-        category: product.category?.name ?? 'Sin Categoría',
-        currentStock: product.stock,
-        minStock: product.minStock,
-        dailyClosing,
-      };
-    });
+      const allProducts = await this.prisma.product.findMany({
+        where: whereProductClause,
+        select: { id: true, name: true, stock: true, minStock: true, category: { select: { name: true } } },
+        orderBy: { name: 'asc' },
+      });
 
-    return { dates, kardex };
+      const productIds = allProducts.map(p => p.id);
+
+      const movements = productIds.length > 0 ? await this.prisma.stockMovement.findMany({
+        where: { 
+          productId: { in: productIds },
+          createdAt: { gte: since } 
+        },
+        include: { product: { select: { id: true, name: true, stock: true, minStock: true, category: { select: { name: true } } } } },
+        orderBy: { createdAt: 'asc' },
+      }) : [];
+
+      const dates: string[] = [];
+      for (let i = days - 1; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        dates.push(d.toISOString().slice(0, 10));
+      }
+
+      const closingByProductDate: Record<string, Record<string, number>> = {};
+
+      for (const mov of movements) {
+        const dateKey = mov.createdAt.toISOString().slice(0, 10);
+        const pid = mov.productId;
+        if (!closingByProductDate[pid]) closingByProductDate[pid] = {};
+        closingByProductDate[pid][dateKey] = mov.stockAfter;
+      }
+
+      const todayKey = new Date().toISOString().slice(0, 10);
+
+      const kardex = allProducts.map((product) => {
+        const dailyClosing: Record<string, number | null> = {};
+        let lastKnown: number | null = null;
+
+        for (const date of dates) {
+          const closing = closingByProductDate[product.id]?.[date];
+          if (closing !== undefined) {
+            lastKnown = closing;
+            dailyClosing[date] = closing;
+          } else if (date === todayKey) {
+            dailyClosing[date] = product.stock;
+          } else {
+            dailyClosing[date] = lastKnown;
+          }
+        }
+
+        return {
+          productId: product.id,
+          productName: product.name,
+          category: product.category?.name ?? 'Sin Categoría',
+          currentStock: product.stock,
+          minStock: product.minStock,
+          dailyClosing,
+        };
+      });
+
+      return { dates, kardex };
+    } catch (e: any) {
+      console.error('Error fetching kardex in backend:', e);
+      return { dates: [], kardex: [] };
+    }
   }
 }

@@ -20,17 +20,17 @@ export class AuthService {
 
     const userCount = await this.prisma.user.count();
     const isFirstUser = userCount === 0;
-    const role = isFirstUser ? 'SUPER_ADMIN' : 'ADMIN';
+    const role = 'ADMIN';
 
-    let restaurantId: string | null = null;
-    if (!isFirstUser) {
-      const restaurant = await this.prisma.restaurant.create({
-        data: {
-          name: `Restaurante de ${data.name}`,
-        }
-      });
-      restaurantId = restaurant.id;
-    }
+    // Creamos siempre el restaurante asociado para el administrador
+    const restaurant = await this.prisma.restaurant.create({
+      data: {
+        name: isFirstUser ? 'Restaurante Principal' : `Restaurante de ${data.name}`,
+        subscriptionEndDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+        isActive: true,
+      }
+    });
+    const restaurantId = restaurant.id;
 
     const user = await this.prisma.user.create({
       data: {
@@ -44,12 +44,13 @@ export class AuthService {
     });
 
     const allowedViews = ['*'];
-    const payload = { sub: user.id, email: user.email, role: user.role, allowedViews, restaurantId: user.restaurantId };
+    const payload = { sub: user.id, email: user.email, role: user.role, allowedViews, restaurantId: user.restaurantId, restaurantName: restaurant.name };
     return {
       access_token: this.jwtService.sign(payload),
-      user: { id: user.id, name: user.name, role: user.role, allowedViews, restaurantId: user.restaurantId }
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, allowedViews, restaurantId: user.restaurantId, restaurantName: restaurant.name }
     };
   }
+
 
   async login(data: LoginDto) {
     const emailLower = data.email.toLowerCase().trim();
@@ -140,6 +141,25 @@ export class AuthService {
 
     // 3. Verificar estado activo
     if (!user.isActive) throw new UnauthorizedException('Usuario desactivado. Contacte al soporte.');
+
+    // 3.1 Si el usuario es ADMIN pero no tiene restaurantId asignado, asignarle el primer restaurante
+    if (user.role === 'ADMIN' && !user.restaurantId) {
+      let defaultRest = await this.prisma.restaurant.findFirst({ orderBy: { createdAt: 'asc' } });
+      if (!defaultRest) {
+        defaultRest = await this.prisma.restaurant.create({
+          data: {
+            name: `Restaurante de ${user.name}`,
+            subscriptionEndDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+            isActive: true,
+          }
+        });
+      }
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { restaurantId: defaultRest.id },
+        include: { restaurant: true }
+      });
+    }
     
     // 4. Verificar suscripción y estado del restaurante
     if (user.restaurantId && user.restaurant) {
@@ -170,6 +190,7 @@ export class AuthService {
       user: { id: user.id, name: user.name, email: user.email, role: user.role, pin: user.pin || null, allowedViews, restaurantId: user.restaurantId, restaurantName }
     };
   }
+
 
   async loginPin(data: LoginPinDto) {
     const user = await this.prisma.user.findFirst({

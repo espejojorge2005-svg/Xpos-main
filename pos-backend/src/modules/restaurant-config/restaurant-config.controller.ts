@@ -1,7 +1,7 @@
 import { Controller, Get, Patch, Body, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RestaurantConfigService } from './restaurant-config.service';
-import type { UpdateRestaurantConfigDto } from './restaurant-config.service';
+import { UpdateRestaurantConfigDto } from './dto/update-restaurant-config.dto';
 
 @Controller('restaurant-config')
 export class RestaurantConfigController {
@@ -21,3 +21,4 @@ export class RestaurantConfigController {
     return this.service.updateConfig(dto);
   }
 }
+

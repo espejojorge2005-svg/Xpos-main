@@ -2,6 +2,9 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { ClsService } from 'nestjs-cls';
 
+const isValidUuid = (val: any): boolean =>
+  typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
 const TENANT_MODELS = [
   'Zone', 'Category', 'Product', 'InventoryItem',
   'KitchenStation', 'Order', 'CashShift', 'User'
@@ -26,7 +29,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
           async $allOperations({ model, operation, args, query }) {
             const restaurantId = cls.get('restaurantId');
             
-            if (restaurantId && TENANT_MODELS.includes(model)) {
+            if (restaurantId && isValidUuid(restaurantId) && TENANT_MODELS.includes(model)) {
               const anyArgs = (args || {}) as any;
               
               if (operation === 'create') {

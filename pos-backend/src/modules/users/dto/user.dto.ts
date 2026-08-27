@@ -16,7 +16,7 @@ export class CreateUserDto {
 
   @IsOptional()
   @IsString()
-  role?: 'ADMIN' | 'CASHIER' | 'WAITER';
+  role?: 'ADMIN' | 'CASHIER' | 'WAITER' | 'COOK';
 
   @IsOptional()
   @IsArray()
@@ -42,7 +42,7 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsString()
-  role?: 'ADMIN' | 'CASHIER' | 'WAITER';
+  role?: 'ADMIN' | 'CASHIER' | 'WAITER' | 'COOK';
 
   @IsOptional()
   @IsArray()

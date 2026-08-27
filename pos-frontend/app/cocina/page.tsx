@@ -269,16 +269,44 @@ export default function CocinaPage() {
     localStorage.setItem('kds_acked_orders', JSON.stringify(newAcked));
   };
 
+  const fetchStations = async () => {
+    // 1. Carga inmediata de estaciones desde caché local persistente
+    let loaded: any[] = [];
+    try {
+      const cached = getScopedStorage<any[]>('pos_registered_stations', []);
+      if (Array.isArray(cached) && cached.length > 0) {
+        loaded = cached;
+      } else {
+        const raw = localStorage.getItem('pos_registered_stations');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) loaded = parsed;
+        }
+      }
+    } catch {}
+
+    if (loaded.length > 0) {
+      setStations(loaded);
+    }
+
+    // 2. Sincronización silenciosa con backend
+    const token = localStorage.getItem('pos_token');
+    try {
+      const response = await fetch(getApiUrl('/kitchen-stations'), {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setStations(data);
+          setScopedStorage('pos_registered_stations', data);
+          try { localStorage.setItem('pos_registered_stations', JSON.stringify(data)); } catch {}
+        }
+      }
+    } catch (e) {}
+  };
+
   useEffect(() => {
-    const fetchStations = async () => {
-      const token = localStorage.getItem('pos_token');
-      try {
-        const response = await fetch(getApiUrl('/kitchen-stations'), {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (response.ok) setStations(await response.json());
-      } catch (e) {}
-    };
     fetchStations();
 
     const savedAcked = localStorage.getItem('kds_acked_orders');
@@ -286,7 +314,16 @@ export default function CocinaPage() {
       try { setAckedOrders(JSON.parse(savedAcked)); } catch (e) {}
     }
     fetchKitchenOrders();
-    const interval = setInterval(fetchKitchenOrders, 5000); // Polling cada 5s
+    const interval = setInterval(() => {
+      fetchKitchenOrders();
+      fetchStations();
+    }, 5000); // Polling cada 5s
+
+    const handleStorageChange = () => {
+      fetchKitchenOrders();
+      fetchStations();
+    };
+    window.addEventListener('storage', handleStorageChange);
 
     // Real-time Firebase Firestore synchronization listener
     const unsubscribeFirebase = subscribeToKitchenOrders((firebaseOrders) => {
@@ -297,6 +334,7 @@ export default function CocinaPage() {
 
     return () => {
       clearInterval(interval);
+      window.removeEventListener('storage', handleStorageChange);
       if (typeof unsubscribeFirebase === 'function') unsubscribeFirebase();
     };
   }, [router]);
@@ -355,9 +393,9 @@ export default function CocinaPage() {
         {stations.map(st => (
           <button
             key={st.id}
-            onClick={() => setSelectedStation(st.id)}
-            className={`px-6 py-2.5 rounded-2xl font-black text-sm uppercase tracking-wider transition-all shadow-sm whitespace-nowrap ${
-               selectedStation === st.id ? 'scale-105' : 'hover:scale-105 opacity-80 hover:opacity-100'
+            onClick={() => setSelectedStation(selectedStation === st.id ? null : st.id)}
+            className={`px-6 py-2.5 rounded-2xl font-black text-sm uppercase tracking-wider transition-all shadow-sm whitespace-nowrap flex items-center gap-2 ${
+               selectedStation === st.id ? 'scale-105 shadow-lg ring-2 ring-white/20' : 'hover:scale-105 opacity-80 hover:opacity-100'
             }`}
              style={{ 
               backgroundColor: selectedStation === st.id ? st.colorHex : '#1e293b', 
@@ -365,6 +403,7 @@ export default function CocinaPage() {
               border: `2px solid ${st.colorHex}`
             }}
           >
+            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: selectedStation === st.id ? '#0f172a' : st.colorHex }}></span>
             {st.name}
           </button>
         ))}
@@ -382,7 +421,14 @@ export default function CocinaPage() {
             if (ackedOrders.includes(o.id)) return false;
             // Si no hay filtro, mostrar todas
             if (!selectedStation) return true;
-            return o.items.some(i => i.product.stations?.some((s: any) => s.id === selectedStation));
+            return o.items.some(i => {
+              const itemStations = i.product?.stations || [];
+              const target = stations.find(st => st.id === selectedStation);
+              return itemStations.some((s: any) => 
+                String(s.id) === String(selectedStation) || 
+                (target && s.name?.toLowerCase().trim() === target.name?.toLowerCase().trim())
+              );
+            });
           }).map((order) => {
             // NUEVO: Verificamos si la orden completa fue cancelada por el mozo
             const isOrderCanceled = order.status === 'CANCELLED';
@@ -433,7 +479,12 @@ export default function CocinaPage() {
                     {(() => {
                       const visibleItems = order.items.filter(item => {
                          if (!selectedStation) return true;
-                         return item.product.stations?.some((s: any) => s.id === selectedStation);
+                         const itemStations = item.product?.stations || [];
+                         const target = stations.find(st => st.id === selectedStation);
+                         return itemStations.some((s: any) => 
+                           String(s.id) === String(selectedStation) || 
+                           (target && s.name?.toLowerCase().trim() === target.name?.toLowerCase().trim())
+                         );
                       });
 
                       const rootItems = visibleItems.filter(item => {
@@ -447,7 +498,10 @@ export default function CocinaPage() {
                          const isItemServed = item.status === 'SERVED';
                          const catName = item.product?.category?.name?.toUpperCase() || '';
                          // Si hay filtro, usamos el color de la estación seleccionada, de lo contrario la primera
-                         const station = item.product?.stations?.find((s: any) => s.id === selectedStation) || item.product?.stations?.[0];
+                         const station = item.product?.stations?.find((s: any) => 
+                           String(s.id) === String(selectedStation) || 
+                           (stations.find(st => st.id === selectedStation)?.name?.toLowerCase().trim() === s.name?.toLowerCase().trim())
+                         ) || item.product?.stations?.[0];
                          const isBar = ['JUGOS', 'CAFES', 'BEBIDAS', 'BAR', 'COCTELERIA', 'REFRESCOS'].includes(catName);
                          const parentItem = item.parentItemId ? order.items.find(i => i.id === item.parentItemId) : null;
                          const parentName = parentItem?.product?.name || 'COMBO';
@@ -495,6 +549,19 @@ export default function CocinaPage() {
                                         <span className="text-[10px] bg-indigo-100/90 text-indigo-700 font-black px-2 py-0.5 rounded-md uppercase tracking-widest border border-indigo-200/50 shadow-sm shrink-0 whitespace-nowrap">
                                           ✨ PARTE DE {parentName}
                                         </span>
+                                     )}
+                                     {station && (
+                                       <span 
+                                         className="text-[10px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider shadow-sm shrink-0 whitespace-nowrap inline-flex items-center gap-1"
+                                         style={{ 
+                                           backgroundColor: `${station.colorHex}25`, 
+                                           color: station.colorHex, 
+                                           border: `1px solid ${station.colorHex}80` 
+                                         }}
+                                       >
+                                         <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: station.colorHex }}></span>
+                                         {station.name}
+                                       </span>
                                      )}
                                   </h4>
                                   {isItemCanceled && <p className="text-rose-600 font-bold text-xs mt-0.5">Plato CANCELADO - NO PREPARAR</p>}

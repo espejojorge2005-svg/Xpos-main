@@ -94,6 +94,7 @@ export default function LoginPage() {
       loadedStaff = [
         { id: 'caja-1', name: 'Cajero Principal', role: 'CASHIER', pin: '1234', allowedViews: ['pos', 'cocina', 'caja'] },
         { id: 'mesero-1', name: 'Mesero Sala', role: 'WAITER', pin: '1234', allowedViews: ['pos', 'cocina'] },
+        { id: 'cocina-1', name: 'Monitor Cocina', role: 'COOK', pin: '1234', allowedViews: ['cocina'] },
       ];
     }
 
@@ -568,7 +569,9 @@ export default function LoginPage() {
                         {user.name.charAt(0).toUpperCase()}
                       </div>
                       <span className="text-xs font-bold text-white truncate w-full">{user.name}</span>
-                      <span className="text-[10px] text-slate-400 uppercase font-black tracking-widest">{user.role}</span>
+                      <span className="text-[10px] text-slate-400 uppercase font-black tracking-widest">
+                        {user.role === 'COOK' ? 'Cocinero' : user.role === 'WAITER' ? 'Mesero' : user.role === 'CASHIER' ? 'Cajero' : user.role}
+                      </span>
                     </button>
                   ))}
                 </div>

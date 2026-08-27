@@ -109,10 +109,17 @@ export default function CashRegisterPage() {
 
     try {
       setLoading(true);
-      const response = await fetch(getApiUrl('/payments/closure'), {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = response.ok ? await response.json() : {};
+      let data: any = {};
+      try {
+        const response = await fetch(getApiUrl('/payments/closure'), {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (response && response.ok) {
+          data = await response.json();
+        }
+      } catch (fetchErr) {
+        console.warn('Backend /payments/closure no disponible, calculando desde caja local:', fetchErr);
+      }
 
       const historyData = getScopedStorage<PastClosure[]>('pos_shift_history', []);
       setPastClosures(historyData);
@@ -672,7 +679,7 @@ export default function CashRegisterPage() {
                   <p className="text-2xl font-black text-emerald-600 mb-3">S/ {Number(t.total || 0).toFixed(2)}</p>
                 </div>
                 <button
-                  onClick={() => router.push(`/pos/${t.tableId}`)}
+                  onClick={() => router.push(`/pos/${t.tableId}?mode=caja`)}
                   className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md shadow-indigo-100 active:scale-[0.98]"
                 >
                   <ReceiptText className="w-4 h-4" /> Cobrar en Caja

@@ -3,7 +3,7 @@ import { getApiUrl, apiFetch } from '@/utils/api';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Users, Plus, X, Loader2, Edit, UserX, UserCheck, Key, Shield, ChefHat, Calculator } from 'lucide-react';
+import { Users, Plus, X, Loader2, Edit, UserX, UserCheck, Key, Shield, ChefHat, Calculator, AlertTriangle, Crown, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { useGuardedRoute } from '@/hooks/useGuardedRoute';
 
@@ -24,19 +24,21 @@ const ROLE_LABELS: Record<string, string> = {
   ADMIN:   'Administrador',
   CASHIER: 'Cajero',
   WAITER:  'Mesero',
+  COOK:    'Cocinero',
 };
 
 const ROLE_COLORS: Record<string, string> = {
   ADMIN:   'bg-violet-100 text-violet-700',
   CASHIER: 'bg-blue-100 text-blue-700',
   WAITER:  'bg-emerald-100 text-emerald-700',
+  COOK:    'bg-amber-100 text-amber-700 border border-amber-200',
 };
 
 interface User {
   id: string;
   name: string;
   email: string;
-  role: 'ADMIN' | 'CASHIER' | 'WAITER';
+  role: 'ADMIN' | 'CASHIER' | 'WAITER' | 'COOK';
   isActive: boolean;
   allowedViews: string[];
   createdAt?: string;
@@ -124,7 +126,68 @@ export default function UsersPage() {
 
   useEffect(() => { fetchUsers(); }, []);
 
-  const openCreate = () => { setForm({ ...emptyForm }); setShowModal(true); };
+  // Obtener información estricta de la suscripción y límite de usuarios del plan
+  const getSubscriptionInfo = () => {
+    const currentRestId = localStorage.getItem('pos_restaurant_id') || 
+      (typeof window !== 'undefined' && localStorage.getItem('pos_user') ? JSON.parse(localStorage.getItem('pos_user') || '{}').restaurantId : null);
+    
+    let tenant: any = null;
+    try {
+      const cachedTenantsStr = localStorage.getItem('pos_saas_tenants_cache');
+      if (cachedTenantsStr) {
+        const tenants: any[] = JSON.parse(cachedTenantsStr);
+        tenant = tenants.find(t => t.id === currentRestId) || tenants[0];
+      }
+    } catch {}
+
+    let plan: any = tenant?.plan || null;
+    if (!plan?.maxUsers && tenant?.planId) {
+      try {
+        const cachedPlansStr = localStorage.getItem('pos_saas_plans_cache');
+        if (cachedPlansStr) {
+          const plans: any[] = JSON.parse(cachedPlansStr);
+          plan = plans.find(p => p.id === tenant.planId);
+        }
+      } catch {}
+    }
+
+    const planName = plan?.name || 'Plan Básico';
+    const maxUsers = Number(plan?.maxUsers) || 3;
+    const isSuspended = tenant?.isActive === false;
+    const isExpired = tenant?.subscriptionEndDate ? new Date(tenant.subscriptionEndDate) < new Date() : false;
+    const subscriptionEndDate = tenant?.subscriptionEndDate || null;
+
+    return {
+      tenant,
+      planName,
+      maxUsers,
+      isSuspended,
+      isExpired,
+      subscriptionEndDate
+    };
+  };
+
+  const subInfo = getSubscriptionInfo();
+  const activeUsersCount = users.filter(u => u.isActive !== false).length;
+  const isLimitReached = activeUsersCount >= subInfo.maxUsers;
+  const isSubscriptionBlocked = subInfo.isSuspended || subInfo.isExpired;
+
+  const openCreate = () => {
+    if (subInfo.isSuspended) {
+      toast.error('Acceso bloqueado: El restaurante se encuentra suspendido por el SuperAdmin.');
+      return;
+    }
+    if (subInfo.isExpired) {
+      toast.error(`Acceso bloqueado: La suscripción expiró el ${new Date(subInfo.subscriptionEndDate!).toLocaleDateString()}. Renueve el plan desde SuperAdmin.`);
+      return;
+    }
+    if (isLimitReached) {
+      toast.warning(`Límite alcanzado: El ${subInfo.planName} solo permite un máximo de ${subInfo.maxUsers} usuarios (${activeUsersCount} activos actualmente). Mejore su plan en SuperAdmin para registrar más personal.`);
+      return;
+    }
+    setForm({ ...emptyForm });
+    setShowModal(true);
+  };
   const openEdit = (u: User) => {
     setForm({ id: u.id, name: u.name, email: u.email, password: '', pin: u.pin || '', role: u.role, allowedViews: u.allowedViews });
     setShowModal(true);
@@ -147,6 +210,26 @@ export default function UsersPage() {
     const method = isEditing ? 'PATCH' : 'POST';
 
     const cleanEmail = form.email.trim().toLowerCase();
+
+    // Verificación estricta de límites de suscripción y usuarios al crear
+    if (!isEditing) {
+      if (subInfo.isSuspended) {
+        toast.error('Acción bloqueada: El restaurante se encuentra suspendido. Contacte a SuperAdmin.');
+        setIsSaving(false);
+        return;
+      }
+      if (subInfo.isExpired) {
+        toast.error('Acción bloqueada: La suscripción de este restaurante ha expirado. Renueve su plan en SuperAdmin.');
+        setIsSaving(false);
+        return;
+      }
+      if (activeUsersCount >= subInfo.maxUsers) {
+        toast.error(`Acción bloqueada: Límite estricto excedido. El ${subInfo.planName} solo permite un máximo de ${subInfo.maxUsers} usuarios. Ya existen ${activeUsersCount} activos.`);
+        setIsSaving(false);
+        return;
+      }
+    }
+
     const body: any = { 
       name: form.name.trim(), 
       email: cleanEmail, 
@@ -259,7 +342,7 @@ export default function UsersPage() {
   return (
     <div className="min-h-screen bg-slate-50 p-8 font-sans">
       {/* Header */}
-      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8 bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
         <div>
           <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
             <Users className="text-violet-600 w-8 h-8" />
@@ -269,14 +352,80 @@ export default function UsersPage() {
             Gestión de acceso al sistema
           </p>
         </div>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-2 px-6 py-3 bg-violet-600 hover:bg-violet-700 text-white rounded-2xl font-bold transition-all active:scale-95 shadow-lg shadow-violet-200"
-        >
-          <Plus className="w-5 h-5" />
-          Nuevo Usuario
-        </button>
+
+        <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+          {/* Badge informativo de Plan y Límite */}
+          <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-2xl">
+            <Crown className="w-4 h-4 text-amber-500" />
+            <div className="text-left">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 leading-none">Plan Activo</p>
+              <p className="text-xs font-black text-slate-800 leading-tight">
+                {subInfo.planName} <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-black ${isLimitReached ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                  {activeUsersCount}/{subInfo.maxUsers} usrs
+                </span>
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={openCreate}
+            className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold transition-all shadow-lg active:scale-95 ${
+              isLimitReached || isSubscriptionBlocked
+                ? 'bg-slate-200 text-slate-500 hover:bg-slate-300 shadow-none'
+                : 'bg-violet-600 hover:bg-violet-700 text-white shadow-violet-200'
+            }`}
+          >
+            <Plus className="w-5 h-5" />
+            Nuevo Usuario
+          </button>
+        </div>
       </header>
+
+      {/* Banner de Advertencia: Suscripción Vencida o Suspendida */}
+      {isSubscriptionBlocked && (
+        <div className="mb-6 p-4 rounded-2xl bg-rose-50 border-2 border-rose-200 flex items-center justify-between animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-rose-100 text-rose-700">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-sm font-black text-rose-900">
+                {subInfo.isSuspended ? 'Restaurante Suspendido' : 'Suscripción Expirada'}
+              </p>
+              <p className="text-xs text-rose-700 font-medium">
+                {subInfo.isSuspended 
+                  ? 'El acceso de este negocio ha sido suspendido por SuperAdmin.' 
+                  : `El periodo de suscripción venció el ${subInfo.subscriptionEndDate ? new Date(subInfo.subscriptionEndDate).toLocaleDateString() : 'fecha límite'}. Contacte a SuperAdmin para renovar.`}
+              </p>
+            </div>
+          </div>
+          <span className="text-xs font-black px-3 py-1.5 bg-rose-200 text-rose-800 rounded-xl uppercase tracking-wider">
+            Bloqueado
+          </span>
+        </div>
+      )}
+
+      {/* Banner de Advertencia: Límite de Usuarios Alcanzado */}
+      {isLimitReached && !isSubscriptionBlocked && (
+        <div className="mb-6 p-4 rounded-2xl bg-amber-50 border-2 border-amber-200 flex items-center justify-between animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-amber-100 text-amber-700">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-sm font-black text-amber-900">
+                Límite de usuarios alcanzado ({activeUsersCount} de {subInfo.maxUsers} permitidos)
+              </p>
+              <p className="text-xs text-amber-700 font-medium">
+                El <strong>{subInfo.planName}</strong> solo permite hasta {subInfo.maxUsers} usuarios concurrentes. Para crear más cuentas de personal, actualice su plan en el panel SuperAdmin.
+              </p>
+            </div>
+          </div>
+          <span className="text-xs font-black px-3 py-1.5 bg-amber-200 text-amber-900 rounded-xl uppercase tracking-wider">
+            Plan Lleno
+          </span>
+        </div>
+      )}
 
       {/* Users grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -398,6 +547,7 @@ export default function UsersPage() {
                       if (newRole === 'ADMIN') defaultViews = ['*'];
                       else if (newRole === 'CASHIER') defaultViews = ['pos', 'cocina', 'caja'];
                       else if (newRole === 'WAITER') defaultViews = ['pos', 'cocina'];
+                      else if (newRole === 'COOK') defaultViews = ['cocina'];
                       
                       setForm(f => ({ ...f, role: newRole, allowedViews: defaultViews }));
                     }}
@@ -406,6 +556,7 @@ export default function UsersPage() {
                     <option value="ADMIN">Administrador (Acceso Total)</option>
                     <option value="CASHIER">Cajero (POS, Cocina, Caja)</option>
                     <option value="WAITER">Mesero (POS, Cocina)</option>
+                    <option value="COOK">Cocinero</option>
                   </select>
                 </div>
               </div>

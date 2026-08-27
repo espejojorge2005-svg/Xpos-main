@@ -23,11 +23,12 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     // Si el token enviado contiene el identificador del restaurante: client-token-<restaurantId>
     if (token.startsWith('client-token-')) {
       const restId = token.replace('client-token-', '').trim();
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(restId);
       return {
         userId: `admin-${restId}`,
         email: 'admin@restaurante.com',
         role: 'ADMIN',
-        restaurantId: restId,
+        restaurantId: isUuid ? restId : null,
       };
     }
 

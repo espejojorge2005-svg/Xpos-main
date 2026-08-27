@@ -4,7 +4,7 @@ import { getApiUrl, apiFetch } from '@/utils/api';
 import { useState, useEffect } from 'react';
 import { Plus, Search, Store, Users, Receipt, Building, Mail, Lock, User, Check, X, Building2, Phone, Crown, CalendarPlus, Edit, LayoutDashboard, Settings, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { PlansManager, SubscriptionPlan } from './components/PlansManager';
+import { PlansManager, SubscriptionPlan, DEFAULT_PLANS } from './components/PlansManager';
 import { SuperAdminProfile } from './components/SuperAdminProfile';
 
 interface Restaurant {
@@ -14,7 +14,7 @@ interface Restaurant {
   isActive: boolean;
   createdAt: string;
   planId: string | null;
-  plan?: { name: string; code: string };
+  plan?: { name: string; code: string; maxUsers?: number; price?: number };
   subscriptionEndDate: string;
   ownerName: string | null;
   ownerPhone: string | null;
@@ -37,6 +37,7 @@ export default function SuperAdminPage() {
   const [tenantName, setTenantName] = useState('');
   const [tenantSlogan, setTenantSlogan] = useState('');
   const [planId, setPlanId] = useState('');
+  const [subDurationDays, setSubDurationDays] = useState<number>(30);
   const [ownerName, setOwnerName] = useState('');
   const [ownerPhone, setOwnerPhone] = useState('');
   const [adminName, setAdminName] = useState('');
@@ -99,6 +100,19 @@ export default function SuperAdminPage() {
       const token = localStorage.getItem('pos_token') || 'superadmin-token-master';
       const headers = { Authorization: `Bearer ${token}` };
       
+      // 1. Cargar planes desde pos_saas_plans_cache primero
+      let loadedPlans = [...DEFAULT_PLANS];
+      try {
+        const cachedPlansStr = localStorage.getItem('pos_saas_plans_cache');
+        if (cachedPlansStr) {
+          const parsed = JSON.parse(cachedPlansStr);
+          if (Array.isArray(parsed) && parsed.length > 0) loadedPlans = parsed;
+        }
+      } catch {}
+      const activeLoaded = loadedPlans.filter(p => p.isActive);
+      setAvailablePlans(activeLoaded);
+      if (activeLoaded.length > 0) setPlanId(activeLoaded[0].id);
+
       const [resTenants, resPlans] = await Promise.all([
         fetch(getApiUrl('/saas/restaurants'), { headers }),
         fetch(getApiUrl('/saas/plans'), { headers })
@@ -113,23 +127,15 @@ export default function SuperAdminPage() {
 
       if (resPlans.ok) {
         const plansData = await resPlans.json();
-        const activePlans = plansData.filter((p: any) => p.isActive);
-        setAvailablePlans(activePlans);
-        if (activePlans.length > 0) setPlanId(activePlans[0].id);
-      } else {
-        setAvailablePlans([
-          { id: 'p-basic', name: 'Plan Básico', code: 'BASIC', price: 29, maxUsers: 3, features: ['POS', 'Cocina'], isActive: true },
-          { id: 'p-pro', name: 'Plan Profesional', code: 'PRO', price: 59, maxUsers: 10, features: ['POS', 'Cocina', 'Kardex', 'Reportes'], isActive: true },
-          { id: 'p-premium', name: 'Plan Premium', code: 'PREMIUM', price: 99, maxUsers: 99, features: ['Acceso ilimitado'], isActive: true },
-        ]);
-        setPlanId('p-pro');
+        if (Array.isArray(plansData) && plansData.length > 0) {
+          const activePlans = plansData.filter((p: any) => p.isActive);
+          setAvailablePlans(activePlans);
+          localStorage.setItem('pos_saas_plans_cache', JSON.stringify(plansData));
+          if (activePlans.length > 0) setPlanId(activePlans[0].id);
+        }
       }
     } catch {
       setRestaurants(getMergedRestaurants([]));
-      setAvailablePlans([
-        { id: 'p-basic', name: 'Plan Básico', code: 'BASIC', price: 29, maxUsers: 3, features: ['POS', 'Cocina'], isActive: true },
-        { id: 'p-pro', name: 'Plan Profesional', code: 'PRO', price: 59, maxUsers: 10, features: ['POS', 'Cocina', 'Kardex', 'Reportes'], isActive: true },
-      ]);
     } finally {
       setLoading(false);
     }
@@ -245,10 +251,12 @@ export default function SuperAdminPage() {
     e.preventDefault();
     setIsSubmitting(true);
     const createdDate = new Date();
-    createdDate.setDate(createdDate.getDate() + 30);
+    createdDate.setDate(createdDate.getDate() + (Number(subDurationDays) || 30));
 
     const cleanEmail = adminEmail ? adminEmail.trim().toLowerCase() : '';
     const cleanPassword = adminPassword ? adminPassword.trim() : '';
+
+    const selectedPlan = availablePlans.find(p => p.id === planId) || availablePlans[0] || DEFAULT_PLANS[0];
 
     const newMockRestaurant: Restaurant = {
       id: `rest-${Date.now()}`,
@@ -256,8 +264,13 @@ export default function SuperAdminPage() {
       slogan: tenantSlogan || 'El mejor sabor',
       isActive: true,
       createdAt: new Date().toISOString(),
-      planId: planId || 'p-basic',
-      plan: { name: 'Plan Básico', code: 'BASIC' },
+      planId: selectedPlan.id,
+      plan: { 
+        name: selectedPlan.name, 
+        code: selectedPlan.code,
+        maxUsers: Number(selectedPlan.maxUsers) || 3,
+        price: Number(selectedPlan.price) || 0
+      },
       subscriptionEndDate: createdDate.toISOString(),
       ownerName: ownerName || 'Titular',
       ownerPhone: ownerPhone || '',
@@ -395,6 +408,7 @@ export default function SuperAdminPage() {
       }).catch(() => {});
 
       // Actualizar inmediatamente en estado local y caché persistente
+      const updatedPlan = availablePlans.find(p => p.id === editPlanId);
       setRestaurants(prev => {
         const updated = prev.map(r => {
           if (r.id === editingId) {
@@ -403,7 +417,12 @@ export default function SuperAdminPage() {
               name: editTenantName,
               slogan: editTenantSlogan,
               planId: editPlanId || r.planId,
-              plan: availablePlans.find(p => p.id === editPlanId) || r.plan,
+              plan: updatedPlan ? {
+                name: updatedPlan.name,
+                code: updatedPlan.code,
+                maxUsers: Number(updatedPlan.maxUsers) || 3,
+                price: Number(updatedPlan.price) || 0
+              } : r.plan,
               ownerName: editOwnerName,
               ownerPhone: editOwnerPhone,
               subscriptionEndDate: formattedEndDate || r.subscriptionEndDate,
@@ -412,6 +431,7 @@ export default function SuperAdminPage() {
           return r;
         });
         localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(updated));
+        window.dispatchEvent(new Event('storage'));
         return updated;
       });
 
@@ -545,7 +565,9 @@ export default function SuperAdminPage() {
                      >
                        {r.isActive ? 'Activo' : 'Suspendido'}
                      </button>
-                     <span className="text-[10px] font-black tracking-widest uppercase text-slate-400">PLAN {planName}</span>
+                     <span className="text-[10px] font-black tracking-widest uppercase text-slate-500">
+                        PLAN {planName} {r.plan?.maxUsers ? `(MÁX. ${r.plan.maxUsers} USRS)` : ''}
+                      </span>
                    </div>
                  </div>
               </div>
@@ -574,8 +596,10 @@ export default function SuperAdminPage() {
               
               <div className="mt-auto grid grid-cols-2 gap-3 pt-4 border-t border-slate-100">
                  <div className="flex items-center gap-2">
-                    <Users className="w-4 h-4 text-slate-400" />
-                    <span className="text-sm font-bold text-slate-700">{r._count.users} usrs</span>
+                    <Users className="w-4 h-4 text-indigo-500" />
+                    <span className="text-sm font-black text-slate-800">
+                       {r._count.users} / {r.plan?.maxUsers || 3} usrs
+                    </span>
                  </div>
                  <div className="flex items-center gap-2">
                     <Receipt className="w-4 h-4 text-slate-400" />
@@ -600,92 +624,111 @@ export default function SuperAdminPage() {
                </button>
              </div>
              <form onSubmit={handleCreateTenant} className="p-8 space-y-8">
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 divide-x divide-slate-100">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 divide-x divide-slate-100">
                   <div className="space-y-6 pr-4">
-                     <h3 className="text-sm font-black uppercase tracking-widest text-slate-400 border-b border-slate-100 pb-2">Datos Comerciales</h3>
-                     <div className="space-y-4">
-                       <div className="space-y-2">
-                         <label className="text-xs font-bold text-slate-700 ml-1">Nombre Comercial *</label>
-                         <div className="relative">
-                           <Store className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
-                           <input type="text" required value={tenantName} onChange={e => setTenantName(e.target.value)}
-                             className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-900 text-sm font-medium" />
-                         </div>
-                       </div>
-                       <div className="space-y-2">
-                         <label className="text-xs font-bold text-slate-700 ml-1">Plan SaaS *</label>
-                         <div className="relative">
-                           <Crown className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
-                           <select required value={planId} onChange={e => setPlanId(e.target.value)}
-                             className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-900 text-sm font-medium outline-none appearance-none" >
-                             {availablePlans.map(p => (
-                               <option key={p.id} value={p.id}>{p.name} (Max {p.maxUsers} Users) - S/ {p.price}</option>
-                             ))}
-                           </select>
-                         </div>
-                       </div>
-                       <div className="grid grid-cols-2 gap-4">
-                         <div className="space-y-2">
-                           <label className="text-xs font-bold text-slate-700 ml-1">Dueño / Titular</label>
-                           <div className="relative">
-                             <User className="absolute left-4 top-3.5 w-4 h-4 text-slate-400" />
-                             <input type="text" value={ownerName} onChange={e => setOwnerName(e.target.value)}
-                               className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-900 text-sm font-medium" />
-                           </div>
-                         </div>
-                         <div className="space-y-2">
-                           <label className="text-xs font-bold text-slate-700 ml-1">Teléfono Facturación</label>
-                           <div className="relative">
-                             <Phone className="absolute left-4 top-3.5 w-4 h-4 text-slate-400" />
-                             <input type="tel" value={ownerPhone} onChange={e => setOwnerPhone(e.target.value)}
-                               className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-900 text-sm font-medium" />
-                           </div>
-                         </div>
-                       </div>
-                     </div>
+                    <h3 className="text-sm font-black uppercase tracking-widest text-slate-400 border-b border-slate-100 pb-2">Datos Comerciales</h3>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-700 ml-1">Nombre Comercial *</label>
+                        <div className="relative">
+                          <Store className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
+                          <input type="text" required value={tenantName} onChange={e => setTenantName(e.target.value)}
+                            className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-900 text-sm font-medium" />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-700 ml-1">Plan SaaS *</label>
+                        <div className="relative">
+                          <Crown className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
+                          <select required value={planId} onChange={e => setPlanId(e.target.value)}
+                            className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-900 text-sm font-bold text-slate-800 outline-none" >
+                            {availablePlans.map(p => (
+                              <option key={p.id} value={p.id}>{p.name} (Máx. {p.maxUsers} Usuarios) - S/ {p.price}/mes</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-700 ml-1">Periodo de Suscripción *</label>
+                        <div className="relative">
+                          <CalendarPlus className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
+                          <select value={subDurationDays} onChange={e => setSubDurationDays(Number(e.target.value))}
+                            className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-900 text-sm font-bold text-slate-800 outline-none" >
+                            <option value={30}>1 Mes (30 días de acceso)</option>
+                            <option value={90}>3 Meses (90 días de acceso)</option>
+                            <option value={180}>6 Meses (180 días de acceso)</option>
+                            <option value={365}>1 Año (365 días de acceso)</option>
+                            <option value={730}>2 Años (730 días de acceso)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-700 ml-1">Dueño / Titular</label>
+                          <div className="relative">
+                            <User className="absolute left-4 top-3.5 w-4 h-4 text-slate-400" />
+                            <input type="text" value={ownerName} onChange={e => setOwnerName(e.target.value)}
+                              className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-900 text-sm font-medium" />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-700 ml-1">Teléfono Facturación</label>
+                          <div className="relative">
+                            <Phone className="absolute left-4 top-3.5 w-4 h-4 text-slate-400" />
+                            <input type="tel" value={ownerPhone} onChange={e => setOwnerPhone(e.target.value)}
+                              className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-900 text-sm font-medium" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
+
                   <div className="space-y-6 pl-4">
-                     <h3 className="text-sm font-black uppercase tracking-widest text-slate-400 border-b border-slate-100 pb-2">Cuenta Súper Admin Cliente</h3>
-                     <div className="space-y-4">
-                       <div className="space-y-2">
-                         <label className="text-xs font-bold text-slate-700 ml-1">Nombre del Administrador *</label>
-                         <div className="relative">
-                           <User className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
-                           <input type="text" required value={adminName} onChange={e => setAdminName(e.target.value)}
-                             className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-900 text-sm font-medium" />
-                         </div>
-                       </div>
-                       <div className="space-y-2">
-                         <label className="text-xs font-bold text-slate-700 ml-1">Correo Electrónico *</label>
-                         <div className="relative">
-                           <Mail className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
-                           <input type="email" required value={adminEmail} onChange={e => setAdminEmail(e.target.value)}
-                             className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-900 text-sm font-medium" />
-                         </div>
-                       </div>
-                       <div className="space-y-2">
-                         <label className="text-xs font-bold text-slate-700 ml-1">Contraseña de Acceso *</label>
-                         <div className="relative">
-                           <Lock className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
-                           <input type="password" required value={adminPassword} onChange={e => setAdminPassword(e.target.value)} minLength={6}
-                             className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-900 text-sm font-medium" />
-                         </div>
-                         <p className="text-[10px] uppercase font-bold text-emerald-600 bg-emerald-50 px-3 py-2 rounded-lg mt-2">
-                           La suscripción se generará automáticamente con 30 días iniciales a partir de hoy.
-                         </p>
-                       </div>
-                     </div>
+                    <h3 className="text-sm font-black uppercase tracking-widest text-slate-400 border-b border-slate-100 pb-2">Cuenta Súper Admin Cliente</h3>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-700 ml-1">Nombre del Administrador *</label>
+                        <div className="relative">
+                          <User className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
+                          <input type="text" required value={adminName} onChange={e => setAdminName(e.target.value)}
+                            className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-900 text-sm font-medium" />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-700 ml-1">Correo Electrónico *</label>
+                        <div className="relative">
+                          <Mail className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
+                          <input type="email" required value={adminEmail} onChange={e => setAdminEmail(e.target.value)}
+                            className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-900 text-sm font-medium" />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-700 ml-1">Contraseña de Acceso *</label>
+                        <div className="relative">
+                          <Lock className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
+                          <input type="password" required value={adminPassword} onChange={e => setAdminPassword(e.target.value)} minLength={6}
+                            className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-900 text-sm font-medium" />
+                        </div>
+                        <p className="text-[10px] uppercase font-bold text-emerald-600 bg-emerald-50 px-3 py-2 rounded-lg mt-2">
+                          La suscripción se activará por {subDurationDays} días a partir de hoy.
+                        </p>
+                      </div>
+                    </div>
                   </div>
-               </div>
-               <div className="pt-6 flex items-center justify-end gap-3 border-t border-slate-100">
-                 <button type="button" onClick={() => setIsOpen(false)}
-                   className="px-6 py-3.5 text-sm font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-all">Cancelar</button>
-                 <button type="submit" disabled={isSubmitting}
-                   className="px-8 py-3.5 text-sm font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl shadow-lg shadow-slate-200 disabled:opacity-50 flex items-center gap-2 transition-all active:scale-95">
-                   {isSubmitting ? 'Procesando...' : <><Check className="w-4 h-4" /> Crear Inquilino</>}
-                 </button>
-               </div>
-             </form>
+                </div>
+
+                <div className="pt-6 flex items-center justify-end gap-3 border-t border-slate-100">
+                  <button type="button" onClick={() => setIsOpen(false)}
+                    className="px-6 py-3.5 text-sm font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-all">Cancelar</button>
+                  <button type="submit" disabled={isSubmitting}
+                    className="px-8 py-3.5 text-sm font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl shadow-lg shadow-slate-200 disabled:opacity-50 flex items-center gap-2 transition-all active:scale-95">
+                    {isSubmitting ? 'Procesando...' : <><Check className="w-4 h-4" /> Crear Inquilino</>}
+                  </button>
+                </div>
+              </form>
           </div>
         </div>
       )}

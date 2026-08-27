@@ -24,6 +24,7 @@ interface Table {
   posX: number;
   posY: number;
   zoneId: string;
+  billRequested?: boolean;
   orders?: TableOrder[];
 }
 
@@ -122,14 +123,20 @@ const DraggableTable = ({
 
         {/* Status indicator pulse */}
         <span className={`absolute top-2 right-2 w-2 h-2 rounded-full shadow-sm pointer-events-none
-          ${isFree ? 'bg-emerald-400' : 'bg-rose-500 animate-pulse'}`}>
+          ${isFree ? 'bg-emerald-400' : table.billRequested ? 'bg-amber-500 animate-pulse' : 'bg-rose-500 animate-pulse'}`}>
         </span>
 
-        {/* Wait Timer */}
+        {/* Wait Timer / Bill Requested */}
         {!isFree && activeOrder && (
-          <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-rose-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full whitespace-nowrap shadow-md flex items-center gap-1 pointer-events-none z-10 transition-all">
-            <Clock className="w-3 h-3" />
-            {formatWaitTime(new Date(activeOrder.createdAt), now)}
+          <div className={`absolute -bottom-3 left-1/2 -translate-x-1/2 text-white text-[10px] font-black px-2 py-0.5 rounded-full whitespace-nowrap shadow-md flex items-center gap-1 pointer-events-none z-10 transition-all ${table.billRequested ? 'bg-amber-500 animate-pulse border border-white' : 'bg-rose-600'}`}>
+            {table.billRequested ? (
+              <span>🔔 Cuenta Pedida</span>
+            ) : (
+              <>
+                <Clock className="w-3 h-3" />
+                {formatWaitTime(new Date(activeOrder.createdAt), now)}
+              </>
+            )}
           </div>
         )}
 
@@ -168,26 +175,34 @@ const GridTable = ({
       className={`relative p-4 rounded-3xl border-2 flex flex-col items-center justify-center text-center transition-all active:scale-95 min-h-[130px] w-full
         ${isFree 
           ? 'bg-white border-emerald-100 hover:border-emerald-300 shadow-sm hover:shadow-emerald-100' 
-          : 'bg-rose-50 border-rose-200 hover:border-rose-300 shadow-sm hover:shadow-rose-100'}`}
+          : table.billRequested
+            ? 'bg-amber-50 border-amber-300 hover:border-amber-400 shadow-sm hover:shadow-amber-100'
+            : 'bg-rose-50 border-rose-200 hover:border-rose-300 shadow-sm hover:shadow-rose-100'}`}
     >
-      <Square className={`w-8 h-8 mb-2 opacity-50 ${isFree ? 'text-emerald-600' : 'text-rose-600'}`} />
-      <span className={`text-base font-black mb-1.5 truncate w-full ${isFree ? 'text-slate-700' : 'text-rose-800'}`}>
+      <Square className={`w-8 h-8 mb-2 opacity-50 ${isFree ? 'text-emerald-600' : table.billRequested ? 'text-amber-600' : 'text-rose-600'}`} />
+      <span className={`text-base font-black mb-1.5 truncate w-full ${isFree ? 'text-slate-700' : table.billRequested ? 'text-amber-900' : 'text-rose-800'}`}>
         {table.name || table.number || '-'}
       </span>
       <div className={`mt-auto flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-lg
-        ${isFree ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-200/50 text-rose-800'}`}>
+        ${isFree ? 'bg-emerald-50 text-emerald-600' : table.billRequested ? 'bg-amber-100 text-amber-800' : 'bg-rose-200/50 text-rose-800'}`}>
         <Users className="w-3.5 h-3.5" />
         {table.capacity}
       </div>
 
       <span className={`absolute top-4 right-4 w-3 h-3 rounded-full shadow-sm
-        ${isFree ? 'bg-emerald-400' : 'bg-rose-500 animate-pulse'}`}>
+        ${isFree ? 'bg-emerald-400' : table.billRequested ? 'bg-amber-500 animate-pulse' : 'bg-rose-500 animate-pulse'}`}>
       </span>
 
       {!isFree && activeOrder && (
-        <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-rose-600 text-white text-[11px] font-black px-3 py-1 rounded-full whitespace-nowrap shadow-md flex items-center gap-1.5 z-10 border-2 border-white">
-          <Clock className="w-3.5 h-3.5" />
-          {formatWaitTime(new Date(activeOrder.createdAt), now)}
+        <div className={`absolute -bottom-3 left-1/2 -translate-x-1/2 text-white text-[11px] font-black px-3 py-1 rounded-full whitespace-nowrap shadow-md flex items-center gap-1.5 z-10 border-2 border-white ${table.billRequested ? 'bg-amber-500 animate-pulse' : 'bg-rose-600'}`}>
+          {table.billRequested ? (
+            <span>🔔 Cuenta Pedida</span>
+          ) : (
+            <>
+              <Clock className="w-3.5 h-3.5" />
+              {formatWaitTime(new Date(activeOrder.createdAt), now)}
+            </>
+          )}
         </div>
       )}
     </button>
@@ -226,26 +241,44 @@ export default function Home() {
     }
 
     if (loadedZones.length === 0) {
-      loadedZones = [
-        {
-          id: 'zone-1',
-          name: 'SALA PRINCIPAL',
-          tables: [
-            { id: 't-1', name: 'Mesa 1', number: 1, capacity: 4, status: 'FREE', posX: 40, posY: 40, zoneId: 'zone-1' },
-            { id: 't-2', name: 'Mesa 2', number: 2, capacity: 2, status: 'FREE', posX: 200, posY: 40, zoneId: 'zone-1' },
-            { id: 't-3', name: 'Mesa 3', number: 3, capacity: 6, status: 'FREE', posX: 360, posY: 40, zoneId: 'zone-1' },
-            { id: 't-4', name: 'Mesa 4', number: 4, capacity: 4, status: 'FREE', posX: 40, posY: 200, zoneId: 'zone-1' },
-          ]
-        },
-        {
-          id: 'zone-2',
-          name: 'TERRAZA',
-          tables: [
-            { id: 't-5', name: 'Mesa T1', number: 5, capacity: 4, status: 'FREE', posX: 40, posY: 40, zoneId: 'zone-2' },
-            { id: 't-6', name: 'Mesa T2', number: 6, capacity: 2, status: 'FREE', posX: 200, posY: 40, zoneId: 'zone-2' },
-          ]
-        }
-      ];
+      const savedZones = getScopedStorage<any[]>('pos_registered_zones', []);
+      if (Array.isArray(savedZones) && savedZones.length > 0) {
+        loadedZones = savedZones.map(z => ({
+          ...z,
+          tables: (z.tables || []).map((t: any, idx: number) => ({
+            ...t,
+            id: t.id || `t-${idx + 1}`,
+            name: t.name || `Mesa ${t.number}`,
+            number: t.number,
+            capacity: t.capacity || 4,
+            status: t.status || 'FREE',
+            posX: t.posX ?? (40 + (idx % 3) * 160),
+            posY: t.posY ?? (40 + Math.floor(idx / 3) * 160),
+            zoneId: z.id
+          }))
+        }));
+      } else {
+        loadedZones = [
+          {
+            id: 'zone-1',
+            name: 'SALA PRINCIPAL',
+            tables: [
+              { id: 't-1', name: 'Mesa 1', number: 1, capacity: 4, status: 'FREE', posX: 40, posY: 40, zoneId: 'zone-1' },
+              { id: 't-2', name: 'Mesa 2', number: 2, capacity: 2, status: 'FREE', posX: 200, posY: 40, zoneId: 'zone-1' },
+              { id: 't-3', name: 'Mesa 3', number: 3, capacity: 6, status: 'FREE', posX: 360, posY: 40, zoneId: 'zone-1' },
+              { id: 't-4', name: 'Mesa 4', number: 4, capacity: 4, status: 'FREE', posX: 40, posY: 200, zoneId: 'zone-1' },
+            ]
+          },
+          {
+            id: 'zone-2',
+            name: 'TERRAZA',
+            tables: [
+              { id: 't-5', name: 'Mesa T1', number: 5, capacity: 4, status: 'FREE', posX: 40, posY: 40, zoneId: 'zone-2' },
+              { id: 't-6', name: 'Mesa T2', number: 6, capacity: 2, status: 'FREE', posX: 200, posY: 40, zoneId: 'zone-2' },
+            ]
+          }
+        ];
+      }
     }
 
     // Merge with active table orders (Tracked until waiter/cashier frees the table)
@@ -255,16 +288,20 @@ export default function Home() {
       loadedZones = loadedZones.map(zone => ({
         ...zone,
         tables: zone.tables.map(table => {
-          const hasActiveOrder = activeTableOrders[table.id] || (table.orders && table.orders.length > 0 && table.status === 'OCCUPIED');
-          if (hasActiveOrder) {
-            const orderInfo = activeTableOrders[table.id] || (table.orders ? table.orders[0] : null);
+          const orderInfo = activeTableOrders[table.id];
+          const isOrderActive = orderInfo && (orderInfo.status === 'OCCUPIED' || (Array.isArray(orderInfo.items) && orderInfo.items.length > 0));
+          const hasServerOrder = table.orders && table.orders.length > 0 && table.status === 'OCCUPIED';
+
+          if (isOrderActive || hasServerOrder) {
+            const activeData = isOrderActive ? orderInfo : (table.orders ? table.orders[0] : null);
             return {
               ...table,
               status: 'OCCUPIED' as const,
+              billRequested: !!orderInfo?.billRequested,
               orders: [{
-                id: orderInfo?.orderId || orderInfo?.id || `ord-${table.id}`,
-                createdAt: orderInfo?.createdAt || new Date().toISOString(),
-                totalAmount: orderInfo?.total || 0,
+                id: activeData?.orderId || activeData?.id || `ord-${table.id}`,
+                createdAt: activeData?.createdAt || new Date().toISOString(),
+                totalAmount: activeData?.total || activeData?.totalAmount || 0,
               }]
             };
           }
@@ -280,6 +317,16 @@ export default function Home() {
     setZones(loadedZones);
     setLoading(false);
   };
+
+  useEffect(() => {
+    const handleStorageChange = () => {
+      fetchZonas();
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
 
   useEffect(() => {
     const token = localStorage.getItem('pos_token');

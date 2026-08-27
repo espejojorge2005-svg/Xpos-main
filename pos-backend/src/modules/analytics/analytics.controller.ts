@@ -12,9 +12,7 @@ export class AnalyticsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    const now = new Date();
-    const fromDate = from ? new Date(from) : new Date(now.toISOString().slice(0, 10)); // default: today
-    const toDate   = to   ? new Date(to)   : new Date(now.toISOString().slice(0, 10));
-    return this.analyticsService.getAnalytics(fromDate, toDate);
+    return this.analyticsService.getAnalytics(from, to);
   }
 }
+
