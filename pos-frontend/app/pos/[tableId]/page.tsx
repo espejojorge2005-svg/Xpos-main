@@ -268,9 +268,6 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
       }
 
       setLoading(false);
-      if (isCashierMode) {
-        setShowCheckout(true);
-      }
     };
 
     fetchData();
@@ -914,9 +911,15 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
   // ==========================================
   // LÓGICA AVANZADA DE PAGOS (Editar/Eliminar)
   // ==========================================
+  const roundCurrency = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
+
   const resetPaymentForm = (newAmount?: number) => {
     setEditingPaymentId(null);
-    setPaymentAmount(newAmount !== undefined ? newAmount : remainingAmount);
+    const calculatedRemaining = remainingAmount > 0 
+      ? remainingAmount 
+      : Math.max(0, existingSubtotal - paidAmount);
+    const finalAmount = newAmount !== undefined && newAmount > 0 ? newAmount : calculatedRemaining;
+    setPaymentAmount(roundCurrency(finalAmount));
     setTipAmount(0);
     setPaymentMethod('CASH');
   };
@@ -954,8 +957,13 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
   };
 
   const handleConfirmCheckout = async () => {
-    if (!activeOrderId) return;
-    if (paymentAmount <= 0) return toast.error("El monto debe ser mayor a cero");
+    const effectiveRemaining = remainingAmount > 0 ? remainingAmount : Math.max(0, existingSubtotal - paidAmount);
+    const finalPaymentAmount = paymentAmount > 0 ? paymentAmount : effectiveRemaining;
+
+    if (finalPaymentAmount <= 0) return toast.error("El monto debe ser mayor a cero");
+    if (finalPaymentAmount !== paymentAmount) {
+      setPaymentAmount(finalPaymentAmount);
+    }
     
     setSubmitting(true);
     const token = localStorage.getItem('pos_token');
@@ -966,9 +974,10 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
     try {
       let response;
+      const effectiveOrderId = activeOrderId || `ord-${tableId}`;
       const bodyPayload: any = {
-        orderId: activeOrderId,
-        amount: paymentAmount,
+        orderId: effectiveOrderId,
+        amount: finalPaymentAmount,
         tipAmount,
         paymentMethod
       };
@@ -1618,7 +1627,10 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                 <button 
                   onClick={() => {
                     setCheckoutMode('NORMAL');
-                    resetPaymentForm();
+                    const targetRemaining = remainingAmount > 0 
+                      ? remainingAmount 
+                      : Math.max(0, existingSubtotal - paidAmount);
+                    resetPaymentForm(targetRemaining);
                     setShowCheckout(true);
                   }}
                   disabled={submitting || existingItems.length === 0}
@@ -1763,9 +1775,12 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                     <div className="relative">
                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">S/</span>
                       <input 
-                        type="number" min="0" step="0.1"
+                        type="number" min="0" step="0.01"
                         value={paymentAmount || ''}
-                        onChange={(e) => setPaymentAmount(Number(e.target.value) || 0)}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          setPaymentAmount(isNaN(val) ? 0 : roundCurrency(val));
+                        }}
                         className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 font-black text-slate-800 text-lg"
                       />
                     </div>
@@ -1776,17 +1791,44 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                       Propina (Opcional) <Heart className="w-3 h-3 text-violet-400" />
                     </label>
                     <div className="grid grid-cols-4 gap-2 mb-3">
-                      <button onClick={() => setTipAmount(0)} className={`py-2 rounded-xl font-bold text-sm transition-all border ${tipAmount === 0 ? 'bg-violet-100 border-violet-400 text-violet-700' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>0%</button>
-                      <button onClick={() => setTipAmount(paymentAmount * 0.1)} className={`py-2 rounded-xl font-bold text-sm transition-all border ${tipAmount === paymentAmount * 0.1 ? 'bg-violet-100 border-violet-400 text-violet-700' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>10%</button>
-                      <button onClick={() => setTipAmount(paymentAmount * 0.15)} className={`py-2 rounded-xl font-bold text-sm transition-all border ${tipAmount === paymentAmount * 0.15 ? 'bg-violet-100 border-violet-400 text-violet-700' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>15%</button>
-                      <button onClick={() => setTipAmount(paymentAmount * 0.2)} className={`py-2 rounded-xl font-bold text-sm transition-all border ${tipAmount === paymentAmount * 0.2 ? 'bg-violet-100 border-violet-400 text-violet-700' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}>20%</button>
+                      <button 
+                        type="button" 
+                        onClick={() => setTipAmount(0)} 
+                        className={`py-2 rounded-xl font-bold text-sm transition-all border ${tipAmount === 0 ? 'bg-violet-100 border-violet-400 text-violet-700 shadow-sm' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        0%
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => setTipAmount(roundCurrency(paymentAmount * 0.1))} 
+                        className={`py-2 rounded-xl font-bold text-sm transition-all border ${tipAmount > 0 && Math.abs(tipAmount - roundCurrency(paymentAmount * 0.1)) < 0.01 ? 'bg-violet-100 border-violet-400 text-violet-700 shadow-sm' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        10%
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => setTipAmount(roundCurrency(paymentAmount * 0.15))} 
+                        className={`py-2 rounded-xl font-bold text-sm transition-all border ${tipAmount > 0 && Math.abs(tipAmount - roundCurrency(paymentAmount * 0.15)) < 0.01 ? 'bg-violet-100 border-violet-400 text-violet-700 shadow-sm' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        15%
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => setTipAmount(roundCurrency(paymentAmount * 0.2))} 
+                        className={`py-2 rounded-xl font-bold text-sm transition-all border ${tipAmount > 0 && Math.abs(tipAmount - roundCurrency(paymentAmount * 0.2)) < 0.01 ? 'bg-violet-100 border-violet-400 text-violet-700 shadow-sm' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        20%
+                      </button>
                     </div>
                     <div className="relative">
                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-violet-400 font-bold">S/</span>
                       <input 
-                        type="number" min="0" step="0.1"
+                        type="number" min="0" step="0.01"
                         value={tipAmount === 0 ? '' : tipAmount}
-                        onChange={(e) => setTipAmount(Number(e.target.value) || 0)}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          setTipAmount(isNaN(val) ? 0 : roundCurrency(val));
+                        }}
                         placeholder="Monto personalizado"
                         className="w-full pl-10 pr-4 py-2.5 bg-violet-50/50 border border-violet-200 rounded-xl outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 font-bold text-violet-800"
                       />
