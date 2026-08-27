@@ -24,7 +24,7 @@ interface KitchenItem {
     stations?: {
       id: string;
       name: string;
-      colorHex: string;
+      colorHex?: string;
     }[];
   };
 }

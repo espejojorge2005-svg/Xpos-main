@@ -22,7 +22,8 @@ interface Product {
   categoryId: string;
   isActive: boolean;
   modifierGroups?: any[]; // To support combo triggering
-  stations?: { id: string; name: string; printerName?: string }[];
+  stationIds?: string[];
+  stations?: { id: string; name: string; printerName?: string; colorHex?: string }[];
 }
 
 interface CartItem {
