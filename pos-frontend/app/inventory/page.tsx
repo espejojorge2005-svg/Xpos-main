@@ -1,6 +1,7 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
 import { getRestaurantId, getScopedStorage, setScopedStorage } from '@/utils/storage';
+import { syncProductToFirebase, deleteProductFromFirebase, getProductsFromFirebase } from '@/utils/firebaseSync';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -92,15 +93,60 @@ export default function InventoryPage() {
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
-          const filtered = currentRestId
-            ? data.filter((p: any) => p.restaurantId === currentRestId)
+          const cached = getScopedStorage<Product[] | null>('pos_registered_products', []) || [];
+          const cachedMap = new Map(cached.map(p => [p.id, p]));
+
+          const mapped = data.map((p: any) => {
+            if (!p.restaurantId && cachedMap.has(p.id)) {
+              return { ...p, restaurantId: currentRestId };
+            }
+            return p;
+          });
+
+          const backendFiltered = currentRestId
+            ? mapped.filter((p: any) => p.restaurantId === currentRestId)
             : [];
-          loadedProducts = filtered;
-          setScopedStorage('pos_registered_products', filtered);
+
+          const combinedMap = new Map<string, Product>();
+          cached.filter(p => p.restaurantId === currentRestId).forEach(p => combinedMap.set(p.id, p));
+          backendFiltered.forEach(p => combinedMap.set(p.id, p));
+
+          const finalProducts = Array.from(combinedMap.values());
+          loadedProducts = finalProducts;
+          setScopedStorage('pos_registered_products', finalProducts);
         }
       }
     } catch { /* ignore network error */ }
 
+    // Sincronización en la nube con Firebase Firestore (Multi-inquilino)
+    if (currentRestId) {
+      try {
+        const firestoreProds = await getProductsFromFirebase(currentRestId);
+        if (Array.isArray(firestoreProds) && firestoreProds.length > 0) {
+          const map = new Map<string, Product>();
+          (loadedProducts || []).forEach(p => map.set(p.id, p));
+          firestoreProds.forEach((fp: any) => {
+            if (!map.has(fp.id)) {
+              map.set(fp.id, {
+                id: fp.id,
+                name: fp.name,
+                category: fp.category || 'General',
+                categoryId: fp.categoryId,
+                stationIds: fp.stationIds || [],
+                price: fp.price || 0,
+                stock: fp.stock || 0,
+                minStock: fp.minStock || 0,
+                restaurantId: fp.restaurantId
+              });
+            }
+          });
+          loadedProducts = Array.from(map.values());
+          setScopedStorage('pos_registered_products', loadedProducts);
+        }
+      } catch (err) {
+        console.warn('Firebase products fetch notice:', err);
+      }
+    }
 
     if (loadedProducts === null) {
       const cached = getScopedStorage<Product[] | null>('pos_registered_products', null);
@@ -111,6 +157,7 @@ export default function InventoryPage() {
 
     setProducts(loadedProducts || []);
     setLoading(false);
+
   };
 
   const fetchCategories = async () => {
@@ -127,11 +174,27 @@ export default function InventoryPage() {
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
-          const filtered = currentRestId
-            ? data.filter((c: any) => c.restaurantId === currentRestId)
+          const cached = getScopedStorage<Category[] | null>('pos_registered_categories', []) || [];
+          const cachedMap = new Map(cached.map(c => [c.id, c]));
+
+          const mapped = data.map((c: any) => {
+            if (!c.restaurantId && cachedMap.has(c.id)) {
+              return { ...c, restaurantId: currentRestId };
+            }
+            return c;
+          });
+
+          const backendFiltered = currentRestId
+            ? mapped.filter((c: any) => c.restaurantId === currentRestId)
             : [];
-          loadedCats = filtered;
-          setScopedStorage('pos_registered_categories', filtered);
+
+          const combinedMap = new Map<string, Category>();
+          cached.filter(c => c.restaurantId === currentRestId).forEach(c => combinedMap.set(c.id, c));
+          backendFiltered.forEach(c => combinedMap.set(c.id, c));
+
+          const finalCats = Array.from(combinedMap.values());
+          loadedCats = finalCats;
+          setScopedStorage('pos_registered_categories', finalCats);
         }
       }
     } catch {}
@@ -160,14 +223,31 @@ export default function InventoryPage() {
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
-          const filtered = currentRestId
-            ? data.filter((s: any) => s.restaurantId === currentRestId)
+          const cached = getScopedStorage<KitchenStation[] | null>('pos_registered_stations', []) || [];
+          const cachedMap = new Map(cached.map(s => [s.id, s]));
+
+          const mapped = data.map((s: any) => {
+            if (!s.restaurantId && cachedMap.has(s.id)) {
+              return { ...s, restaurantId: currentRestId };
+            }
+            return s;
+          });
+
+          const backendFiltered = currentRestId
+            ? mapped.filter((s: any) => s.restaurantId === currentRestId)
             : [];
-          loadedStations = filtered;
-          setScopedStorage('pos_registered_stations', filtered);
+
+          const combinedMap = new Map<string, KitchenStation>();
+          cached.filter(s => s.restaurantId === currentRestId).forEach(s => combinedMap.set(s.id, s));
+          backendFiltered.forEach(s => combinedMap.set(s.id, s));
+
+          const finalStations = Array.from(combinedMap.values());
+          loadedStations = finalStations;
+          setScopedStorage('pos_registered_stations', finalStations);
         }
       }
     } catch {}
+
 
     if (loadedStations === null) {
       const cached = getScopedStorage<KitchenStation[] | null>('pos_registered_stations', null);
@@ -273,6 +353,20 @@ export default function InventoryPage() {
       setScopedStorage('pos_registered_products', existingProducts);
       setProducts(existingProducts);
 
+      if (currentRestId) {
+        syncProductToFirebase({
+          id: newProductObj.id,
+          name: newProductObj.name,
+          category: newProductObj.category,
+          categoryId: newProductObj.categoryId,
+          price: newProductObj.price,
+          stock: newProductObj.stock,
+          minStock: newProductObj.minStock,
+          stationIds: newProductObj.stationIds,
+          restaurantId: currentRestId
+        }).catch(() => {});
+      }
+
       // Registrar movimiento de stock inicial si es producto nuevo con stock
       if (!isEditing && newProductObj.stock > 0) {
         const initialMov = {
@@ -306,6 +400,9 @@ export default function InventoryPage() {
     const updatedProducts = products.filter(p => p.id !== id);
     setProducts(updatedProducts);
     setScopedStorage('pos_registered_products', updatedProducts);
+
+    deleteProductFromFirebase(id).catch(() => {});
+
 
     const token = localStorage.getItem('pos_token');
     try {

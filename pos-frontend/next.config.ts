@@ -4,8 +4,10 @@ const nextConfig: NextConfig = {
   async rewrites() {
     const backendUrl = process.env.NEXT_PUBLIC_API_URL 
       ? process.env.NEXT_PUBLIC_API_URL.replace(/\/api\/v1\/?$/, '') 
-      : 'https://xpos-backend.onrender.com';
+      : null;
       
+    if (!backendUrl) return [];
+
     return [
       {
         source: '/api/:path*',
@@ -14,5 +16,6 @@ const nextConfig: NextConfig = {
     ];
   }
 };
+
 
 export default nextConfig;

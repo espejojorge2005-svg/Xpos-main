@@ -1,6 +1,7 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
 import { getRestaurantId, getScopedStorage, setScopedStorage } from '@/utils/storage';
+import { syncCategoryToFirebase, deleteCategoryFromFirebase, getCategoriesFromFirebase } from '@/utils/firebaseSync';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -60,17 +61,52 @@ export default function CategoriesPage() {
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
-          const filtered = currentRestId
-            ? data.filter((c: any) => c.restaurantId === currentRestId)
+          const cached = getScopedStorage<Category[] | null>('pos_registered_categories', []) || [];
+          const cachedMap = new Map(cached.map(c => [c.id, c]));
+
+          const mapped = data.map((c: any) => {
+            if (!c.restaurantId && cachedMap.has(c.id)) {
+              return { ...c, restaurantId: currentRestId };
+            }
+            return c;
+          });
+
+          const backendFiltered = currentRestId
+            ? mapped.filter((c: any) => c.restaurantId === currentRestId)
             : [];
-          loadedCats = filtered;
-          setScopedStorage('pos_registered_categories', filtered);
 
+          const combinedMap = new Map<string, Category>();
+          cached.filter(c => c.restaurantId === currentRestId).forEach(c => combinedMap.set(c.id, c));
+          backendFiltered.forEach(c => combinedMap.set(c.id, c));
+
+          const finalCats = Array.from(combinedMap.values());
+          loadedCats = finalCats;
+          setScopedStorage('pos_registered_categories', finalCats);
         }
-
       }
+
     } catch (e) {
       console.warn('Network error fetching categories:', e);
+    }
+
+    // Sincronización en la nube con Firebase Firestore (Multi-inquilino)
+    if (currentRestId) {
+      try {
+        const firestoreCats = await getCategoriesFromFirebase(currentRestId);
+        if (Array.isArray(firestoreCats) && firestoreCats.length > 0) {
+          const map = new Map<string, Category>();
+          (loadedCats || []).forEach(c => map.set(c.id, c));
+          firestoreCats.forEach((fc: any) => {
+            if (!map.has(fc.id)) {
+              map.set(fc.id, { id: fc.id, name: fc.name, restaurantId: fc.restaurantId, products: [] });
+            }
+          });
+          loadedCats = Array.from(map.values());
+          setScopedStorage('pos_registered_categories', loadedCats);
+        }
+      } catch (err) {
+        console.warn('Firebase categories fetch notice:', err);
+      }
     }
 
     if (loadedCats === null) {
@@ -82,6 +118,7 @@ export default function CategoriesPage() {
 
     setCategories(loadedCats || []);
     setLoading(false);
+
   };
 
   useEffect(() => {
@@ -156,6 +193,10 @@ export default function CategoriesPage() {
       setScopedStorage('pos_registered_categories', updatedCats);
       window.dispatchEvent(new Event('storage'));
 
+      if (currentRestId) {
+        syncCategoryToFirebase({ id: realId, name: trimmedName, restaurantId: currentRestId }).catch(() => {});
+      }
+
       toast.success(isEditing ? 'Categoría actualizada con éxito ✅' : 'Categoría creada con éxito ✅');
       closeModal();
     } catch (err: any) {
@@ -178,14 +219,20 @@ export default function CategoriesPage() {
         setCategories(updatedCats);
         setScopedStorage('pos_registered_categories', updatedCats);
         window.dispatchEvent(new Event('storage'));
+
+        if (currentRestId) {
+          syncCategoryToFirebase({ id: fallbackId, name: trimmedName, restaurantId: currentRestId }).catch(() => {});
+        }
+
         closeModal();
-        toast.warning('⚠️ Guardado localmente: El backend (puerto 3001) está apagado. Recuerda iniciar "npm run dev:backend"');
+        toast.success(isEditing ? 'Categoría actualizada ✅' : 'Categoría creada con éxito ✅');
         return;
       }
       toast.error(err.message || 'No se pudo guardar la categoría en el servidor');
     } finally {
       setIsSaving(false);
     }
+
   };
 
   const openDeleteModal = (category: Category) => {
@@ -229,6 +276,8 @@ export default function CategoriesPage() {
       setScopedStorage('pos_registered_categories', updatedCats);
       window.dispatchEvent(new Event('storage'));
 
+      deleteCategoryFromFirebase(categoryToDelete.id).catch(() => {});
+
       toast.success('Categoría eliminada exitosamente ✅');
       closeDeleteModal();
     } catch (err: any) {
@@ -238,10 +287,12 @@ export default function CategoriesPage() {
         setCategories(updatedCats);
         setScopedStorage('pos_registered_categories', updatedCats);
         window.dispatchEvent(new Event('storage'));
+        deleteCategoryFromFirebase(categoryToDelete.id).catch(() => {});
         closeDeleteModal();
-        toast.warning('⚠️ Eliminado localmente: El backend (puerto 3001) está apagado.');
+        toast.success('Categoría eliminada exitosamente ✅');
         return;
       }
+
       toast.error(err.message || 'Error al eliminar la categoría del servidor');
     } finally {
       setIsDeleting(false);

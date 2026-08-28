@@ -1,6 +1,7 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
 import { getScopedStorage, setScopedStorage, getRestaurantId } from '@/utils/storage';
+import { syncStationToFirebase, deleteStationFromFirebase, getStationsFromFirebase } from '@/utils/firebaseSync';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -72,17 +73,55 @@ export default function KitchenStationsPage() {
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
-          const filtered = currentRestId
-            ? data.filter((s: any) => s.restaurantId === currentRestId)
+          const cached = getScopedStorage<KitchenStation[] | null>('pos_registered_stations', []) || [];
+          const cachedMap = new Map(cached.map(s => [s.id, s]));
+
+          const mapped = data.map((s: any) => {
+            if (!s.restaurantId && cachedMap.has(s.id)) {
+              return { ...s, restaurantId: currentRestId };
+            }
+            return s;
+          });
+
+          const backendFiltered = currentRestId
+            ? mapped.filter((s: any) => s.restaurantId === currentRestId)
             : [];
-          loadedStations = filtered;
-          setScopedStorage('pos_registered_stations', filtered);
-          setStations(filtered);
+
+          const combinedMap = new Map<string, KitchenStation>();
+          cached.filter(s => s.restaurantId === currentRestId).forEach(s => combinedMap.set(s.id, s));
+          backendFiltered.forEach(s => combinedMap.set(s.id, s));
+
+          const finalStations = Array.from(combinedMap.values());
+          loadedStations = finalStations;
+          setScopedStorage('pos_registered_stations', finalStations);
+          setStations(finalStations);
         }
 
       }
+
     } catch (error) {
       console.warn('Backend stations notice:', error);
+    }
+
+    // Sincronización en la nube con Firebase Firestore (Multi-inquilino)
+    if (currentRestId) {
+      try {
+        const firestoreStations = await getStationsFromFirebase(currentRestId);
+        if (Array.isArray(firestoreStations) && firestoreStations.length > 0) {
+          const map = new Map<string, KitchenStation>();
+          (loadedStations || []).forEach(s => map.set(s.id, s));
+          firestoreStations.forEach((fs: any) => {
+            if (!map.has(fs.id)) {
+              map.set(fs.id, { id: fs.id, name: fs.name, colorHex: fs.colorHex, printerName: fs.printerName, restaurantId: fs.restaurantId });
+            }
+          });
+          loadedStations = Array.from(map.values());
+          setScopedStorage('pos_registered_stations', loadedStations);
+          setStations(loadedStations);
+        }
+      } catch (err) {
+        console.warn('Firebase stations fetch notice:', err);
+      }
     }
 
     setLoading(false);
@@ -91,6 +130,7 @@ export default function KitchenStationsPage() {
   useEffect(() => {
     fetchStations();
   }, [router]);
+
 
   const fetchPrinters = async () => {
     setLoadingPrinters(true);
@@ -159,6 +199,11 @@ export default function KitchenStationsPage() {
       }
     } catch {}
 
+    if (currentRestId) {
+      const finalId = isEditing ? formData.id : updatedStations[updatedStations.length - 1]?.id;
+      syncStationToFirebase({ id: finalId, name: formData.name, colorHex: formData.colorHex, printerName: formData.printerName || null, restaurantId: currentRestId }).catch(() => {});
+    }
+
     toast.success(isEditing ? 'Estación actualizada ✅' : 'Estación creada con éxito ✅');
     closeModal();
     setIsSaving(false);
@@ -173,6 +218,8 @@ export default function KitchenStationsPage() {
     setScopedStorage('pos_registered_stations', updated);
     window.dispatchEvent(new Event('storage'));
 
+    deleteStationFromFirebase(id).catch(() => {});
+
     const token = localStorage.getItem('pos_token');
     try {
       await fetch(getApiUrl(`/kitchen-stations/${id}`), {
@@ -183,6 +230,7 @@ export default function KitchenStationsPage() {
         }
       });
     } catch {}
+
 
     toast.success('Estación eliminada exitosamente ✅');
   };
