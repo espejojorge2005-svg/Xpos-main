@@ -23,10 +23,6 @@ export class InventoryService {
   async findAllCategories(restaurantId?: string | null) {
     const targetRestId = restaurantId;
 
-    if (!targetRestId) {
-      return [];
-    }
-
     return this.prisma.category.findMany({
       where: {
         restaurantId: targetRestId,
@@ -50,6 +46,14 @@ export class InventoryService {
   }
 
   async deleteCategory(id: string) {
+    const productsCount = await this.prisma.product.count({
+      where: { categoryId: id }
+    });
+
+    if (productsCount > 0) {
+      throw new Error('No se puede eliminar la categoría porque tiene productos asignados. Mueve o elimina los productos primero.');
+    }
+
     return this.prisma.category.delete({
       where: { id },
     });

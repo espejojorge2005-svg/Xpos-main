@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Patch, Delete, Param, Req, Headers, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Get, Patch, Delete, Param, Req, Headers, UseGuards, HttpException, HttpStatus } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { InventoryService } from './inventory.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
@@ -63,6 +63,15 @@ export class InventoryController {
 
   @Delete('category/:id') // DELETE /api/v1/inventory/category/:id
   async deleteCategory(@Param('id') id: string) {
-    return this.inventoryService.deleteCategory(id);
+    try {
+      return await this.inventoryService.deleteCategory(id);
+    } catch (e: any) {
+      console.error('Error deleting category:', e);
+      // Retornar un error manejado en lugar de 500
+      throw new HttpException(
+        e.message || 'No se puede eliminar la categoría',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
   }
 }
