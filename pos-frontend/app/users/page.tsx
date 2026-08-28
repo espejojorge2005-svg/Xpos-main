@@ -1,9 +1,12 @@
 'use client';
 import { getApiUrl, apiFetch } from '@/utils/api';
+import { getRestaurantId } from '@/utils/storage';
+
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Users, Plus, X, Loader2, Edit, UserX, UserCheck, Key, Shield, ChefHat, Calculator, AlertTriangle, Crown, Calendar } from 'lucide-react';
+import { Users, Plus, X, Loader2, Edit, UserX, UserCheck, Key, Shield, ChefHat, Calculator, AlertTriangle, Crown, Calendar, Trash2 } from 'lucide-react';
+
 import { toast } from 'sonner';
 import { useGuardedRoute } from '@/hooks/useGuardedRoute';
 
@@ -80,13 +83,12 @@ export default function UsersPage() {
     // Merge with registered staff from localStorage for standalone/offline support
     if (typeof window !== 'undefined') {
       try {
+        const currentRestId = getRestaurantId();
         const cachedStaffStr = localStorage.getItem('pos_registered_staff');
         const cachedStaff: any[] = cachedStaffStr ? JSON.parse(cachedStaffStr) : [];
-        const currentRestId = localStorage.getItem('pos_restaurant_id') || 
-          (localStorage.getItem('pos_user') ? JSON.parse(localStorage.getItem('pos_user') || '{}').restaurantId : null);
 
         const localUsers: User[] = cachedStaff
-          .filter((s: any) => !s.restaurantId || !currentRestId || s.restaurantId === currentRestId)
+          .filter((s: any) => currentRestId ? s.restaurantId === currentRestId : true)
           .map((s: any) => ({
             id: s.id || `staff-${Date.now()}`,
             name: s.name,
@@ -109,14 +111,20 @@ export default function UsersPage() {
         if (finalUsers.length > 0) {
           setUsers(finalUsers);
         } else {
-          setUsers([{
-            id: 'admin-master',
-            name: 'Administrador Maestro',
-            email: 'admin@restaurante.com',
-            role: 'ADMIN',
-            isActive: true,
-            allowedViews: ['*'],
-          }]);
+          const currentUserStr = localStorage.getItem('pos_user');
+          const currentUser = currentUserStr ? JSON.parse(currentUserStr) : null;
+          if (currentUser && currentUser.role === 'ADMIN') {
+            setUsers([{
+              id: currentUser.id || 'admin-1',
+              name: currentUser.name || 'Administrador',
+              email: currentUser.email || 'admin@restaurante.com',
+              role: 'ADMIN',
+              isActive: true,
+              allowedViews: ['*'],
+            }]);
+          } else {
+            setUsers([]);
+          }
         }
       } catch {
         setUsers(serverUsers);
@@ -128,6 +136,7 @@ export default function UsersPage() {
       setLoading(false);
     }
   };
+
 
   // Obtener información estricta de la suscripción y límite de usuarios del plan de forma segura para SSR
   const getSubscriptionInfo = () => {
@@ -374,6 +383,44 @@ export default function UsersPage() {
     }
   };
 
+  const handleDeleteUser = async (u: User) => {
+    if (u.role === 'ADMIN' && users.filter(x => x.role === 'ADMIN').length <= 1) {
+      return toast.error('No puedes eliminar al único Administrador del local.');
+    }
+    if (!confirm(`¿Estás seguro de eliminar permanentemente al usuario ${u.name}?`)) return;
+
+    try {
+      await apiFetch(`/users/${u.id}`, { method: 'DELETE' }).catch(() => {});
+
+      // Remover de la caché local de personal (scoped y general)
+      try {
+        const cachedStr = localStorage.getItem('pos_registered_staff');
+        if (cachedStr) {
+          const cached: any[] = JSON.parse(cachedStr);
+          const filtered = cached.filter(s => s.id !== u.id && s.email?.toLowerCase() !== u.email?.toLowerCase());
+          localStorage.setItem('pos_registered_staff', JSON.stringify(filtered));
+        }
+        const currentRestId = getRestaurantId();
+        if (currentRestId) {
+          const scopedKey = `pos_registered_staff_${currentRestId}`;
+          const scopedStr = localStorage.getItem(scopedKey);
+          if (scopedStr) {
+            const scoped: any[] = JSON.parse(scopedStr);
+            const filtered = scoped.filter(s => s.id !== u.id && s.email?.toLowerCase() !== u.email?.toLowerCase());
+            localStorage.setItem(scopedKey, JSON.stringify(filtered));
+          }
+        }
+        window.dispatchEvent(new Event('storage'));
+      } catch {}
+
+      toast.success(`Usuario ${u.name} eliminado exitosamente ✅`);
+      fetchUsers();
+    } catch {
+      toast.error('Error al eliminar usuario');
+    }
+  };
+
+
   if (loading) return (
     <div className="flex h-screen w-full items-center justify-center bg-slate-50">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-violet-600"></div>
@@ -532,12 +579,20 @@ export default function UsersPage() {
                 </button>
                 <button
                   onClick={() => handleToggleActive(u)}
-                  className={`p-2 rounded-xl transition-colors ${u.isActive ? 'text-rose-400 hover:text-rose-600 hover:bg-rose-50' : 'text-emerald-400 hover:text-emerald-600 hover:bg-emerald-50'}`}
+                  className={`p-2 rounded-xl transition-colors ${u.isActive ? 'text-amber-400 hover:text-amber-600 hover:bg-amber-50' : 'text-emerald-400 hover:text-emerald-600 hover:bg-emerald-50'}`}
                   title={u.isActive ? 'Desactivar' : 'Activar'}
                 >
                   {u.isActive ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
                 </button>
+                <button
+                  onClick={() => handleDeleteUser(u)}
+                  className="p-2 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
+                  title="Eliminar permanentemente"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
+
             </div>
           </div>
         ))}

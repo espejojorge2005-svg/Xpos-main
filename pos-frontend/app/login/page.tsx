@@ -49,7 +49,7 @@ export default function LoginPage() {
         const res = await fetch(getApiUrl(`/auth/restaurant/${restId}/staff`));
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data) && data.length > 0) {
+          if (Array.isArray(data)) {
             loadedStaff = data;
           }
         }
@@ -61,10 +61,8 @@ export default function LoginPage() {
     try {
       const localStaffStr = localStorage.getItem('pos_registered_staff');
       const localStaff: any[] = localStaffStr ? JSON.parse(localStaffStr) : [];
-      if (localStaff.length > 0) {
-        const filteredStaff = restId 
-          ? localStaff.filter(s => !s.restaurantId || s.restaurantId === restId) 
-          : localStaff;
+      if (localStaff.length > 0 && restId) {
+        const filteredStaff = localStaff.filter(s => s.restaurantId === restId && s.isActive !== false);
 
         const map = new Map<string, StaffMember>();
         loadedStaff.forEach(s => map.set(s.id || s.name.toLowerCase(), s));
@@ -90,17 +88,10 @@ export default function LoginPage() {
       }
     } catch {}
 
-    if (loadedStaff.length === 0) {
-      loadedStaff = [
-        { id: 'caja-1', name: 'Cajero Principal', role: 'CASHIER', pin: '1234', allowedViews: ['pos', 'cocina', 'caja'] },
-        { id: 'mesero-1', name: 'Mesero Sala', role: 'WAITER', pin: '1234', allowedViews: ['pos', 'cocina'] },
-        { id: 'cocina-1', name: 'Monitor Cocina', role: 'COOK', pin: '1234', allowedViews: ['cocina'] },
-      ];
-    }
-
     setStaff(loadedStaff);
     setIsStaffLoading(false);
   };
+
 
   useEffect(() => {
     const savedRestaurantId = localStorage.getItem('pos_restaurant_id');
@@ -389,7 +380,7 @@ export default function LoginPage() {
         if (localStaffStr) {
           const localStaff: any[] = JSON.parse(localStaffStr);
           const found = localStaff.find(s => s.id === selectedUser.id || (s.email && s.email.toLowerCase() === selectedUser.email?.toLowerCase()));
-          if (found && found.pin) expectedPin = found.pin;
+          if (found && found.pin && found.isActive !== false) expectedPin = found.pin;
         }
       } catch {}
     }
@@ -402,7 +393,7 @@ export default function LoginPage() {
         email: selectedUser.email || `${selectedUser.name.toLowerCase().replace(/\s+/g, '')}@restaurante.com`,
         role: selectedUser.role || 'CASHIER',
         allowedViews: selectedUser.allowedViews || ['pos', 'cocina', 'caja'],
-        restaurantId: restaurantId || 'rest-1',
+        restaurantId: targetRestId || restaurantId,
       };
       localStorage.setItem('pos_token', `client-token-${Date.now()}`);
       localStorage.setItem('pos_user', JSON.stringify(loggedUser));
@@ -415,6 +406,7 @@ export default function LoginPage() {
     }
     setLoading(false);
   };
+
 
   const onPinPadPress = (num: string) => {
     if (pin.length < 4) {
@@ -550,10 +542,22 @@ export default function LoginPage() {
                   <p className="text-sm">Cargando lista de personal...</p>
                 </div>
               ) : staff.length === 0 ? (
-                <div className="flex-1 flex items-center justify-center flex-col text-slate-400 min-h-[220px]">
-                  <p className="text-sm text-slate-300">No hay personal registrado.</p>
-                  <p className="text-xs text-slate-400 mt-1">Crea un usuario desde el panel Administrador.</p>
+                <div className="flex-1 flex items-center justify-center flex-col text-slate-400 min-h-[220px] p-6 text-center">
+                  <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 mb-3">
+                    <UserIcon className="w-6 h-6" />
+                  </div>
+                  <p className="text-sm font-bold text-white">No hay personal registrado</p>
+                  <p className="text-xs text-slate-400 mt-1 max-w-[250px]">
+                    Este local aún no tiene cajeros, meseros o cocineros activos.
+                  </p>
+                  <button
+                    onClick={() => setMode('ADMIN')}
+                    className="mt-4 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 flex items-center gap-1.5"
+                  >
+                    <Mail className="w-3.5 h-3.5" /> Iniciar como Administrador
+                  </button>
                 </div>
+
               ) : (
                 <div className="grid grid-cols-2 gap-3 max-h-[350px] overflow-y-auto pr-1">
                   {staff.filter(u => u.role !== 'SUPER_ADMIN').map((user) => (

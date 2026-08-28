@@ -10,10 +10,13 @@ export { CreateUserDto, UpdateUserDto };
 export class UsersService {
   constructor(private prisma: PrismaService, private cls: ClsService) {}
 
-  async findAll(reqUser?: any) {
-    const restaurantId = this.cls.get('restaurantId') || reqUser?.restaurantId;
+  async findAll(reqUser?: any, restaurantIdParam?: string | null) {
+    const restaurantId = restaurantIdParam || this.cls.get('restaurantId') || reqUser?.restaurantId;
+    if (!restaurantId && reqUser?.role !== 'SUPER_ADMIN') {
+      return [];
+    }
     const whereClause: any = {};
-    if (restaurantId && reqUser?.role !== 'SUPER_ADMIN') {
+    if (restaurantId) {
       whereClause.restaurantId = restaurantId;
     }
     return this.prisma.user.findMany({
@@ -50,18 +53,18 @@ export class UsersService {
     return user;
   }
 
-  async create(dto: CreateUserDto, reqUser?: any) {
+  async create(dto: CreateUserDto, reqUser?: any, restaurantIdParam?: string | null) {
     const cleanEmail = dto.email.trim().toLowerCase();
     const exists = await this.prisma.user.findUnique({ where: { email: cleanEmail } });
     if (exists) throw new BadRequestException('El correo ya está registrado en la plataforma');
 
-    // Extraer automáticamente el restaurantId del JWT del Administrador o CLS context
-    let restaurantId = reqUser?.restaurantId || this.cls.get('restaurantId');
-
+    // Extraer automáticamente el restaurantId del JWT del Administrador o CLS context o parámetro
+    let restaurantId = restaurantIdParam || reqUser?.restaurantId || this.cls.get('restaurantId');
 
     if (!restaurantId) {
       throw new BadRequestException('No se pudo determinar el restaurante asignado al usuario');
     }
+
 
     // Verificar estado, vigencia de suscripción y límite estricto de usuarios según el plan
     const restaurant = await this.prisma.restaurant.findUnique({ 
@@ -138,13 +141,21 @@ export class UsersService {
     return result;
   }
 
-  /** Soft delete — just deactivates the account */
-  async deactivate(id: string) {
+  async remove(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Usuario no encontrado');
-    await this.prisma.user.update({ where: { id }, data: { isActive: false } });
-    return { message: 'Usuario desactivado' };
+    try {
+      await this.prisma.user.delete({ where: { id } });
+      return { message: 'Usuario eliminado permanentemente' };
+    } catch {
+      await this.prisma.user.update({ 
+        where: { id }, 
+        data: { isActive: false, pin: null } 
+      });
+      return { message: 'Usuario desactivado' };
+    }
   }
+
 
   async updateProfile(id: string, dto: { email?: string; password?: string }) {
     const user = await this.prisma.user.findUnique({ where: { id } });

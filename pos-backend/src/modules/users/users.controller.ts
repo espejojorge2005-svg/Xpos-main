@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Req, Headers } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { UsersService } from './users.service';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
@@ -13,26 +13,41 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  findAll(@Req() req: any) {
-    return this.usersService.findAll(req.user);
+  findAll(
+    @Req() req: any,
+    @Headers('x-restaurant-id') restHeader?: string
+  ) {
+    const restaurantId = req.user?.restaurantId || restHeader || null;
+    return this.usersService.findAll(req.user, restaurantId);
   }
 
   @Post()
-  create(@Req() req: any, @Body() dto: CreateUserDto) {
-    return this.usersService.create(dto, req.user);
+  create(
+    @Req() req: any, 
+    @Body() dto: CreateUserDto,
+    @Headers('x-restaurant-id') restHeader?: string
+  ) {
+    const restaurantId = req.user?.restaurantId || restHeader || null;
+    return this.usersService.create(dto, req.user, restaurantId);
   }
 
   @Patch(':id')
-  update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateUserDto) {
+  update(
+    @Req() req: any, 
+    @Param('id') id: string, 
+    @Body() dto: UpdateUserDto,
+    @Headers('x-restaurant-id') restHeader?: string
+  ) {
     if (!isAdmin(req)) return { error: 'Acceso denegado' };
     return this.usersService.update(id, dto);
   }
 
   @Delete(':id')
-  deactivate(@Req() req: any, @Param('id') id: string) {
+  remove(@Req() req: any, @Param('id') id: string) {
     if (!isAdmin(req)) return { error: 'Acceso denegado' };
-    return this.usersService.deactivate(id);
+    return this.usersService.remove(id);
   }
+
 
   @Patch('profile/superadmin')
   updateProfile(@Req() req: any, @Body() dto: { email?: string; password?: string }) {

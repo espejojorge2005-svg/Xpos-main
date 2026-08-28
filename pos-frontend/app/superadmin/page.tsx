@@ -345,10 +345,13 @@ export default function SuperAdminPage() {
       localStorage.setItem(`pos_registered_categories_${finalRestaurantId}`, JSON.stringify([]));
       localStorage.setItem(`pos_registered_products_${finalRestaurantId}`, JSON.stringify([]));
       localStorage.setItem(`pos_registered_stations_${finalRestaurantId}`, JSON.stringify([]));
+      localStorage.setItem(`pos_registered_staff_${finalRestaurantId}`, JSON.stringify([]));
+      localStorage.setItem(`pos_registered_zones_${finalRestaurantId}`, JSON.stringify([]));
       localStorage.setItem(`pos_stock_movements_${finalRestaurantId}`, JSON.stringify([]));
       localStorage.setItem(`pos_active_table_orders_${finalRestaurantId}`, JSON.stringify({}));
       localStorage.setItem(`pos_local_kitchen_orders_${finalRestaurantId}`, JSON.stringify([]));
     } catch {}
+
 
     setRestaurants(prev => {
       const updated = [newMockRestaurant, ...prev];
