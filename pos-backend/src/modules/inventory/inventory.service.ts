@@ -43,10 +43,7 @@ export class InventoryService {
 
     return this.prisma.category.findMany({
       where: {
-        OR: [
-          { restaurantId: targetRestId },
-          { restaurantId: null }, // Categorías globales o creadas antes de la asignación de ID
-        ],
+        restaurantId: targetRestId,
       },
       include: {
         products: true,
