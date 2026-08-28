@@ -1,7 +1,7 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
 import { getScopedStorage, setScopedStorage, getRestaurantId } from '@/utils/storage';
-import { syncStationToFirebase, deleteStationFromFirebase, getStationsFromFirebase } from '@/utils/firebaseSync';
+import { syncStationToFirebase, deleteStationFromFirebase, subscribeToKitchenStations } from '@/utils/firebaseSync';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -30,8 +30,12 @@ const PRESET_COLORS = [
 
 export default function KitchenStationsPage() {
   const router = useRouter();
-  const [stations, setStations] = useState<KitchenStation[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Carga instantánea a 0ms desde caché
+  const [stations, setStations] = useState<KitchenStation[]>(() => {
+    if (typeof window === 'undefined') return [];
+    return getScopedStorage<KitchenStation[]>('pos_registered_stations', []);
+  });
+  const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -45,91 +49,80 @@ export default function KitchenStationsPage() {
   const [loadingPrinters, setLoadingPrinters] = useState(false);
   const [agentOnline, setAgentOnline] = useState<boolean | null>(null);
 
-  const fetchStations = async () => {
-    const currentRestId = getRestaurantId();
-    let loadedStations: KitchenStation[] | null = null;
-
-    // 1. Carga inmediata de almacenamiento local estrictamente aislado por inquilino
-    try {
-      const cached = getScopedStorage<KitchenStation[] | null>('pos_registered_stations', null);
-      if (Array.isArray(cached) && cached.length > 0) {
-        loadedStations = cached;
-      }
-    } catch {}
-
-    if (loadedStations) {
-      setStations(loadedStations);
-    }
-
-    // 2. Sincronización con backend pasando x-restaurant-id
-    const token = localStorage.getItem('pos_token');
-    try {
-      const response = await fetch(getApiUrl('/kitchen-stations'), {
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'x-restaurant-id': currentRestId || ''
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (Array.isArray(data)) {
-          const cached = getScopedStorage<KitchenStation[] | null>('pos_registered_stations', []) || [];
-          const cachedMap = new Map(cached.map(s => [s.id, s]));
-
-          const mapped = data.map((s: any) => {
-            if (!s.restaurantId && cachedMap.has(s.id)) {
-              return { ...s, restaurantId: currentRestId };
-            }
-            return s;
-          });
-
-          const backendFiltered = currentRestId
-            ? mapped.filter((s: any) => s.restaurantId === currentRestId)
-            : [];
-
-          const combinedMap = new Map<string, KitchenStation>();
-          cached.filter(s => s.restaurantId === currentRestId).forEach(s => combinedMap.set(s.id, s));
-          backendFiltered.forEach(s => combinedMap.set(s.id, s));
-
-          const finalStations = Array.from(combinedMap.values());
-          loadedStations = finalStations;
-          setScopedStorage('pos_registered_stations', finalStations);
-          setStations(finalStations);
-        }
-
-      }
-
-    } catch (error) {
-      console.warn('Backend stations notice:', error);
-    }
-
-    // Sincronización en la nube con Firebase Firestore (Multi-inquilino)
-    if (currentRestId) {
-      try {
-        const firestoreStations = await getStationsFromFirebase(currentRestId);
-        if (Array.isArray(firestoreStations) && firestoreStations.length > 0) {
-          const map = new Map<string, KitchenStation>();
-          (loadedStations || []).forEach(s => map.set(s.id, s));
-          firestoreStations.forEach((fs: any) => {
-            if (!map.has(fs.id)) {
-              map.set(fs.id, { id: fs.id, name: fs.name, colorHex: fs.colorHex, printerName: fs.printerName, restaurantId: fs.restaurantId });
-            }
-          });
-          loadedStations = Array.from(map.values());
-          setScopedStorage('pos_registered_stations', loadedStations);
-          setStations(loadedStations);
-        }
-      } catch (err) {
-        console.warn('Firebase stations fetch notice:', err);
-      }
-    }
-
-    setLoading(false);
-  };
-
+  // Carga y sincronización EN TIEMPO REAL (0ms de retraso)
   useEffect(() => {
-    fetchStations();
+    const currentRestId = getRestaurantId();
+    if (!currentRestId) {
+      setLoading(false);
+      return;
+    }
+
+    // 1. Mostrar caché local de inmediato
+    const cached = getScopedStorage<KitchenStation[]>('pos_registered_stations', []);
+    if (cached.length > 0) {
+      setStations(cached);
+    }
+
+    // 2. Suscripción EN TIEMPO REAL a Firebase Firestore
+    const unsubscribe = subscribeToKitchenStations(currentRestId, (firestoreStations) => {
+      if (Array.isArray(firestoreStations)) {
+        setStations(prev => {
+          const map = new Map<string, KitchenStation>();
+          prev.forEach(s => map.set(s.id, s));
+          firestoreStations.forEach((fs: any) => {
+            map.set(fs.id, {
+              id: fs.id,
+              name: fs.name,
+              colorHex: fs.colorHex || '#f1f5f9',
+              printerName: fs.printerName,
+              restaurantId: fs.restaurantId
+            });
+          });
+          const merged = Array.from(map.values()).filter(s => s.restaurantId === currentRestId);
+          setScopedStorage('pos_registered_stations', merged);
+          return merged;
+        });
+      }
+      setLoading(false);
+    });
+
+    // 3. Consulta secundaria rápida al backend (timeout estricto 1.2s para no colgar la UI)
+    const token = localStorage.getItem('pos_token');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1200);
+
+    fetch(getApiUrl('/kitchen-stations'), {
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'x-restaurant-id': currentRestId || ''
+      },
+      signal: controller.signal
+    }).then(async (res) => {
+      clearTimeout(timer);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          const filtered = data.filter((s: any) => s.restaurantId === currentRestId);
+          if (filtered.length > 0) {
+            setStations(prev => {
+              const map = new Map(prev.map(s => [s.id, s]));
+              filtered.forEach(s => map.set(s.id, s));
+              const merged = Array.from(map.values());
+              setScopedStorage('pos_registered_stations', merged);
+              return merged;
+            });
+          }
+        }
+      }
+    }).catch(() => {});
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
   }, [router]);
+
 
 
   const fetchPrinters = async () => {

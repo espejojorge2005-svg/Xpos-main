@@ -1,7 +1,7 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
 import { getRestaurantId, getScopedStorage, setScopedStorage } from '@/utils/storage';
-import { syncProductToFirebase, deleteProductFromFirebase, getProductsFromFirebase } from '@/utils/firebaseSync';
+import { syncProductToFirebase, deleteProductFromFirebase, subscribeToProducts, subscribeToCategories, subscribeToKitchenStations } from '@/utils/firebaseSync';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -19,8 +19,9 @@ interface Product {
   price: number;
   stock: number;
   minStock: number;
-  modifierGroups?: ModifierGroup[];
-  restaurantId?: string | null;
+  barcode?: string;
+  restaurantId?: string;
+  modifierGroups?: any[];
 }
 
 interface ModifierOption {
@@ -40,28 +41,41 @@ interface ModifierGroup {
 interface Category {
   id: string;
   name: string;
-  restaurantId?: string | null;
+  restaurantId?: string;
+  products?: any[];
 }
 
 interface KitchenStation {
   id: string;
   name: string;
-  restaurantId?: string | null;
+  colorHex: string;
+  printerName?: string;
+  restaurantId?: string;
 }
 
 
 export default function InventoryPage() {
   const router = useRouter();
   useGuardedRoute('inventario');
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Carga instantánea a 0ms desde la caché local
+  const [products, setProducts] = useState<Product[]>(() => {
+    if (typeof window === 'undefined') return [];
+    return getScopedStorage<Product[]>('pos_registered_products', []);
+  });
+  const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
   // Estados para el Modal funcional
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [stations, setStations] = useState<KitchenStation[]>([]);
+  const [categories, setCategories] = useState<Category[]>(() => {
+    if (typeof window === 'undefined') return [];
+    return getScopedStorage<Category[]>('pos_registered_categories', []);
+  });
+  const [stations, setStations] = useState<KitchenStation[]>(() => {
+    if (typeof window === 'undefined') return [];
+    return getScopedStorage<KitchenStation[]>('pos_registered_stations', []);
+  });
   const [activeTab, setActiveTab] = useState<'info' | 'modifiers'>('info');
   const [formData, setFormData] = useState<Product>({
     id: '', name: '', category: '', categoryId: '', stationIds: [], price: 0, stock: 0, minStock: 0, modifierGroups: []
@@ -78,194 +92,120 @@ export default function InventoryPage() {
   const [historyMovements, setHistoryMovements] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // 1. LEER: Obtener productos del backend real o caché local
-  const fetchProducts = async () => {
-    const token = localStorage.getItem('pos_token');
-    const currentRestId = getRestaurantId();
-    let loadedProducts: Product[] | null = null;
-    try {
-      const response = await fetch(getApiUrl('/products'), {
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'x-restaurant-id': currentRestId || ''
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (Array.isArray(data)) {
-          const cached = getScopedStorage<Product[] | null>('pos_registered_products', []) || [];
-          const cachedMap = new Map(cached.map(p => [p.id, p]));
-
-          const mapped = data.map((p: any) => {
-            if (!p.restaurantId && cachedMap.has(p.id)) {
-              return { ...p, restaurantId: currentRestId };
-            }
-            return p;
-          });
-
-          const backendFiltered = currentRestId
-            ? mapped.filter((p: any) => p.restaurantId === currentRestId)
-            : [];
-
-          const combinedMap = new Map<string, Product>();
-          cached.filter(p => p.restaurantId === currentRestId).forEach(p => combinedMap.set(p.id, p));
-          backendFiltered.forEach(p => combinedMap.set(p.id, p));
-
-          const finalProducts = Array.from(combinedMap.values());
-          loadedProducts = finalProducts;
-          setScopedStorage('pos_registered_products', finalProducts);
-        }
-      }
-    } catch { /* ignore network error */ }
-
-    // Sincronización en la nube con Firebase Firestore (Multi-inquilino)
-    if (currentRestId) {
-      try {
-        const firestoreProds = await getProductsFromFirebase(currentRestId);
-        if (Array.isArray(firestoreProds) && firestoreProds.length > 0) {
-          const map = new Map<string, Product>();
-          (loadedProducts || []).forEach(p => map.set(p.id, p));
-          firestoreProds.forEach((fp: any) => {
-            if (!map.has(fp.id)) {
-              map.set(fp.id, {
-                id: fp.id,
-                name: fp.name,
-                category: fp.category || 'General',
-                categoryId: fp.categoryId,
-                stationIds: fp.stationIds || [],
-                price: fp.price || 0,
-                stock: fp.stock || 0,
-                minStock: fp.minStock || 0,
-                restaurantId: fp.restaurantId
-              });
-            }
-          });
-          loadedProducts = Array.from(map.values());
-          setScopedStorage('pos_registered_products', loadedProducts);
-        }
-      } catch (err) {
-        console.warn('Firebase products fetch notice:', err);
-      }
-    }
-
-    if (loadedProducts === null) {
-      const cached = getScopedStorage<Product[] | null>('pos_registered_products', null);
-      if (cached !== null) {
-        loadedProducts = cached;
-      }
-    }
-
-    setProducts(loadedProducts || []);
-    setLoading(false);
-
-  };
-
-  const fetchCategories = async () => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
-    const currentRestId = getRestaurantId();
-    let loadedCats: Category[] | null = null;
-    try {
-      const response = await fetch(getApiUrl('/inventory/categories'), {
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'x-restaurant-id': currentRestId || ''
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (Array.isArray(data)) {
-          const cached = getScopedStorage<Category[] | null>('pos_registered_categories', []) || [];
-          const cachedMap = new Map(cached.map(c => [c.id, c]));
-
-          const mapped = data.map((c: any) => {
-            if (!c.restaurantId && cachedMap.has(c.id)) {
-              return { ...c, restaurantId: currentRestId };
-            }
-            return c;
-          });
-
-          const backendFiltered = currentRestId
-            ? mapped.filter((c: any) => c.restaurantId === currentRestId)
-            : [];
-
-          const combinedMap = new Map<string, Category>();
-          cached.filter(c => c.restaurantId === currentRestId).forEach(c => combinedMap.set(c.id, c));
-          backendFiltered.forEach(c => combinedMap.set(c.id, c));
-
-          const finalCats = Array.from(combinedMap.values());
-          loadedCats = finalCats;
-          setScopedStorage('pos_registered_categories', finalCats);
-        }
-      }
-    } catch {}
-
-    if (loadedCats === null) {
-      const cached = getScopedStorage<Category[] | null>('pos_registered_categories', null);
-      if (cached !== null) {
-        loadedCats = cached;
-      }
-    }
-
-    setCategories(loadedCats || []);
-  };
-
-  const fetchStations = async () => {
-    const token = localStorage.getItem('pos_token');
-    const currentRestId = getRestaurantId();
-    let loadedStations: KitchenStation[] | null = null;
-    try {
-      const response = await fetch(getApiUrl('/kitchen-stations'), {
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'x-restaurant-id': currentRestId || ''
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (Array.isArray(data)) {
-          const cached = getScopedStorage<KitchenStation[] | null>('pos_registered_stations', []) || [];
-          const cachedMap = new Map(cached.map(s => [s.id, s]));
-
-          const mapped = data.map((s: any) => {
-            if (!s.restaurantId && cachedMap.has(s.id)) {
-              return { ...s, restaurantId: currentRestId };
-            }
-            return s;
-          });
-
-          const backendFiltered = currentRestId
-            ? mapped.filter((s: any) => s.restaurantId === currentRestId)
-            : [];
-
-          const combinedMap = new Map<string, KitchenStation>();
-          cached.filter(s => s.restaurantId === currentRestId).forEach(s => combinedMap.set(s.id, s));
-          backendFiltered.forEach(s => combinedMap.set(s.id, s));
-
-          const finalStations = Array.from(combinedMap.values());
-          loadedStations = finalStations;
-          setScopedStorage('pos_registered_stations', finalStations);
-        }
-      }
-    } catch {}
-
-
-    if (loadedStations === null) {
-      const cached = getScopedStorage<KitchenStation[] | null>('pos_registered_stations', null);
-      if (cached !== null) {
-        loadedStations = cached;
-      }
-    }
-
-    setStations(loadedStations || []);
-  };
-
-
-
+  // Carga y sincronización EN TIEMPO REAL (ultra rápida)
   useEffect(() => {
-    fetchProducts();
-    fetchCategories();
-    fetchStations();
+    const currentRestId = getRestaurantId();
+    if (!currentRestId) {
+      setLoading(false);
+      return;
+    }
+
+    // 1. Mostrar de inmediato la caché local (0ms)
+    const localProds = getScopedStorage<Product[]>('pos_registered_products', []);
+    if (localProds.length > 0) setProducts(localProds);
+    const localCats = getScopedStorage<Category[]>('pos_registered_categories', []);
+    if (localCats.length > 0) setCategories(localCats);
+    const localSts = getScopedStorage<KitchenStation[]>('pos_registered_stations', []);
+    if (localSts.length > 0) setStations(localSts);
+
+    // 2. Suscripción EN TIEMPO REAL a Productos en Firebase Firestore
+    const unsubProducts = subscribeToProducts(currentRestId, (firestoreProds) => {
+      if (Array.isArray(firestoreProds)) {
+        setProducts(prev => {
+          const map = new Map<string, Product>();
+          prev.forEach(p => map.set(p.id, p));
+          firestoreProds.forEach((fp: any) => {
+            map.set(fp.id, {
+              id: fp.id,
+              name: fp.name,
+              category: fp.category || 'General',
+              categoryId: fp.categoryId,
+              stationIds: fp.stationIds || [],
+              price: fp.price || 0,
+              stock: fp.stock || 0,
+              minStock: fp.minStock || 0,
+              restaurantId: fp.restaurantId
+            });
+          });
+          const merged = Array.from(map.values()).filter(p => p.restaurantId === currentRestId);
+          setScopedStorage('pos_registered_products', merged);
+          return merged;
+        });
+      }
+      setLoading(false);
+    });
+
+    // Suscripción EN TIEMPO REAL a Categorías
+    const unsubCats = subscribeToCategories(currentRestId, (firestoreCats) => {
+      if (Array.isArray(firestoreCats)) {
+        setCategories(prev => {
+          const map = new Map<string, Category>();
+          prev.forEach(c => map.set(c.id, c));
+          firestoreCats.forEach((fc: any) => {
+            map.set(fc.id, { id: fc.id, name: fc.name, restaurantId: fc.restaurantId, products: [] });
+          });
+          const merged = Array.from(map.values()).filter(c => c.restaurantId === currentRestId);
+          setScopedStorage('pos_registered_categories', merged);
+          return merged;
+        });
+      }
+    });
+
+    // Suscripción EN TIEMPO REAL a Áreas de Preparación
+    const unsubStations = subscribeToKitchenStations(currentRestId, (firestoreStations) => {
+      if (Array.isArray(firestoreStations)) {
+        setStations(prev => {
+          const map = new Map<string, KitchenStation>();
+          prev.forEach(s => map.set(s.id, s));
+          firestoreStations.forEach((fs: any) => {
+            map.set(fs.id, { id: fs.id, name: fs.name, colorHex: fs.colorHex || '#f1f5f9', printerName: fs.printerName, restaurantId: fs.restaurantId });
+          });
+          const merged = Array.from(map.values()).filter(s => s.restaurantId === currentRestId);
+          setScopedStorage('pos_registered_stations', merged);
+          return merged;
+        });
+      }
+    });
+
+    // 3. Consulta secundaria opcional al backend con timeout estricto de 1.2s para jamás ralentizar la pantalla
+    const token = localStorage.getItem('pos_token');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1200);
+
+    fetch(getApiUrl('/products'), {
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'x-restaurant-id': currentRestId || ''
+      },
+      signal: controller.signal
+    }).then(async res => {
+      clearTimeout(timer);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          const filtered = data.filter((p: any) => p.restaurantId === currentRestId);
+          if (filtered.length > 0) {
+            setProducts(prev => {
+              const map = new Map(prev.map(p => [p.id, p]));
+              filtered.forEach(p => map.set(p.id, p));
+              const merged = Array.from(map.values());
+              setScopedStorage('pos_registered_products', merged);
+              return merged;
+            });
+          }
+        }
+      }
+    }).catch(() => {});
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+      if (typeof unsubProducts === 'function') unsubProducts();
+      if (typeof unsubCats === 'function') unsubCats();
+      if (typeof unsubStations === 'function') unsubStations();
+    };
   }, [router]);
+
 
   // 2. CREAR / EDITAR: Guardar en la base de datos
   const handleSave = async (e: React.FormEvent) => {

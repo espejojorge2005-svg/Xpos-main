@@ -1,7 +1,7 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
 import { getRestaurantId, getScopedStorage, setScopedStorage } from '@/utils/storage';
-import { syncCategoryToFirebase, deleteCategoryFromFirebase, getCategoriesFromFirebase } from '@/utils/firebaseSync';
+import { syncCategoryToFirebase, deleteCategoryFromFirebase, subscribeToCategories } from '@/utils/firebaseSync';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -19,8 +19,12 @@ interface Category {
 export default function CategoriesPage() {
   const router = useRouter();
   useGuardedRoute('categorias');
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Carga instantánea a 0ms desde la caché local
+  const [categories, setCategories] = useState<Category[]>(() => {
+    if (typeof window === 'undefined') return [];
+    return getScopedStorage<Category[]>('pos_registered_categories', []);
+  });
+  const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
   // Modal de Crear / Editar
@@ -47,83 +51,79 @@ export default function CategoriesPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isModalOpen, isDeleteModalOpen, isSaving, isDeleting]);
 
-  const fetchCategories = async () => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
-    const currentRestId = getRestaurantId();
-    let loadedCats: Category[] | null = null;
-    try {
-      const response = await fetch(getApiUrl('/inventory/categories'), {
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'x-restaurant-id': currentRestId || ''
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (Array.isArray(data)) {
-          const cached = getScopedStorage<Category[] | null>('pos_registered_categories', []) || [];
-          const cachedMap = new Map(cached.map(c => [c.id, c]));
-
-          const mapped = data.map((c: any) => {
-            if (!c.restaurantId && cachedMap.has(c.id)) {
-              return { ...c, restaurantId: currentRestId };
-            }
-            return c;
-          });
-
-          const backendFiltered = currentRestId
-            ? mapped.filter((c: any) => c.restaurantId === currentRestId)
-            : [];
-
-          const combinedMap = new Map<string, Category>();
-          cached.filter(c => c.restaurantId === currentRestId).forEach(c => combinedMap.set(c.id, c));
-          backendFiltered.forEach(c => combinedMap.set(c.id, c));
-
-          const finalCats = Array.from(combinedMap.values());
-          loadedCats = finalCats;
-          setScopedStorage('pos_registered_categories', finalCats);
-        }
-      }
-
-    } catch (e) {
-      console.warn('Network error fetching categories:', e);
-    }
-
-    // Sincronización en la nube con Firebase Firestore (Multi-inquilino)
-    if (currentRestId) {
-      try {
-        const firestoreCats = await getCategoriesFromFirebase(currentRestId);
-        if (Array.isArray(firestoreCats) && firestoreCats.length > 0) {
-          const map = new Map<string, Category>();
-          (loadedCats || []).forEach(c => map.set(c.id, c));
-          firestoreCats.forEach((fc: any) => {
-            if (!map.has(fc.id)) {
-              map.set(fc.id, { id: fc.id, name: fc.name, restaurantId: fc.restaurantId, products: [] });
-            }
-          });
-          loadedCats = Array.from(map.values());
-          setScopedStorage('pos_registered_categories', loadedCats);
-        }
-      } catch (err) {
-        console.warn('Firebase categories fetch notice:', err);
-      }
-    }
-
-    if (loadedCats === null) {
-      const cached = getScopedStorage<Category[] | null>('pos_registered_categories', null);
-      if (cached !== null) {
-        loadedCats = cached;
-      }
-    }
-
-    setCategories(loadedCats || []);
-    setLoading(false);
-
-  };
-
+  // Carga y suscripción en tiempo real (ultra rápida)
   useEffect(() => {
-    fetchCategories();
+    const currentRestId = getRestaurantId();
+    if (!currentRestId) {
+      setLoading(false);
+      return;
+    }
+
+    // 1. Mostrar caché local de inmediato
+    const cached = getScopedStorage<Category[]>('pos_registered_categories', []);
+    if (cached.length > 0) {
+      setCategories(cached);
+    }
+
+    // 2. Suscripción EN TIEMPO REAL a Firebase Firestore (ultra rápida)
+    const unsubscribe = subscribeToCategories(currentRestId, (firestoreCats) => {
+      if (Array.isArray(firestoreCats)) {
+        setCategories(prev => {
+          const map = new Map<string, Category>();
+          prev.forEach(c => map.set(c.id, c));
+          firestoreCats.forEach((fc: any) => {
+            map.set(fc.id, {
+              id: fc.id,
+              name: fc.name,
+              restaurantId: fc.restaurantId,
+              products: map.get(fc.id)?.products || []
+            });
+          });
+          const merged = Array.from(map.values()).filter(c => c.restaurantId === currentRestId);
+          setScopedStorage('pos_registered_categories', merged);
+          return merged;
+        });
+      }
+      setLoading(false);
+    });
+
+    // 3. Consulta secundaria al backend (con timeout estricto de 1.2s para jamás ralentizar la pantalla)
+    const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1200);
+
+    fetch(getApiUrl('/inventory/categories'), {
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'x-restaurant-id': currentRestId || ''
+      },
+      signal: controller.signal
+    }).then(async res => {
+      clearTimeout(timer);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          const filtered = data.filter((c: any) => c.restaurantId === currentRestId);
+          if (filtered.length > 0) {
+            setCategories(prev => {
+              const map = new Map(prev.map(c => [c.id, c]));
+              filtered.forEach(c => map.set(c.id, c));
+              const merged = Array.from(map.values());
+              setScopedStorage('pos_registered_categories', merged);
+              return merged;
+            });
+          }
+        }
+      }
+    }).catch(() => {});
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
   }, [router]);
+
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();

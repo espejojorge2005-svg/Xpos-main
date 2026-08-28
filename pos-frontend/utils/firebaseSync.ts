@@ -214,3 +214,55 @@ export const getProductsFromFirebase = async (restaurantId: string): Promise<any
   }
 };
 
+/**
+ * Suscripciones EN TIEMPO REAL (onSnapshot) ultrarrápidas
+ */
+export const subscribeToCategories = (restaurantId: string, onUpdate: (categories: any[]) => void) => {
+  try {
+    const ref = collection(db, 'categories');
+    const q = query(ref, where('restaurantId', '==', restaurantId));
+    return onSnapshot(q, (snapshot) => {
+      const cats = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      onUpdate(cats);
+    }, (error) => {
+      console.warn("Firestore real-time subscription (categories) info:", error.message);
+    });
+  } catch (err) {
+    console.warn("Firebase categories listener initialization:", err);
+    return () => {};
+  }
+};
+
+export const subscribeToKitchenStations = (restaurantId: string, onUpdate: (stations: any[]) => void) => {
+  try {
+    const ref = collection(db, 'kitchen_stations');
+    const q = query(ref, where('restaurantId', '==', restaurantId));
+    return onSnapshot(q, (snapshot) => {
+      const stations = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      onUpdate(stations);
+    }, (error) => {
+      console.warn("Firestore real-time subscription (stations) info:", error.message);
+    });
+  } catch (err) {
+    console.warn("Firebase stations listener initialization:", err);
+    return () => {};
+  }
+};
+
+export const subscribeToProducts = (restaurantId: string, onUpdate: (products: any[]) => void) => {
+  try {
+    const ref = collection(db, 'products');
+    const q = query(ref, where('restaurantId', '==', restaurantId));
+    return onSnapshot(q, (snapshot) => {
+      const products = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      onUpdate(products);
+    }, (error) => {
+      console.warn("Firestore real-time subscription (products) info:", error.message);
+    });
+  } catch (err) {
+    console.warn("Firebase products listener initialization:", err);
+    return () => {};
+  }
+};
+
+
