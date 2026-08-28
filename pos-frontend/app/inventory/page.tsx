@@ -21,8 +21,9 @@ interface Product {
   minStock: number;
   barcode?: string;
   restaurantId?: string;
-  modifierGroups?: any[];
+  modifierGroups?: ModifierGroup[];
 }
+
 
 interface ModifierOption {
   targetProductId: string;
@@ -731,7 +732,7 @@ export default function InventoryPage() {
                   <div className="space-y-6">
                     <p className="text-sm text-slate-500 leading-relaxed">Añade grupos de opciones para crear Combos. Por ejemplo: <strong>"Bebida a elección"</strong>, donde el cliente escoge un jugo del Bar, o <strong>"Guarnición"</strong>.</p>
                     
-                    {formData.modifierGroups?.map((group, gIndex) => (
+                    {formData.modifierGroups?.map((group: ModifierGroup, gIndex: number) => (
                       <div key={gIndex} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 relative">
                          <button type="button" onClick={() => {
                            const newGroups = [...(formData.modifierGroups || [])];
@@ -771,8 +772,9 @@ export default function InventoryPage() {
 
                          <div className="space-y-2">
                            <label className="text-xs font-bold text-slate-500 uppercase">Opciones (Productos vinculados)</label>
-                           {group.options.map((opt, oIndex) => (
+                           {group.options.map((opt: ModifierOption, oIndex: number) => (
                               <div key={oIndex} className="flex gap-2 items-center">
+
                                 <select required value={opt.targetProductId} onChange={(e) => {
                                   const newGroups = [...(formData.modifierGroups || [])];
                                   newGroups[gIndex].options[oIndex].targetProductId = e.target.value;
