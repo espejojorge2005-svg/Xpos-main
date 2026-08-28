@@ -1,9 +1,11 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
 import { KitchenStationsService } from './kitchen-stations.service';
 import { CreateKitchenStationDto } from './dto/create-kitchen-station.dto';
 import { UpdateKitchenStationDto } from './dto/update-kitchen-station.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('kitchen-stations') // /api/v1/kitchen-stations
+@UseGuards(JwtAuthGuard)
 export class KitchenStationsController {
   constructor(private readonly kitchenStationsService: KitchenStationsService) {}
 

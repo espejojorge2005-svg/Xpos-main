@@ -1,4 +1,5 @@
-import { Controller, Post, Body, Get, Patch, Delete, Param, Req, Headers } from '@nestjs/common';
+import { Controller, Post, Body, Get, Patch, Delete, Param, Req, Headers, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { InventoryService } from './inventory.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
@@ -7,6 +8,7 @@ import { CreateInventoryItemDto } from './dto/create-inventory-item.dto';
 import { CreateRecipeItemDto } from './dto/create-recipe-item.dto';
 
 @Controller('inventory') // Ruta base: /api/v1/inventory
+@UseGuards(JwtAuthGuard)
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 

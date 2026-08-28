@@ -1,7 +1,8 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { IsArray, IsOptional, IsString } from 'class-validator';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 export class ServeOrderDto {
   @IsOptional()
@@ -11,6 +12,7 @@ export class ServeOrderDto {
 }
 
 @Controller('orders') // Ruta base: /api/v1/orders
+@UseGuards(JwtAuthGuard)
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 

@@ -60,9 +60,8 @@ export default function CategoriesPage() {
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
-          // Filtrar categorías que pertenezcan a este restaurante o sean globales/legacy
           const filtered = currentRestId
-            ? data.filter((c: any) => !c.restaurantId || c.restaurantId === currentRestId)
+            ? data.filter((c: any) => c.restaurantId === currentRestId)
             : data;
           loadedCats = filtered;
           setScopedStorage('pos_registered_categories', filtered);
