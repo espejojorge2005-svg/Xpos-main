@@ -6,7 +6,7 @@ import { getApiUrl } from '@/utils/api';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Calculator, Package, Settings, UtensilsCrossed, LogOut, ChefHat, Users, Table2, BarChart3, Shield, Flame, ClipboardList, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Calculator, Package, Settings, UtensilsCrossed, LogOut, ChefHat, Users, Table2, BarChart3, Shield, Flame, ClipboardList, Menu, X, Layers, History } from 'lucide-react';
 
 interface RestaurantConfig {
   name: string;
@@ -19,8 +19,9 @@ const ALL_MENU_ITEMS = [
   { key: 'cocina',        name: 'Monitor Cocina',  icon: ChefHat,         path: '/cocina' },
   { key: 'caja',          name: 'Cierre de Caja',  icon: Calculator,      path: '/report' },
   { key: 'inventario',    name: 'Inventario',       icon: Package,         path: '/inventory' },
-  { key: 'categorias',    name: 'Categorías',       icon: LayoutDashboard, path: '/inventory/categories' },
+  { key: 'categorias',    name: 'Categorías',       icon: Layers,          path: '/inventory/categories' },
   { key: 'areas',         name: 'Áreas de Prep.',    icon: Flame,           path: '/inventory/stations' },
+  { key: 'kardex',        name: 'Kardex Stock',     icon: History,         path: '/inventory/kardex' },
   { key: 'analytics',     name: 'Reporte',          icon: BarChart3,       path: '/analytics' },
   { key: 'configuracion', name: 'Configuración',    icon: Settings,        path: '/settings' },
   { key: 'usuarios',      name: 'Usuarios',         icon: Users,           path: '/users' },

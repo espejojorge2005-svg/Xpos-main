@@ -10,26 +10,49 @@ export class InventoryService {
   constructor(private prisma: PrismaService) {}
 
   async createCategory(data: CreateCategoryDto, restaurantId?: string | null) {
-    const isUuid = restaurantId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(restaurantId);
+    let targetRestId = restaurantId || data.restaurantId || null;
+    const isUuid = targetRestId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetRestId);
+    
+    // Si no viene un UUID válido, asociar con el primer restaurante de la base de datos
+    if (!isUuid) {
+      const firstRest = await this.prisma.restaurant.findFirst({ orderBy: { createdAt: 'asc' } });
+      if (firstRest) targetRestId = firstRest.id;
+    }
+
     return this.prisma.category.create({
       data: {
-        name: data.name,
-        ...(isUuid ? { restaurantId } : {}),
+        name: data.name.trim(),
+        ...(targetRestId ? { restaurantId: targetRestId } : {}),
       },
     });
   }
 
   async findAllCategories(restaurantId?: string | null) {
-    const isUuid = restaurantId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(restaurantId);
+    let targetRestId = restaurantId;
+    const isUuid = targetRestId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetRestId);
+    
+    // Fallback al primer restaurante si no se proveyó un UUID válido en cabeceras
     if (!isUuid) {
-      return []; // Si es un negocio nuevo o mock local, empieza completamente vacío sin categorías de otros
+      const firstRest = await this.prisma.restaurant.findFirst({ orderBy: { createdAt: 'asc' } });
+      if (firstRest) targetRestId = firstRest.id;
     }
+
+    if (!targetRestId) {
+      return [];
+    }
+
     return this.prisma.category.findMany({
       where: {
-        restaurantId,
+        OR: [
+          { restaurantId: targetRestId },
+          { restaurantId: null }, // Categorías globales o creadas antes de la asignación de ID
+        ],
       },
       include: {
         products: true,
+      },
+      orderBy: {
+        name: 'asc',
       },
     });
   }
