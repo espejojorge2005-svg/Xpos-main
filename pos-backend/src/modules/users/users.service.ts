@@ -57,10 +57,7 @@ export class UsersService {
 
     // Extraer automáticamente el restaurantId del JWT del Administrador o CLS context
     let restaurantId = reqUser?.restaurantId || this.cls.get('restaurantId');
-    if (!restaurantId) {
-      const firstRest = await this.prisma.restaurant.findFirst();
-      if (firstRest) restaurantId = firstRest.id;
-    }
+
 
     if (!restaurantId) {
       throw new BadRequestException('No se pudo determinar el restaurante asignado al usuario');

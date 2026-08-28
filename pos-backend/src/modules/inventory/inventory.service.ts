@@ -11,13 +11,6 @@ export class InventoryService {
 
   async createCategory(data: CreateCategoryDto, restaurantId?: string | null) {
     let targetRestId = restaurantId || data.restaurantId || null;
-    const isUuid = targetRestId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetRestId);
-    
-    // Si no viene un UUID válido, asociar con el primer restaurante de la base de datos
-    if (!isUuid) {
-      const firstRest = await this.prisma.restaurant.findFirst({ orderBy: { createdAt: 'asc' } });
-      if (firstRest) targetRestId = firstRest.id;
-    }
 
     return this.prisma.category.create({
       data: {
@@ -28,14 +21,7 @@ export class InventoryService {
   }
 
   async findAllCategories(restaurantId?: string | null) {
-    let targetRestId = restaurantId;
-    const isUuid = targetRestId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetRestId);
-    
-    // Fallback al primer restaurante si no se proveyó un UUID válido en cabeceras
-    if (!isUuid) {
-      const firstRest = await this.prisma.restaurant.findFirst({ orderBy: { createdAt: 'asc' } });
-      if (firstRest) targetRestId = firstRest.id;
-    }
+    const targetRestId = restaurantId;
 
     if (!targetRestId) {
       return [];

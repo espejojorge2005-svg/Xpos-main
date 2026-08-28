@@ -25,16 +25,8 @@ export class ProductsService {
         where: { id: categoryId, ...(restaurantId ? { restaurantId } : {}) }
       });
       if (!catExists) {
-        const firstCat = await this.prisma.category.findFirst({
-          where: restaurantId ? { restaurantId } : {}
-        });
-        validCategoryId = firstCat ? firstCat.id : undefined;
+        validCategoryId = undefined; // Do not fallback to a random category
       }
-    } else {
-      const firstCat = await this.prisma.category.findFirst({
-        where: restaurantId ? { restaurantId } : {}
-      });
-      validCategoryId = firstCat ? firstCat.id : undefined;
     }
 
     const newProduct = await this.prisma.product.create({
