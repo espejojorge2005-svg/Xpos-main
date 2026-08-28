@@ -11,4 +11,8 @@ export class CreateKitchenStationDto {
 
   @IsOptional()
   printerName?: string | null;
+
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
 }

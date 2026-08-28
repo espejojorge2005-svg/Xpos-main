@@ -379,11 +379,12 @@ export class OrdersService {
   // ==========================================
   // OBTENER ÓRDENES PARA LA COCINA (KDS)
   // ==========================================
-  async getKitchenOrders() {
+  async getKitchenOrders(restaurantId?: string | null) {
     const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
 
     const orders = await this.prisma.order.findMany({
       where: {
+        ...(restaurantId ? { restaurantId } : {}),
         OR: [
           { status: 'CANCELLED' },
           {
@@ -418,7 +419,10 @@ export class OrdersService {
 
     // To know if another order intervened, we fetch all order creation times in the last 12 hours
     const allOrderTxs = await this.prisma.order.findMany({
-      where: { createdAt: { gte: twelveHoursAgo } },
+      where: { 
+        ...(restaurantId ? { restaurantId } : {}),
+        createdAt: { gte: twelveHoursAgo } 
+      },
       select: { id: true, createdAt: true },
       orderBy: { createdAt: 'asc' }
     });
@@ -475,6 +479,7 @@ export class OrdersService {
     // Calculate finished orders for today
     const finishedOrdersCount = await this.prisma.order.count({
       where: {
+        ...(restaurantId ? { restaurantId } : {}),
         createdAt: { gte: twelveHoursAgo },
         status: { not: 'CANCELLED' },
         items: {

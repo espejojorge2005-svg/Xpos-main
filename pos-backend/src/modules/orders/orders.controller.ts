@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards, Req, Headers } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { IsArray, IsOptional, IsString } from 'class-validator';
@@ -22,8 +22,12 @@ export class OrdersController {
   }
 
   @Get('kitchen')
-  getKitchenOrders() {
-    return this.ordersService.getKitchenOrders();
+  getKitchenOrders(
+    @Req() req: any,
+    @Headers('x-restaurant-id') restHeader?: string
+  ) {
+    const restaurantId = req.user?.restaurantId || restHeader || null;
+    return this.ordersService.getKitchenOrders(restaurantId);
   }
 
   @Get('table/:tableId/active') // GET /api/v1/orders/table/:tableId/active

@@ -1,6 +1,6 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
-import { getScopedStorage, setScopedStorage } from '@/utils/storage';
+import { getScopedStorage, setScopedStorage, getRestaurantId } from '@/utils/storage';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -12,7 +12,9 @@ interface KitchenStation {
   name: string;
   colorHex: string;
   printerName?: string;
+  restaurantId?: string;
 }
+
 
 const PRESET_COLORS = [
   { name: 'Rojo Pastel (Parrilla)', hex: '#fecdd3' },
@@ -43,19 +45,14 @@ export default function KitchenStationsPage() {
   const [agentOnline, setAgentOnline] = useState<boolean | null>(null);
 
   const fetchStations = async () => {
+    const currentRestId = getRestaurantId();
     let loadedStations: KitchenStation[] | null = null;
 
-    // 1. Carga inmediata de almacenamiento local (scoped y raw)
+    // 1. Carga inmediata de almacenamiento local estrictamente aislado por inquilino
     try {
       const cached = getScopedStorage<KitchenStation[] | null>('pos_registered_stations', null);
       if (Array.isArray(cached) && cached.length > 0) {
         loadedStations = cached;
-      } else {
-        const raw = localStorage.getItem('pos_registered_stations');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) loadedStations = parsed;
-        }
       }
     } catch {}
 
@@ -63,19 +60,24 @@ export default function KitchenStationsPage() {
       setStations(loadedStations);
     }
 
-    // 2. Sincronización silenciosa con backend
+    // 2. Sincronización con backend pasando x-restaurant-id
     const token = localStorage.getItem('pos_token');
     try {
       const response = await fetch(getApiUrl('/kitchen-stations'), {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'x-restaurant-id': currentRestId || ''
+        }
       });
       if (response.ok) {
         const data = await response.json();
-        if (Array.isArray(data) && data.length > 0) {
-          loadedStations = data;
-          setScopedStorage('pos_registered_stations', data);
-          try { localStorage.setItem('pos_registered_stations', JSON.stringify(data)); } catch {}
-          setStations(data);
+        if (Array.isArray(data)) {
+          const filtered = currentRestId
+            ? data.filter((s: any) => !s.restaurantId || s.restaurantId === currentRestId)
+            : data;
+          loadedStations = filtered;
+          setScopedStorage('pos_registered_stations', filtered);
+          setStations(filtered);
         }
       }
     } catch (error) {
@@ -111,6 +113,7 @@ export default function KitchenStationsPage() {
     e.preventDefault();
     setIsSaving(true);
     const token = localStorage.getItem('pos_token');
+    const currentRestId = getRestaurantId();
     
     const isEditing = formData.id !== '';
     const url = isEditing
@@ -123,28 +126,35 @@ export default function KitchenStationsPage() {
       name: formData.name,
       colorHex: formData.colorHex,
       printerName: formData.printerName || null,
+      restaurantId: currentRestId || undefined,
     };
 
     const updatedStations = isEditing
-      ? stations.map(s => s.id === formData.id ? { ...s, name: formData.name, colorHex: formData.colorHex, printerName: formData.printerName } : s)
-      : [...stations, { id: `st-${Date.now()}`, name: formData.name, colorHex: formData.colorHex, printerName: formData.printerName }];
+      ? stations.map(s => s.id === formData.id ? { ...s, name: formData.name, colorHex: formData.colorHex, printerName: formData.printerName, restaurantId: currentRestId || s.restaurantId } : s)
+      : [...stations, { id: `st-${Date.now()}`, name: formData.name, colorHex: formData.colorHex, printerName: formData.printerName, restaurantId: currentRestId || undefined }];
     
     setStations(updatedStations);
     setScopedStorage('pos_registered_stations', updatedStations);
-    try {
-      localStorage.setItem('pos_registered_stations', JSON.stringify(updatedStations));
-      window.dispatchEvent(new Event('storage'));
-    } catch {}
+    window.dispatchEvent(new Event('storage'));
 
     try {
-      await fetch(url, {
+      const res = await fetch(url, {
         method,
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
+          'Authorization': `Bearer ${token}`,
+          'x-restaurant-id': currentRestId || ''
         },
         body: JSON.stringify(bodyData),
       });
+      if (res.ok) {
+        const saved = await res.json();
+        if (saved?.id && !isEditing) {
+          const synced = updatedStations.map(s => s.id.startsWith('st-') ? { ...s, id: saved.id, restaurantId: saved.restaurantId || currentRestId } : s);
+          setStations(synced);
+          setScopedStorage('pos_registered_stations', synced);
+        }
+      }
     } catch {}
 
     toast.success(isEditing ? 'Estación actualizada ✅' : 'Estación creada con éxito ✅');
@@ -154,25 +164,27 @@ export default function KitchenStationsPage() {
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('¿Estás seguro de eliminar esta Área de Preparación?')) return;
+    const currentRestId = getRestaurantId();
     
     const updated = stations.filter(s => s.id !== id);
     setStations(updated);
     setScopedStorage('pos_registered_stations', updated);
-    try {
-      localStorage.setItem('pos_registered_stations', JSON.stringify(updated));
-      window.dispatchEvent(new Event('storage'));
-    } catch {}
+    window.dispatchEvent(new Event('storage'));
 
     const token = localStorage.getItem('pos_token');
     try {
       await fetch(getApiUrl(`/kitchen-stations/${id}`), {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'x-restaurant-id': currentRestId || ''
+        }
       });
     } catch {}
 
     toast.success('Estación eliminada exitosamente ✅');
   };
+
 
   const openModal = (station?: KitchenStation) => {
     if (station) {

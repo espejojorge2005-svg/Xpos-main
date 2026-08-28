@@ -117,7 +117,7 @@ export default function InventoryPage() {
         const data = await response.json();
         if (Array.isArray(data)) {
           const filtered = currentRestId
-            ? data.filter((c: any) => c.restaurantId === currentRestId)
+            ? data.filter((c: any) => !c.restaurantId || c.restaurantId === currentRestId)
             : data;
           loadedCats = filtered;
           setScopedStorage('pos_registered_categories', filtered);
@@ -137,16 +137,23 @@ export default function InventoryPage() {
 
   const fetchStations = async () => {
     const token = localStorage.getItem('pos_token');
+    const currentRestId = getRestaurantId();
     let loadedStations: KitchenStation[] | null = null;
     try {
       const response = await fetch(getApiUrl('/kitchen-stations'), {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'x-restaurant-id': currentRestId || ''
+        }
       });
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
-          loadedStations = data;
-          setScopedStorage('pos_registered_stations', data);
+          const filtered = currentRestId
+            ? data.filter((s: any) => !s.restaurantId || s.restaurantId === currentRestId)
+            : data;
+          loadedStations = filtered;
+          setScopedStorage('pos_registered_stations', filtered);
         }
       }
     } catch {}
@@ -160,6 +167,7 @@ export default function InventoryPage() {
 
     setStations(loadedStations || []);
   };
+
 
   useEffect(() => {
     fetchProducts();

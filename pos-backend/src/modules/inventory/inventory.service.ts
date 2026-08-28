@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ClsService } from 'nestjs-cls';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { CreateProductDto } from './dto/create-product.dto';
 import { CreateInventoryItemDto } from './dto/create-inventory-item.dto';
@@ -7,10 +8,17 @@ import { CreateRecipeItemDto } from './dto/create-recipe-item.dto';
 
 @Injectable()
 export class InventoryService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private cls: ClsService,
+  ) {}
+
+  private resolveTenantId(restaurantId?: string | null): string | null {
+    return restaurantId || this.cls.get('restaurantId') || null;
+  }
 
   async createCategory(data: CreateCategoryDto, restaurantId?: string | null) {
-    let targetRestId = restaurantId || data.restaurantId || null;
+    let targetRestId = this.resolveTenantId(restaurantId || data.restaurantId);
 
     return this.prisma.category.create({
       data: {
@@ -21,12 +29,10 @@ export class InventoryService {
   }
 
   async findAllCategories(restaurantId?: string | null) {
-    const targetRestId = restaurantId;
+    const targetRestId = this.resolveTenantId(restaurantId);
 
     return this.prisma.category.findMany({
-      where: {
-        restaurantId: targetRestId,
-      },
+      where: targetRestId ? { restaurantId: targetRestId } : {},
       include: {
         products: true,
       },
@@ -35,6 +41,7 @@ export class InventoryService {
       },
     });
   }
+
 
   async updateCategory(id: string, data: Partial<CreateCategoryDto>) {
     return this.prisma.category.update({

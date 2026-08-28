@@ -1,36 +1,71 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ClsService } from 'nestjs-cls';
 import { CreateKitchenStationDto } from './dto/create-kitchen-station.dto';
 import { UpdateKitchenStationDto } from './dto/update-kitchen-station.dto';
 
 @Injectable()
 export class KitchenStationsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private cls: ClsService,
+  ) {}
 
-  async create(data: CreateKitchenStationDto) {
-    return this.prisma.kitchenStation.create({ data });
+  private resolveTenantId(restaurantId?: string | null, reqUser?: any): string | null {
+    return restaurantId || this.cls.get('restaurantId') || reqUser?.restaurantId || null;
   }
 
-  async findAll() {
+  async create(data: CreateKitchenStationDto, restaurantId?: string | null, reqUser?: any) {
+    const targetRestId = this.resolveTenantId(restaurantId || data.restaurantId, reqUser);
+    return this.prisma.kitchenStation.create({
+      data: {
+        name: data.name.trim(),
+        colorHex: data.colorHex,
+        printerName: data.printerName || null,
+        ...(targetRestId ? { restaurantId: targetRestId } : {}),
+      }
+    });
+  }
+
+  async findAll(restaurantId?: string | null, reqUser?: any) {
+    const targetRestId = this.resolveTenantId(restaurantId, reqUser);
     return this.prisma.kitchenStation.findMany({
+      where: targetRestId ? { restaurantId: targetRestId } : {},
       orderBy: { name: 'asc' }
     });
   }
 
-  async update(id: string, data: UpdateKitchenStationDto) {
-    const station = await this.prisma.kitchenStation.findUnique({ where: { id } });
+  async update(id: string, data: UpdateKitchenStationDto, restaurantId?: string | null, reqUser?: any) {
+    const targetRestId = this.resolveTenantId(restaurantId, reqUser);
+    const station = await this.prisma.kitchenStation.findFirst({
+      where: {
+        id,
+        ...(targetRestId ? { restaurantId: targetRestId } : {})
+      }
+    });
     if (!station) throw new NotFoundException(`Station ${id} not found`);
 
     return this.prisma.kitchenStation.update({
       where: { id },
-      data
+      data: {
+        ...(data.name ? { name: data.name.trim() } : {}),
+        ...(data.colorHex !== undefined ? { colorHex: data.colorHex } : {}),
+        ...(data.printerName !== undefined ? { printerName: data.printerName } : {}),
+      }
     });
   }
 
-  async remove(id: string) {
-    const station = await this.prisma.kitchenStation.findUnique({ where: { id } });
+  async remove(id: string, restaurantId?: string | null, reqUser?: any) {
+    const targetRestId = this.resolveTenantId(restaurantId, reqUser);
+    const station = await this.prisma.kitchenStation.findFirst({
+      where: {
+        id,
+        ...(targetRestId ? { restaurantId: targetRestId } : {})
+      }
+    });
     if (!station) throw new NotFoundException(`Station ${id} not found`);
 
     return this.prisma.kitchenStation.delete({ where: { id } });
   }
 }
+

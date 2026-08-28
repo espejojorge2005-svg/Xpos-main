@@ -12,11 +12,17 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   }
 
   handleRequest(err: any, user: any, info: any, context: ExecutionContext) {
+    const req = context.switchToHttp().getRequest();
+    const headerRestId = (req.headers['x-restaurant-id'] as string || '').trim();
+    const isHeaderUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(headerRestId);
+
     if (user) {
+      if (!user.restaurantId && isHeaderUuid) {
+        user.restaurantId = headerRestId;
+      }
       return user;
     }
 
-    const req = context.switchToHttp().getRequest();
     const authHeader = req.headers['authorization'] || '';
     const token = authHeader.replace(/^Bearer\s+/i, '').trim();
 
@@ -28,7 +34,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
         userId: `admin-${restId}`,
         email: 'admin@restaurante.com',
         role: 'ADMIN',
-        restaurantId: isUuid ? restId : null,
+        restaurantId: isUuid ? restId : (isHeaderUuid ? headerRestId : null),
       };
     }
 
@@ -37,7 +43,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       userId: 'superadmin-master',
       email: 'superadmin@xpos.com',
       role: 'SUPER_ADMIN',
-      restaurantId: null,
+      restaurantId: isHeaderUuid ? headerRestId : null,
     };
   }
 }

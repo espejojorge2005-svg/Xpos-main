@@ -7,8 +7,8 @@ import { UpdateRestaurantConfigDto } from './dto/update-restaurant-config.dto';
 export class RestaurantConfigService {
   constructor(private prisma: PrismaService, private cls: ClsService) {}
 
-  async getConfig() {
-    const restaurantId = this.cls.get('restaurantId');
+  async getConfig(restaurantIdParam?: string | null) {
+    const restaurantId = restaurantIdParam || this.cls.get('restaurantId');
     let res = restaurantId ? await this.prisma.restaurant.findUnique({ where: { id: restaurantId } }) : null;
 
     if (!res) {
@@ -32,12 +32,13 @@ export class RestaurantConfigService {
     return res;
   }
 
-  async updateConfig(dto: UpdateRestaurantConfigDto) {
-    const res = await this.getConfig();
+  async updateConfig(dto: UpdateRestaurantConfigDto, restaurantIdParam?: string | null) {
+    const res = await this.getConfig(restaurantIdParam);
     return this.prisma.restaurant.update({
       where: { id: res.id },
       data: dto as any,
     });
   }
 }
+
 

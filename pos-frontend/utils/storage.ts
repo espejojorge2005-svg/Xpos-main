@@ -5,8 +5,22 @@
 
 export const getRestaurantId = (): string | null => {
   if (typeof window === 'undefined') return null;
+  // 1. Si hay un usuario logueado y no es SUPER_ADMIN, su restaurantId asignado es la autoridad absoluta
+  try {
+    const userStr = localStorage.getItem('pos_user');
+    if (userStr) {
+      const u = JSON.parse(userStr);
+      if (u.role !== 'SUPER_ADMIN' && u.restaurantId) {
+        return u.restaurantId;
+      }
+    }
+  } catch {}
+
+  // 2. Para SUPER_ADMIN o contexto seleccionado explícitamente
   const directId = localStorage.getItem('pos_restaurant_id');
   if (directId) return directId;
+
+  // 3. Fallback pos_user
   try {
     const userStr = localStorage.getItem('pos_user');
     if (userStr) {
@@ -16,6 +30,7 @@ export const getRestaurantId = (): string | null => {
   } catch {}
   return null;
 };
+
 
 export const getScopedKey = (key: string): string => {
   const restId = getRestaurantId();

@@ -21,7 +21,34 @@ import { SaasModule } from './modules/saas/saas.module';
   imports: [
     ClsModule.forRoot({
       global: true,
-      middleware: { mount: true },
+      middleware: {
+        mount: true,
+        setup: (cls, req: any) => {
+          let restId = req.headers?.['x-restaurant-id'] as string | undefined;
+          if (!restId || restId === 'null' || restId === 'undefined' || restId.trim() === '') {
+            const auth = req.headers?.['authorization'] as string | undefined;
+            if (auth && auth.startsWith('Bearer ')) {
+              const token = auth.substring(7).trim();
+              if (token.startsWith('client-token-')) {
+                restId = token.replace('client-token-', '').trim();
+              } else if (token.includes('.')) {
+                try {
+                  const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+                  if (payload && payload.restaurantId) {
+                    restId = payload.restaurantId;
+                  }
+                } catch {}
+              }
+            }
+          }
+          if (restId && typeof restId === 'string') {
+            const cleanId = restId.trim();
+            if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId)) {
+              cls.set('restaurantId', cleanId);
+            }
+          }
+        },
+      },
     }),
     PrismaModule,
     FloorModule,

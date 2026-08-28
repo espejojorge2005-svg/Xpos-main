@@ -1,7 +1,7 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
 import { subscribeToKitchenOrders } from '@/utils/firebaseSync';
-import { getScopedStorage, setScopedStorage } from '@/utils/storage';
+import { getScopedStorage, setScopedStorage, getRestaurantId } from '@/utils/storage';
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -270,18 +270,13 @@ export default function CocinaPage() {
   };
 
   const fetchStations = async () => {
+    const currentRestId = getRestaurantId();
     // 1. Carga inmediata de estaciones desde caché local persistente
     let loaded: any[] = [];
     try {
       const cached = getScopedStorage<any[]>('pos_registered_stations', []);
       if (Array.isArray(cached) && cached.length > 0) {
         loaded = cached;
-      } else {
-        const raw = localStorage.getItem('pos_registered_stations');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) loaded = parsed;
-        }
       }
     } catch {}
 
@@ -293,18 +288,24 @@ export default function CocinaPage() {
     const token = localStorage.getItem('pos_token');
     try {
       const response = await fetch(getApiUrl('/kitchen-stations'), {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'x-restaurant-id': currentRestId || ''
+        }
       });
       if (response.ok) {
         const data = await response.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setStations(data);
-          setScopedStorage('pos_registered_stations', data);
-          try { localStorage.setItem('pos_registered_stations', JSON.stringify(data)); } catch {}
+        if (Array.isArray(data)) {
+          const filtered = currentRestId
+            ? data.filter((s: any) => !s.restaurantId || s.restaurantId === currentRestId)
+            : data;
+          setStations(filtered);
+          setScopedStorage('pos_registered_stations', filtered);
         }
       }
     } catch (e) {}
   };
+
 
   useEffect(() => {
     fetchStations();

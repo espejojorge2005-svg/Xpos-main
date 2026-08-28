@@ -61,7 +61,7 @@ export default function CategoriesPage() {
         const data = await response.json();
         if (Array.isArray(data)) {
           const filtered = currentRestId
-            ? data.filter((c: any) => c.restaurantId === currentRestId)
+            ? data.filter((c: any) => !c.restaurantId || c.restaurantId === currentRestId)
             : data;
           loadedCats = filtered;
           setScopedStorage('pos_registered_categories', filtered);
@@ -111,6 +111,7 @@ export default function CategoriesPage() {
     const method = isEditing ? 'PATCH' : 'POST';
     const bodyData = { 
       name: trimmedName,
+      restaurantId: currentRestId || undefined,
     };
 
     try {
@@ -136,11 +137,12 @@ export default function CategoriesPage() {
       const newCategory: Category = { 
         id: realId, 
         name: trimmedName,
-        restaurantId: currentRestId || undefined,
+        restaurantId: savedCategory?.restaurantId || currentRestId || undefined,
         products: isEditing 
           ? (categories.find(c => c.id === formData.id)?.products || []) 
           : (savedCategory?.products || [])
       };
+
 
       const updatedCats = isEditing
         ? categories.map(c => c.id === formData.id ? { ...c, ...newCategory } : c)

@@ -1,3 +1,5 @@
+import { getRestaurantId } from './storage';
+
 export const getApiUrl = (path: string): string => {
   const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
   if (!base) {
@@ -8,14 +10,13 @@ export const getApiUrl = (path: string): string => {
   return `${base}/${normalizedPath}`;
 };
 
-
-
 /**
  * Interceptor HTTP unificado para peticiones al backend.
- * Adjunta automáticamente la cabecera "Authorization: Bearer <token>" usando el pos_token de localStorage.
+ * Adjunta automáticamente la cabecera "Authorization: Bearer <token>" y "x-restaurant-id".
  */
 export const apiFetch = async (endpoint: string, options: RequestInit = {}): Promise<Response> => {
   const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
+  const restaurantId = getRestaurantId();
   const url = getApiUrl(endpoint);
 
   const headers: Record<string, string> = {
@@ -23,8 +24,12 @@ export const apiFetch = async (endpoint: string, options: RequestInit = {}): Pro
     ...(options.headers as Record<string, string> || {}),
   };
 
-  if (token) {
+  if (token && !headers['Authorization']) {
     headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  if (restaurantId && !headers['x-restaurant-id']) {
+    headers['x-restaurant-id'] = restaurantId;
   }
 
   return fetch(url, {
@@ -32,3 +37,4 @@ export const apiFetch = async (endpoint: string, options: RequestInit = {}): Pro
     headers,
   });
 };
+
