@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClsService } from 'nestjs-cls';
 import { CreateCategoryDto } from './dto/create-category.dto';
@@ -19,14 +19,18 @@ export class InventoryService {
 
   async createCategory(data: CreateCategoryDto, restaurantId?: string | null) {
     let targetRestId = this.resolveTenantId(restaurantId || data.restaurantId);
+    if (!targetRestId) {
+      throw new BadRequestException('El ID del restaurante es obligatorio para crear una categoría');
+    }
 
     return this.prisma.category.create({
       data: {
         name: data.name.trim(),
-        ...(targetRestId ? { restaurantId: targetRestId } : {}),
+        restaurantId: targetRestId,
       },
     });
   }
+
 
   async findAllCategories(restaurantId?: string | null) {
     const targetRestId = this.resolveTenantId(restaurantId);

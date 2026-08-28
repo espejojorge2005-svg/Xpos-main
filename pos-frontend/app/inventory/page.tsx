@@ -94,12 +94,13 @@ export default function InventoryPage() {
         if (Array.isArray(data)) {
           const filtered = currentRestId
             ? data.filter((p: any) => p.restaurantId === currentRestId)
-            : data;
+            : [];
           loadedProducts = filtered;
           setScopedStorage('pos_registered_products', filtered);
         }
       }
     } catch { /* ignore network error */ }
+
 
     if (loadedProducts === null) {
       const cached = getScopedStorage<Product[] | null>('pos_registered_products', null);
@@ -128,7 +129,7 @@ export default function InventoryPage() {
         if (Array.isArray(data)) {
           const filtered = currentRestId
             ? data.filter((c: any) => c.restaurantId === currentRestId)
-            : data;
+            : [];
           loadedCats = filtered;
           setScopedStorage('pos_registered_categories', filtered);
         }
@@ -161,7 +162,7 @@ export default function InventoryPage() {
         if (Array.isArray(data)) {
           const filtered = currentRestId
             ? data.filter((s: any) => s.restaurantId === currentRestId)
-            : data;
+            : [];
           loadedStations = filtered;
           setScopedStorage('pos_registered_stations', filtered);
         }
@@ -210,7 +211,6 @@ export default function InventoryPage() {
       price: Number(formData.price) || 0,
       stock: Number(formData.stock) || 0,
       minStock: Number(formData.minStock) || 0,
-      restaurantId: currentRestId || undefined,
       modifierGroups: formData.modifierGroups?.map(mg => ({
         name: mg.name,
         minSelect: Number(mg.minSelect),
@@ -221,6 +221,7 @@ export default function InventoryPage() {
         }))
       })),
     };
+
 
     let savedBackendProduct: any = null;
     try {

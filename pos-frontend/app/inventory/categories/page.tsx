@@ -62,9 +62,10 @@ export default function CategoriesPage() {
         if (Array.isArray(data)) {
           const filtered = currentRestId
             ? data.filter((c: any) => c.restaurantId === currentRestId)
-            : data;
+            : [];
           loadedCats = filtered;
           setScopedStorage('pos_registered_categories', filtered);
+
         }
 
       }
@@ -110,9 +111,10 @@ export default function CategoriesPage() {
       : getApiUrl('/inventory/category');
     
     const method = isEditing ? 'PATCH' : 'POST';
+    // No enviar restaurantId en el body para prevenir 'property restaurantId should not exist' en backends estrictos.
+    // El backend lo extrae de forma limpia y estándar mediante la cabecera 'x-restaurant-id'.
     const bodyData = { 
       name: trimmedName,
-      restaurantId: currentRestId || undefined,
     };
 
     try {
@@ -125,6 +127,7 @@ export default function CategoriesPage() {
         },
         body: JSON.stringify(bodyData),
       });
+
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));

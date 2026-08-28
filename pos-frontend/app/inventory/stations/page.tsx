@@ -74,7 +74,7 @@ export default function KitchenStationsPage() {
         if (Array.isArray(data)) {
           const filtered = currentRestId
             ? data.filter((s: any) => s.restaurantId === currentRestId)
-            : data;
+            : [];
           loadedStations = filtered;
           setScopedStorage('pos_registered_stations', filtered);
           setStations(filtered);
@@ -122,13 +122,14 @@ export default function KitchenStationsPage() {
     
     const method = isEditing ? 'PATCH' : 'POST';
     
-    // Solo extraemos los campos que el backend espera y permite
+    // Solo extraemos los campos que el backend espera y permite.
+    // El restaurantId se envía por cabecera 'x-restaurant-id' para compatibilidad universal.
     const bodyData = {
       name: formData.name,
       colorHex: formData.colorHex,
       printerName: formData.printerName || null,
-      restaurantId: currentRestId || undefined,
     };
+
 
     const updatedStations = isEditing
       ? stations.map(s => s.id === formData.id ? { ...s, name: formData.name, colorHex: formData.colorHex, printerName: formData.printerName, restaurantId: currentRestId || s.restaurantId } : s)

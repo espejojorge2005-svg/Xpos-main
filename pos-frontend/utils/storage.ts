@@ -71,11 +71,9 @@ export const removeScopedStorage = (key: string): void => {
 
 export const logoutSession = (): void => {
   if (typeof window === 'undefined') return;
-  // Removemos las credenciales del usuario y el restaurante de la sesión
+  // Cerramos la sesión del usuario pero mantenemos la terminal vinculada al restaurante
   localStorage.removeItem('pos_token');
   localStorage.removeItem('pos_user');
-  localStorage.removeItem('pos_restaurant_id');
-  localStorage.removeItem('pos_restaurant_config');
   sessionStorage.removeItem('pos_token');
   sessionStorage.removeItem('pos_user');
 };
@@ -83,3 +81,4 @@ export const logoutSession = (): void => {
 export const clearCurrentRestaurantData = (): void => {
   logoutSession();
 };
+

@@ -59,15 +59,21 @@ export default function LoginPage() {
     }
 
     try {
+      const scopedKey = restId ? `pos_registered_staff_${restId}` : null;
+      const scopedStr = scopedKey ? localStorage.getItem(scopedKey) : null;
+      const scopedStaff: any[] = scopedStr ? JSON.parse(scopedStr) : [];
+
       const localStaffStr = localStorage.getItem('pos_registered_staff');
       const localStaff: any[] = localStaffStr ? JSON.parse(localStaffStr) : [];
-      if (localStaff.length > 0 && restId) {
-        const filteredStaff = localStaff.filter(s => s.restaurantId === restId && s.isActive !== false);
+      const combinedLocal = [...scopedStaff, ...localStaff];
+
+      if (combinedLocal.length > 0 && restId) {
+        const filteredStaff = combinedLocal.filter(s => s.restaurantId === restId && s.isActive !== false);
 
         const map = new Map<string, StaffMember>();
-        loadedStaff.forEach(s => map.set(s.id || s.name.toLowerCase(), s));
+        loadedStaff.forEach(s => map.set(s.id || s.email?.toLowerCase() || s.name.toLowerCase(), s));
         filteredStaff.forEach(s => {
-          const key = s.id || s.name.toLowerCase();
+          const key = s.id || s.email?.toLowerCase() || s.name.toLowerCase();
           if (!map.has(key)) {
             map.set(key, {
               id: s.id || `staff-${Date.now()}`,
@@ -87,6 +93,7 @@ export default function LoginPage() {
         loadedStaff = Array.from(map.values());
       }
     } catch {}
+
 
     setStaff(loadedStaff);
     setIsStaffLoading(false);
@@ -150,10 +157,48 @@ export default function LoginPage() {
     const updatedUser = { ...pendingSession.user, pin: newPin };
     localStorage.setItem('pos_user', JSON.stringify(updatedUser));
 
+    // Registrar y actualizar inmediatamente en el Personal PIN de la terminal
+    if (updatedUser.restaurantId) {
+      try {
+        const staffStr = localStorage.getItem('pos_registered_staff');
+        const staffList: any[] = staffStr ? JSON.parse(staffStr) : [];
+        const idx = staffList.findIndex(s => s.id === updatedUser.id || s.email?.toLowerCase() === updatedUser.email?.toLowerCase());
+        const staffObj = {
+          id: updatedUser.id,
+          name: updatedUser.name,
+          email: updatedUser.email,
+          role: updatedUser.role,
+          pin: newPin,
+          allowedViews: updatedUser.allowedViews || ['pos', 'cocina', 'caja'],
+          restaurantId: updatedUser.restaurantId,
+          isActive: true,
+        };
+        if (idx !== -1) {
+          staffList[idx] = { ...staffList[idx], ...staffObj };
+        } else {
+          staffList.push(staffObj);
+        }
+        localStorage.setItem('pos_registered_staff', JSON.stringify(staffList));
+
+        const scopedKey = `pos_registered_staff_${updatedUser.restaurantId}`;
+        const scopedStr = localStorage.getItem(scopedKey);
+        const scopedList: any[] = scopedStr ? JSON.parse(scopedStr) : [];
+        const sIdx = scopedList.findIndex(s => s.id === updatedUser.id || s.email?.toLowerCase() === updatedUser.email?.toLowerCase());
+        if (sIdx !== -1) {
+          scopedList[sIdx] = { ...scopedList[sIdx], ...staffObj };
+        } else {
+          scopedList.push(staffObj);
+        }
+        localStorage.setItem(scopedKey, JSON.stringify(scopedList));
+        window.dispatchEvent(new Event('storage'));
+      } catch {}
+    }
+
     toast.success('¡PIN de acceso rápido configurado exitosamente!');
     const dest = updatedUser.role === 'SUPER_ADMIN' ? '/superadmin' : getFirstAllowedPath(updatedUser.allowedViews ?? ['*']);
     window.location.href = dest;
   };
+
 
   const checkIsRestaurantSuspended = (restId?: string | null): boolean => {
     if (!restId) return false;
@@ -206,6 +251,43 @@ export default function LoginPage() {
         localStorage.setItem('pos_token', data.access_token);
         localStorage.setItem('pos_user', JSON.stringify(data.user)); 
 
+        // Si es un trabajador (mesero, cajero, cocinero o admin) con restaurantId, registrarlo en el Personal PIN de la terminal
+        if (data.user.restaurantId && data.user.role !== 'SUPER_ADMIN') {
+          try {
+            const staffStr = localStorage.getItem('pos_registered_staff');
+            const staffList: any[] = staffStr ? JSON.parse(staffStr) : [];
+            const idx = staffList.findIndex(s => s.id === data.user.id || s.email?.toLowerCase() === data.user.email?.toLowerCase());
+            const staffObj = {
+              id: data.user.id,
+              name: data.user.name,
+              email: data.user.email,
+              role: data.user.role,
+              pin: data.user.pin || undefined,
+              allowedViews: data.user.allowedViews || ['pos', 'cocina', 'caja'],
+              restaurantId: data.user.restaurantId,
+              isActive: true,
+            };
+            if (idx !== -1) {
+              staffList[idx] = { ...staffList[idx], ...staffObj };
+            } else {
+              staffList.push(staffObj);
+            }
+            localStorage.setItem('pos_registered_staff', JSON.stringify(staffList));
+
+            const scopedKey = `pos_registered_staff_${data.user.restaurantId}`;
+            const scopedStr = localStorage.getItem(scopedKey);
+            const scopedList: any[] = scopedStr ? JSON.parse(scopedStr) : [];
+            const sIdx = scopedList.findIndex(s => s.id === data.user.id || s.email?.toLowerCase() === data.user.email?.toLowerCase());
+            if (sIdx !== -1) {
+              scopedList[sIdx] = { ...scopedList[sIdx], ...staffObj };
+            } else {
+              scopedList.push(staffObj);
+            }
+            localStorage.setItem(scopedKey, JSON.stringify(scopedList));
+            window.dispatchEvent(new Event('storage'));
+          } catch {}
+        }
+
         // Si el usuario no tiene PIN configurado, solicitar configuración rápida de PIN
         if (!data.user.pin && data.user.role !== 'SUPER_ADMIN') {
           setPendingSession(data);
@@ -219,6 +301,7 @@ export default function LoginPage() {
         window.location.href = dest;
         return;
       }
+
 
       // Si el backend notificó explícitamente que el restaurante está suspendido o expirado
       if (response && !response.ok && data.message) {
@@ -302,12 +385,39 @@ export default function LoginPage() {
             name: matchedStaff.name,
             email: matchedStaff.email,
             role: matchedStaff.role || 'CASHIER',
+            pin: matchedStaff.pin || null,
             allowedViews: matchedStaff.allowedViews || ['pos', 'cocina', 'caja'],
-            restaurantId: matchedStaff.restaurantId || restaurantId || 'rest-1',
+            restaurantId: matchedStaff.restaurantId || restaurantId,
           };
           syncRestaurantSession(loggedStaffUser.restaurantId, null);
           localStorage.setItem('pos_token', `staff-token-${Date.now()}`);
           localStorage.setItem('pos_user', JSON.stringify(loggedStaffUser));
+
+          // Registrar en el Personal PIN del restaurante
+          if (loggedStaffUser.restaurantId) {
+            try {
+              const scopedKey = `pos_registered_staff_${loggedStaffUser.restaurantId}`;
+              const scopedStr = localStorage.getItem(scopedKey);
+              const scopedList: any[] = scopedStr ? JSON.parse(scopedStr) : [];
+              const sIdx = scopedList.findIndex(s => s.id === loggedStaffUser.id || s.email?.toLowerCase() === cleanEmail);
+              if (sIdx !== -1) {
+                scopedList[sIdx] = { ...scopedList[sIdx], ...loggedStaffUser, isActive: true };
+              } else {
+                scopedList.push({ ...loggedStaffUser, isActive: true });
+              }
+              localStorage.setItem(scopedKey, JSON.stringify(scopedList));
+              window.dispatchEvent(new Event('storage'));
+            } catch {}
+          }
+
+          // Si el trabajador aún no tiene PIN, solicitar configuración de PIN
+          if (!loggedStaffUser.pin) {
+            setPendingSession({ access_token: `staff-token-${Date.now()}`, user: loggedStaffUser });
+            setShowPinModal(true);
+            setLoading(false);
+            return;
+          }
+
           toast.success(`¡Bienvenido, ${loggedStaffUser.name}!`);
           const dest = getFirstAllowedPath(loggedStaffUser.allowedViews);
           window.location.href = dest;
@@ -317,6 +427,7 @@ export default function LoginPage() {
           setLoading(false);
           return;
         }
+
       }
 
       // If neither server nor local fallbacks matched, report server error message

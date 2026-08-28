@@ -18,16 +18,22 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   // Si el token es válido, NestJS pone esta información en "req.user"
   async validate(req: Request, payload: any) {
+    const headerRestId = req.headers['x-restaurant-id'] as string;
     let tenantId = payload.restaurantId;
     
-    if (payload.role === 'SUPER_ADMIN' && req.headers['x-restaurant-id']) {
-      tenantId = req.headers['x-restaurant-id'] as string;
+    if (headerRestId) {
+      tenantId = headerRestId;
     }
     
     if (tenantId) {
       this.cls.set('restaurantId', tenantId);
     }
     
-    return { userId: payload.sub, email: payload.email, role: payload.role, restaurantId: payload.restaurantId };
+    return { 
+      userId: payload.sub, 
+      email: payload.email, 
+      role: payload.role, 
+      restaurantId: tenantId || payload.restaurantId || null 
+    };
   }
 }

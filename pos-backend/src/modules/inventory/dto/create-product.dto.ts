@@ -20,4 +20,8 @@ export class CreateProductDto {
   @IsString({ each: true })
   @IsOptional()
   stationIds?: string[];
+
+  @IsString()
+  @IsOptional()
+  restaurantId?: string;
 }

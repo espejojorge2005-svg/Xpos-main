@@ -18,10 +18,11 @@ async function bootstrap() {
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true, // Elimina silenciosamente cualquier dato extra que el frontend envíe y no esté en el DTO
-      forbidNonWhitelisted: true, // Lanza un error HTTP 400 si envían propiedades maliciosas o no declaradas
+      forbidNonWhitelisted: false, // NO lanzar error 400 por campos extra
       transform: true, // Transforma automáticamente los payloads a las instancias de nuestras clases DTO
     }),
   );
+
 
   // Prefijo global para nuestra API (buena práctica para versionamiento futuro)
   app.setGlobalPrefix('api/v1');

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClsService } from 'nestjs-cls';
 import { CreateKitchenStationDto } from './dto/create-kitchen-station.dto';
@@ -17,15 +17,19 @@ export class KitchenStationsService {
 
   async create(data: CreateKitchenStationDto, restaurantId?: string | null, reqUser?: any) {
     const targetRestId = this.resolveTenantId(restaurantId || data.restaurantId, reqUser);
+    if (!targetRestId) {
+      throw new BadRequestException('El ID del restaurante es obligatorio para crear un área de preparación');
+    }
     return this.prisma.kitchenStation.create({
       data: {
         name: data.name.trim(),
         colorHex: data.colorHex,
         printerName: data.printerName || null,
-        ...(targetRestId ? { restaurantId: targetRestId } : {}),
+        restaurantId: targetRestId,
       }
     });
   }
+
 
   async findAll(restaurantId?: string | null, reqUser?: any) {
     const targetRestId = this.resolveTenantId(restaurantId, reqUser);

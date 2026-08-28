@@ -297,6 +297,7 @@ export default function UsersPage() {
       body.pin = form.pin.trim().replace(/\D/g, '');
     }
 
+    let serverUser: any = null;
     try {
       const res = await apiFetch(endpoint, {
         method,
@@ -316,6 +317,10 @@ export default function UsersPage() {
           setIsSaving(false);
           return;
         }
+      } else {
+        try {
+          serverUser = await res.json();
+        } catch {}
       }
     } catch (err: any) {
       console.warn('Network error saving user:', err);
@@ -323,30 +328,54 @@ export default function UsersPage() {
 
     // Save to local staff cache with restaurantId for permanent persistence
     try {
-      const userRestaurantId = localStorage.getItem('pos_restaurant_id') || (typeof window !== 'undefined' && localStorage.getItem('pos_user') ? JSON.parse(localStorage.getItem('pos_user') || '{}').restaurantId : null);
+      const userRestaurantId = serverUser?.restaurantId || getRestaurantId() || (typeof window !== 'undefined' && localStorage.getItem('pos_user') ? JSON.parse(localStorage.getItem('pos_user') || '{}').restaurantId : null);
       const existingStaffStr = localStorage.getItem('pos_registered_staff');
       const existingStaff: any[] = existingStaffStr ? JSON.parse(existingStaffStr) : [];
+      
+      const staffMember = {
+        id: serverUser?.id || form.id || `staff-${Date.now()}`,
+        name: form.name.trim(),
+        email: cleanEmail,
+        password: body.password || '123456',
+        role: form.role,
+        pin: body.pin || serverUser?.pin || '1234',
+        allowedViews: form.allowedViews,
+        restaurantId: userRestaurantId,
+        isActive: true,
+      };
+
       if (isEditing) {
         const idx = existingStaff.findIndex(s => s.id === form.id || s.email === cleanEmail);
         if (idx !== -1) {
-          existingStaff[idx] = { ...existingStaff[idx], ...body, name: form.name.trim(), email: cleanEmail, restaurantId: userRestaurantId || existingStaff[idx].restaurantId };
+          existingStaff[idx] = { ...existingStaff[idx], ...staffMember };
+        } else {
+          existingStaff.push(staffMember);
         }
       } else {
-        const newStaff = {
-          id: `staff-${Date.now()}`,
-          name: form.name.trim(),
-          email: cleanEmail,
-          password: body.password || '123456',
-          role: form.role,
-          pin: body.pin || '1234',
-          allowedViews: form.allowedViews,
-          restaurantId: userRestaurantId,
-          isActive: true,
-        };
-        existingStaff.push(newStaff);
+        const idx = existingStaff.findIndex(s => s.id === staffMember.id || s.email === cleanEmail);
+        if (idx !== -1) {
+          existingStaff[idx] = staffMember;
+        } else {
+          existingStaff.push(staffMember);
+        }
       }
       localStorage.setItem('pos_registered_staff', JSON.stringify(existingStaff));
+
+      if (userRestaurantId) {
+        const scopedKey = `pos_registered_staff_${userRestaurantId}`;
+        const scopedStr = localStorage.getItem(scopedKey);
+        const scopedList: any[] = scopedStr ? JSON.parse(scopedStr) : [];
+        const sIdx = scopedList.findIndex(s => s.id === staffMember.id || s.email === cleanEmail);
+        if (sIdx !== -1) {
+          scopedList[sIdx] = staffMember;
+        } else {
+          scopedList.push(staffMember);
+        }
+        localStorage.setItem(scopedKey, JSON.stringify(scopedList));
+      }
+      window.dispatchEvent(new Event('storage'));
     } catch {}
+
 
     toast.success(isEditing ? 'Usuario actualizado exitosamente' : '¡Usuario creado exitosamente!');
     setShowModal(false);

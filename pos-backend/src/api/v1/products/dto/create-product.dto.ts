@@ -66,4 +66,8 @@ export class CreateProductDto {
   @ValidateNested({ each: true })
   @Type(() => ModifierGroupDto)
   modifierGroups?: ModifierGroupDto[];
+
+  @IsOptional()
+  @IsString()
+  restaurantId?: string;
 }
