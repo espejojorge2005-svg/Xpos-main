@@ -258,9 +258,14 @@ export default function SuperAdminPage() {
 
     const selectedPlan = availablePlans.find(p => p.id === planId) || availablePlans[0] || DEFAULT_PLANS[0];
 
+    const generatedId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : '10000000-0000-4000-8000-' + Math.floor(Math.random() * 1000000000000).toString().padStart(12, '0');
+
     const newMockRestaurant: Restaurant = {
-      id: `rest-${Date.now()}`,
+      id: generatedId,
       name: tenantName,
+
       slogan: tenantSlogan || 'El mejor sabor',
       isActive: true,
       createdAt: new Date().toISOString(),

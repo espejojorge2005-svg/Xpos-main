@@ -1,6 +1,7 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
-import { getScopedStorage } from '@/utils/storage';
+import { getScopedStorage, getRestaurantId } from '@/utils/storage';
+
 import { subscribeToTables } from '@/utils/firebaseSync';
 
 import { useEffect, useState, useRef } from 'react';
@@ -227,8 +228,12 @@ export default function Home() {
     let loadedZones: Zone[] = [];
     try {
       const response = await fetch(getApiUrl('/floor/zones'), {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'x-restaurant-id': getRestaurantId() || ''
+        }
       });
+
 
       if (response.ok) {
         const data = await response.json();

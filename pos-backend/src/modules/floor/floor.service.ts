@@ -16,8 +16,8 @@ export class FloorService {
     private cls: ClsService,
   ) {}
 
-  private async resolveRestaurantId(reqUser?: any): Promise<string> {
-    const rawId = reqUser?.restaurantId || this.cls.get('restaurantId');
+  private async resolveRestaurantId(reqUser?: any, restaurantIdParam?: string | null): Promise<string | null> {
+    const rawId = restaurantIdParam || reqUser?.restaurantId || this.cls.get('restaurantId');
     if (isValidUuid(rawId)) {
       const rest = await this.prisma.restaurant.findUnique({ where: { id: rawId } });
       if (rest) return rest.id;
@@ -34,23 +34,12 @@ export class FloorService {
       }
     }
 
-    // Fallback: primer restaurante disponible en la base de datos
-    const first = await this.prisma.restaurant.findFirst({ orderBy: { createdAt: 'asc' } });
-    if (first) return first.id;
-
-    // Si no existe ningún restaurante en la base de datos, crear uno por defecto
-    const created = await this.prisma.restaurant.create({
-      data: {
-        name: 'Restaurante Principal',
-        subscriptionEndDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-        isActive: true,
-      },
-    });
-    return created.id;
+    return null;
   }
 
-  async createZone(data: CreateZoneDto, reqUser?: any) {
-    const restaurantId = await this.resolveRestaurantId(reqUser);
+  async createZone(data: CreateZoneDto, reqUser?: any, restaurantIdParam?: string | null) {
+    const restaurantId = await this.resolveRestaurantId(reqUser, restaurantIdParam);
+    if (!restaurantId) throw new NotFoundException('Restaurante no encontrado o no especificado');
     return this.prisma.zone.create({
       data: {
         name: data.name.trim(),
@@ -59,6 +48,7 @@ export class FloorService {
       },
     });
   }
+
 
   async updateZone(id: string, data: UpdateZoneDto, reqUser?: any) {
     const zone = await this.prisma.zone.findUnique({ where: { id } });
@@ -139,10 +129,13 @@ export class FloorService {
     });
   }
 
-  async findAllZones(reqUser?: any) {
-    const restaurantId = await this.resolveRestaurantId(reqUser);
+  async findAllZones(reqUser?: any, restaurantIdParam?: string | null) {
+    const restaurantId = await this.resolveRestaurantId(reqUser, restaurantIdParam);
+    if (!restaurantId) return [];
+
     return this.prisma.zone.findMany({
       where: { restaurantId },
+
       include: {
         tables: {
           include: {

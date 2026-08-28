@@ -61,11 +61,12 @@ export default function CategoriesPage() {
         const data = await response.json();
         if (Array.isArray(data)) {
           const filtered = currentRestId
-            ? data.filter((c: any) => !c.restaurantId || c.restaurantId === currentRestId)
+            ? data.filter((c: any) => c.restaurantId === currentRestId)
             : data;
           loadedCats = filtered;
           setScopedStorage('pos_registered_categories', filtered);
         }
+
       }
     } catch (e) {
       console.warn('Network error fetching categories:', e);

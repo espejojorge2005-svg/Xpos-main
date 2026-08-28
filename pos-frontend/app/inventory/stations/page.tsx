@@ -73,12 +73,13 @@ export default function KitchenStationsPage() {
         const data = await response.json();
         if (Array.isArray(data)) {
           const filtered = currentRestId
-            ? data.filter((s: any) => !s.restaurantId || s.restaurantId === currentRestId)
+            ? data.filter((s: any) => s.restaurantId === currentRestId)
             : data;
           loadedStations = filtered;
           setScopedStorage('pos_registered_stations', filtered);
           setStations(filtered);
         }
+
       }
     } catch (error) {
       console.warn('Backend stations notice:', error);

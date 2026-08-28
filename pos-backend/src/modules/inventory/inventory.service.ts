@@ -31,8 +31,12 @@ export class InventoryService {
   async findAllCategories(restaurantId?: string | null) {
     const targetRestId = this.resolveTenantId(restaurantId);
 
+    if (!targetRestId) {
+      return [];
+    }
+
     return this.prisma.category.findMany({
-      where: targetRestId ? { restaurantId: targetRestId } : {},
+      where: { restaurantId: targetRestId },
       include: {
         products: true,
       },
@@ -41,6 +45,7 @@ export class InventoryService {
       },
     });
   }
+
 
 
   async updateCategory(id: string, data: Partial<CreateCategoryDto>) {

@@ -29,11 +29,15 @@ export class KitchenStationsService {
 
   async findAll(restaurantId?: string | null, reqUser?: any) {
     const targetRestId = this.resolveTenantId(restaurantId, reqUser);
+    if (!targetRestId) {
+      return [];
+    }
     return this.prisma.kitchenStation.findMany({
-      where: targetRestId ? { restaurantId: targetRestId } : {},
+      where: { restaurantId: targetRestId },
       orderBy: { name: 'asc' }
     });
   }
+
 
   async update(id: string, data: UpdateKitchenStationDto, restaurantId?: string | null, reqUser?: any) {
     const targetRestId = this.resolveTenantId(restaurantId, reqUser);

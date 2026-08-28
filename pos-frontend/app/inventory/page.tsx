@@ -19,6 +19,7 @@ interface Product {
   stock: number;
   minStock: number;
   modifierGroups?: ModifierGroup[];
+  restaurantId?: string | null;
 }
 
 interface ModifierOption {
@@ -44,7 +45,9 @@ interface Category {
 interface KitchenStation {
   id: string;
   name: string;
+  restaurantId?: string | null;
 }
+
 
 export default function InventoryPage() {
   const router = useRouter();
@@ -77,16 +80,23 @@ export default function InventoryPage() {
   // 1. LEER: Obtener productos del backend real o caché local
   const fetchProducts = async () => {
     const token = localStorage.getItem('pos_token');
+    const currentRestId = getRestaurantId();
     let loadedProducts: Product[] | null = null;
     try {
       const response = await fetch(getApiUrl('/products'), {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'x-restaurant-id': currentRestId || ''
+        }
       });
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
-          loadedProducts = data;
-          setScopedStorage('pos_registered_products', data);
+          const filtered = currentRestId
+            ? data.filter((p: any) => p.restaurantId === currentRestId)
+            : data;
+          loadedProducts = filtered;
+          setScopedStorage('pos_registered_products', filtered);
         }
       }
     } catch { /* ignore network error */ }
@@ -117,7 +127,7 @@ export default function InventoryPage() {
         const data = await response.json();
         if (Array.isArray(data)) {
           const filtered = currentRestId
-            ? data.filter((c: any) => !c.restaurantId || c.restaurantId === currentRestId)
+            ? data.filter((c: any) => c.restaurantId === currentRestId)
             : data;
           loadedCats = filtered;
           setScopedStorage('pos_registered_categories', filtered);
@@ -150,7 +160,7 @@ export default function InventoryPage() {
         const data = await response.json();
         if (Array.isArray(data)) {
           const filtered = currentRestId
-            ? data.filter((s: any) => !s.restaurantId || s.restaurantId === currentRestId)
+            ? data.filter((s: any) => s.restaurantId === currentRestId)
             : data;
           loadedStations = filtered;
           setScopedStorage('pos_registered_stations', filtered);
@@ -169,6 +179,7 @@ export default function InventoryPage() {
   };
 
 
+
   useEffect(() => {
     fetchProducts();
     fetchCategories();
@@ -180,6 +191,7 @@ export default function InventoryPage() {
     e.preventDefault();
     setIsSaving(true);
     const token = localStorage.getItem('pos_token');
+    const currentRestId = getRestaurantId();
     
     const isEditing = formData.id !== '';
     const url = isEditing 
@@ -198,6 +210,7 @@ export default function InventoryPage() {
       price: Number(formData.price) || 0,
       stock: Number(formData.stock) || 0,
       minStock: Number(formData.minStock) || 0,
+      restaurantId: currentRestId || undefined,
       modifierGroups: formData.modifierGroups?.map(mg => ({
         name: mg.name,
         minSelect: Number(mg.minSelect),
@@ -215,7 +228,8 @@ export default function InventoryPage() {
         method,
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
+          'Authorization': `Bearer ${token}`,
+          'x-restaurant-id': currentRestId || ''
         },
         body: JSON.stringify(bodyData),
       });
@@ -246,6 +260,7 @@ export default function InventoryPage() {
         stationIds: formData.stationIds || [],
         stations: resolvedStations,
         modifierGroups: formData.modifierGroups || [],
+        restaurantId: savedBackendProduct?.restaurantId || currentRestId,
       };
 
       if (isEditing) {
@@ -285,6 +300,7 @@ export default function InventoryPage() {
   // 3. ELIMINAR: Borrar de la base de datos y memoria local
   const handleDelete = async (id: string) => {
     if (!window.confirm('¿Estás seguro de eliminar este producto del inventario?')) return;
+    const currentRestId = getRestaurantId();
     
     const updatedProducts = products.filter(p => p.id !== id);
     setProducts(updatedProducts);
@@ -294,9 +310,13 @@ export default function InventoryPage() {
     try {
       await fetch(getApiUrl(`/products/${id}`), {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'x-restaurant-id': currentRestId || ''
+        }
       });
     } catch {}
+
 
     toast.success('Producto eliminado del inventario ✅');
   };

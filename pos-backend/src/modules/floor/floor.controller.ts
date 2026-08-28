@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Patch, Delete, Param, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Body, Get, Patch, Delete, Param, UseGuards, Req, Headers } from '@nestjs/common';
 import { FloorService } from './floor.service';
 import { CreateZoneDto } from './dto/create-zone.dto';
 import { UpdateZoneDto } from './dto/update-zone.dto';
@@ -12,9 +12,14 @@ export class FloorController {
   constructor(private readonly floorService: FloorService) {}
 
   @Post('zone') 
-  async createZone(@Req() req: any, @Body() createZoneDto: CreateZoneDto) {
+  async createZone(
+    @Req() req: any, 
+    @Body() createZoneDto: CreateZoneDto,
+    @Headers('x-restaurant-id') restHeader?: string
+  ) {
     try {
-      return await this.floorService.createZone(createZoneDto, req.user);
+      const restaurantId = req.user?.restaurantId || restHeader || null;
+      return await this.floorService.createZone(createZoneDto, req.user, restaurantId);
     } catch (e: any) {
       console.error('Error creating zone:', e);
       throw e;
@@ -22,9 +27,15 @@ export class FloorController {
   }
 
   @Patch('zone/:id')
-  async updateZone(@Req() req: any, @Param('id') id: string, @Body() updateZoneDto: UpdateZoneDto) {
+  async updateZone(
+    @Req() req: any, 
+    @Param('id') id: string, 
+    @Body() updateZoneDto: UpdateZoneDto,
+    @Headers('x-restaurant-id') restHeader?: string
+  ) {
     try {
-      return await this.floorService.updateZone(id, updateZoneDto, req.user);
+      const restaurantId = req.user?.restaurantId || restHeader || null;
+      return await this.floorService.updateZone(id, updateZoneDto, req.user, restaurantId);
     } catch (e: any) {
       console.error(`Error updating zone ${id}:`, e);
       throw e;
@@ -32,9 +43,14 @@ export class FloorController {
   }
 
   @Delete('zone/:id')
-  async deleteZone(@Req() req: any, @Param('id') id: string) {
+  async deleteZone(
+    @Req() req: any, 
+    @Param('id') id: string,
+    @Headers('x-restaurant-id') restHeader?: string
+  ) {
     try {
-      return await this.floorService.deleteZone(id, req.user);
+      const restaurantId = req.user?.restaurantId || restHeader || null;
+      return await this.floorService.deleteZone(id, req.user, restaurantId);
     } catch (e: any) {
       console.error(`Error deleting zone ${id}:`, e);
       throw e;
@@ -42,9 +58,14 @@ export class FloorController {
   }
 
   @Post('table') 
-  async createTable(@Req() req: any, @Body() createTableDto: CreateTableDto) {
+  async createTable(
+    @Req() req: any, 
+    @Body() createTableDto: CreateTableDto,
+    @Headers('x-restaurant-id') restHeader?: string
+  ) {
     try {
-      return await this.floorService.createTable(createTableDto, req.user);
+      const restaurantId = req.user?.restaurantId || restHeader || null;
+      return await this.floorService.createTable(createTableDto, req.user, restaurantId);
     } catch (e: any) {
       console.error('Error creating table:', e);
       throw e;
@@ -52,9 +73,15 @@ export class FloorController {
   }
 
   @Patch('table/:id')
-  async updateTable(@Req() req: any, @Param('id') id: string, @Body() updateTableDto: UpdateTableDto) {
+  async updateTable(
+    @Req() req: any, 
+    @Param('id') id: string, 
+    @Body() updateTableDto: UpdateTableDto,
+    @Headers('x-restaurant-id') restHeader?: string
+  ) {
     try {
-      return await this.floorService.updateTable(id, updateTableDto, req.user);
+      const restaurantId = req.user?.restaurantId || restHeader || null;
+      return await this.floorService.updateTable(id, updateTableDto, req.user, restaurantId);
     } catch (e: any) {
       console.error(`Error updating table ${id}:`, e);
       throw e;
@@ -62,9 +89,14 @@ export class FloorController {
   }
 
   @Delete('table/:id')
-  async deleteTable(@Req() req: any, @Param('id') id: string) {
+  async deleteTable(
+    @Req() req: any, 
+    @Param('id') id: string,
+    @Headers('x-restaurant-id') restHeader?: string
+  ) {
     try {
-      return await this.floorService.deleteTable(id, req.user);
+      const restaurantId = req.user?.restaurantId || restHeader || null;
+      return await this.floorService.deleteTable(id, req.user, restaurantId);
     } catch (e: any) {
       console.error(`Error deleting table ${id}:`, e);
       throw e;
@@ -72,9 +104,13 @@ export class FloorController {
   }
 
   @Get('zones') 
-  async getZones(@Req() req: any) {
+  async getZones(
+    @Req() req: any,
+    @Headers('x-restaurant-id') restHeader?: string
+  ) {
     try {
-      return await this.floorService.findAllZones(req.user);
+      const restaurantId = req.user?.restaurantId || restHeader || null;
+      return await this.floorService.findAllZones(req.user, restaurantId);
     } catch (e: any) {
       console.error('Error getting zones:', e);
       throw e;

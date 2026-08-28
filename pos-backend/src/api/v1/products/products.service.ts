@@ -11,12 +11,23 @@ export class ProductsService {
     private readonly cls: ClsService
   ) {}
 
-  private getTenantRestaurantId(reqUser?: any): string | null {
-    return this.cls.get('restaurantId') || reqUser?.restaurantId || null;
+  private getTenantRestaurantId(reqUser?: any, restaurantIdParam?: string | null): string | null {
+    if (restaurantIdParam && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(restaurantIdParam)) {
+      return restaurantIdParam;
+    }
+    const clsId = this.cls.get('restaurantId');
+    if (clsId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clsId)) {
+      return clsId;
+    }
+    const userRestId = reqUser?.restaurantId;
+    if (userRestId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userRestId)) {
+      return userRestId;
+    }
+    return null;
   }
 
-  async create(createProductDto: any, reqUser?: any) {
-    const restaurantId = this.getTenantRestaurantId(reqUser);
+  async create(createProductDto: any, reqUser?: any, restaurantIdParam?: string | null) {
+    const restaurantId = this.getTenantRestaurantId(reqUser, restaurantIdParam) || createProductDto.restaurantId;
     const { modifierGroups, stationIds, categoryId, ...productData } = createProductDto;
 
     let validCategoryId = categoryId;
@@ -66,16 +77,21 @@ export class ProductsService {
     return {
       ...newProduct,
       category: newProduct.category?.name || 'Sin Categoría',
-      categoryId: newProduct.categoryId
+      categoryId: newProduct.categoryId,
+      restaurantId: newProduct.restaurantId
     };
   }
 
-  async findAll(reqUser?: any) {
-    const restaurantId = this.getTenantRestaurantId(reqUser);
-    const whereClause: any = { isActive: true };
-    if (restaurantId && reqUser?.role !== 'SUPER_ADMIN') {
-      whereClause.restaurantId = restaurantId;
+  async findAll(reqUser?: any, restaurantIdParam?: string | null) {
+    const restaurantId = this.getTenantRestaurantId(reqUser, restaurantIdParam);
+    if (!restaurantId) {
+      return [];
     }
+
+    const whereClause: any = { 
+      isActive: true,
+      restaurantId: restaurantId,
+    };
 
     const products = await this.prisma.product.findMany({
       where: whereClause,
@@ -92,14 +108,15 @@ export class ProductsService {
     return products.map(p => ({
       ...p,
       category: p.category?.name || 'Sin Categoría',
-      categoryId: p.categoryId
+      categoryId: p.categoryId,
+      restaurantId: p.restaurantId
     }));
   }
 
-  async findOne(id: string, reqUser?: any) {
-    const restaurantId = this.getTenantRestaurantId(reqUser);
+  async findOne(id: string, reqUser?: any, restaurantIdParam?: string | null) {
+    const restaurantId = this.getTenantRestaurantId(reqUser, restaurantIdParam);
     const whereClause: any = { id };
-    if (restaurantId && reqUser?.role !== 'SUPER_ADMIN') {
+    if (restaurantId) {
       whereClause.restaurantId = restaurantId;
     }
 
@@ -118,9 +135,11 @@ export class ProductsService {
     return {
       ...product,
       category: product.category?.name || 'Sin Categoría',
-      categoryId: product.categoryId
+      categoryId: product.categoryId,
+      restaurantId: product.restaurantId
     };
   }
+
 
   async update(id: string, updateProductDto: UpdateProductDto, reqUser?: any) {
     await this.findOne(id, reqUser);
