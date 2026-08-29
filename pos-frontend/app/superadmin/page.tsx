@@ -59,41 +59,6 @@ export default function SuperAdminPage() {
   const [editAdminEmail, setEditAdminEmail] = useState('');
   const [editAdminPassword, setEditAdminPassword] = useState('');
 
-  const getMergedRestaurants = (dbTenants: Restaurant[]) => {
-    try {
-      const deletedStr = localStorage.getItem('pos_deleted_tenants');
-      const deletedIds: string[] = deletedStr ? JSON.parse(deletedStr) : [];
-      
-      const cachedStr = localStorage.getItem('pos_saas_tenants_cache');
-      const cachedTenants: Restaurant[] = cachedStr ? JSON.parse(cachedStr) : [];
-      const mergedMap = new Map<string, Restaurant>();
-      
-      // 1. Servidor primero
-      if (Array.isArray(dbTenants)) {
-        dbTenants.forEach((r: Restaurant) => {
-          if (!deletedIds.includes(r.id)) {
-            mergedMap.set(r.id, r);
-          }
-        });
-      }
-      
-      // 2. Caché local (negocios creados)
-      if (Array.isArray(cachedTenants)) {
-        cachedTenants.forEach((r: Restaurant) => {
-          if (!deletedIds.includes(r.id) && !mergedMap.has(r.id)) {
-            mergedMap.set(r.id, r);
-          }
-        });
-      }
-
-      const list = Array.from(mergedMap.values());
-      localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(list));
-      return list;
-    } catch {
-      return dbTenants;
-    }
-  };
-
   const fetchInitialData = async () => {
     try {
       setLoading(true);
@@ -120,9 +85,10 @@ export default function SuperAdminPage() {
       
       if (resTenants.ok) {
         const dbTenants = await resTenants.json();
-        setRestaurants(getMergedRestaurants(dbTenants));
+        setRestaurants(dbTenants);
       } else {
-        setRestaurants(getMergedRestaurants([]));
+        setRestaurants([]);
+        toast.error('Error al cargar la lista de restaurantes del servidor.');
       }
 
       if (resPlans.ok) {
@@ -135,7 +101,8 @@ export default function SuperAdminPage() {
         }
       }
     } catch {
-      setRestaurants(getMergedRestaurants([]));
+      setRestaurants([]);
+      toast.error('Error de conexión con el servidor.');
     } finally {
       setLoading(false);
     }
@@ -146,10 +113,10 @@ export default function SuperAdminPage() {
       const res = await apiFetch('/saas/restaurants');
       if (res.ok) {
         const dbTenants = await res.json();
-        setRestaurants(getMergedRestaurants(dbTenants));
+        setRestaurants(dbTenants);
       }
     } catch {
-      setRestaurants(getMergedRestaurants([]));
+      setRestaurants([]);
     }
   };
 
@@ -164,12 +131,10 @@ export default function SuperAdminPage() {
       await apiFetch(`/saas/restaurants/${id}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ isActive: !currentStatus })
-      }).catch(() => {});
+      });
 
       setRestaurants(prev => {
-        const updated = prev.map(r => r.id === id ? { ...r, isActive: !currentStatus } : r);
-        localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(updated));
-        return updated;
+        return prev.map(r => r.id === id ? { ...r, isActive: !currentStatus } : r);
       });
 
       toast.success(`Restaurante ${!currentStatus ? 'Activado' : 'Suspendido'}`);
@@ -191,12 +156,10 @@ export default function SuperAdminPage() {
       await apiFetch(`/saas/restaurants/${id}/renew`, {
         method: 'PATCH',
         body: JSON.stringify({ days: Number(days) })
-      }).catch(() => {});
+      });
 
       setRestaurants(prev => {
-        const updated = prev.map(r => r.id === id ? { ...r, subscriptionEndDate: newEndDate, isActive: true } : r);
-        localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(updated));
-        return updated;
+        return prev.map(r => r.id === id ? { ...r, subscriptionEndDate: newEndDate, isActive: true } : r);
       });
 
       toast.success(`Suscripción renovada por ${days} días exitosamente`);
@@ -209,27 +172,16 @@ export default function SuperAdminPage() {
     if (!window.confirm(`¿Estás seguro de eliminar permanentemente el restaurante "${name}" y toda su información?`)) return;
     try {
       const token = localStorage.getItem('pos_token') || 'superadmin-token-master';
-      await fetch(getApiUrl(`/saas/restaurants/${id}`), {
+      const res = await fetch(getApiUrl(`/saas/restaurants/${id}`), {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
-      }).catch(() => {});
-
-      // Registrar ID en pos_deleted_tenants para que NUNCA vuelva a aparecer
-      try {
-        const deletedStr = localStorage.getItem('pos_deleted_tenants');
-        const deletedIds: string[] = deletedStr ? JSON.parse(deletedStr) : [];
-        if (!deletedIds.includes(id)) {
-          deletedIds.push(id);
-          localStorage.setItem('pos_deleted_tenants', JSON.stringify(deletedIds));
-        }
-      } catch {}
-
-      // Actualizar estado local y caché
-      setRestaurants(prev => {
-        const updated = prev.filter(r => r.id !== id);
-        localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(updated));
-        return updated;
       });
+      
+      if (!res.ok) {
+        throw new Error('Error al eliminar en el servidor');
+      }
+
+      setRestaurants(prev => prev.filter(r => r.id !== id));
 
       // Limpiar credenciales registradas asociadas a este restaurante
       try {
@@ -282,7 +234,7 @@ export default function SuperAdminPage() {
       _count: { users: 1, orders: 0 }
     };
 
-    let finalRestaurantId = newMockRestaurant.id;
+    let createdOnServer: any;
 
     try {
       const res1 = await apiFetch('/saas/restaurants', {
@@ -300,37 +252,31 @@ export default function SuperAdminPage() {
       });
 
       if (!res1.ok) {
-        if (res1.status === 401) {
-          console.warn('Backend API returned 401 Unauthorized. Fallback to local tenant creation.');
-        } else {
-          let errStr = 'Error al crear el restaurante';
-          try {
-            const errData = await res1.json();
-            errStr = Array.isArray(errData.message) ? errData.message.join(', ') : errData.message || errStr;
-          } catch {}
-          toast.error(errStr);
-          setIsSubmitting(false);
-          return;
-        }
+        let errStr = 'Error al crear el restaurante en el servidor';
+        try {
+          const errData = await res1.json();
+          errStr = Array.isArray(errData.message) ? errData.message.join(', ') : errData.message || errStr;
+        } catch {}
+        toast.error(errStr);
+        setIsSubmitting(false);
+        return;
       }
       
-      const createdOnServer = await res1.json();
-      if (createdOnServer?.id) {
-        finalRestaurantId = createdOnServer.id;
-        newMockRestaurant.id = createdOnServer.id;
-      }
-    } catch {
-      // ignore network errors
+      createdOnServer = await res1.json();
+    } catch (error) {
+      toast.error('Error de conexión con el servidor. No se pudo crear el restaurante.');
+      setIsSubmitting(false);
+      return;
     }
 
-    if (cleanEmail && cleanPassword) {
+    if (cleanEmail && cleanPassword && createdOnServer?.id) {
       try {
         const newAdminAccount = {
           email: cleanEmail,
           password: cleanPassword,
           name: adminName || ownerName || 'Administrador',
           restaurantName: tenantName,
-          restaurantId: finalRestaurantId,
+          restaurantId: createdOnServer.id,
         };
         const existingStr = localStorage.getItem('pos_registered_admins');
         const existing: any[] = existingStr ? JSON.parse(existingStr) : [];
@@ -340,23 +286,8 @@ export default function SuperAdminPage() {
       } catch {}
     }
 
-    // Inicializar colecciones 100% vacías para el nuevo negocio
-    try {
-      localStorage.setItem(`pos_registered_categories_${finalRestaurantId}`, JSON.stringify([]));
-      localStorage.setItem(`pos_registered_products_${finalRestaurantId}`, JSON.stringify([]));
-      localStorage.setItem(`pos_registered_stations_${finalRestaurantId}`, JSON.stringify([]));
-      localStorage.setItem(`pos_registered_staff_${finalRestaurantId}`, JSON.stringify([]));
-      localStorage.setItem(`pos_registered_zones_${finalRestaurantId}`, JSON.stringify([]));
-      localStorage.setItem(`pos_stock_movements_${finalRestaurantId}`, JSON.stringify([]));
-      localStorage.setItem(`pos_active_table_orders_${finalRestaurantId}`, JSON.stringify({}));
-      localStorage.setItem(`pos_local_kitchen_orders_${finalRestaurantId}`, JSON.stringify([]));
-    } catch {}
-
-
     setRestaurants(prev => {
-      const updated = [newMockRestaurant, ...prev];
-      localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(updated));
-      return updated;
+      return [createdOnServer, ...prev];
     });
 
     toast.success(`¡Inquilino "${tenantName}" y Administrador creados exitosamente!`);
@@ -413,7 +344,7 @@ export default function SuperAdminPage() {
     setIsSubmitting(true);
     try {
       const formattedEndDate = editSubEndDate ? new Date(editSubEndDate).toISOString() : undefined;
-      await apiFetch(`/saas/restaurants/${editingId}`, {
+      const res = await apiFetch(`/saas/restaurants/${editingId}`, {
         method: 'PATCH',
         body: JSON.stringify({ 
            name: editTenantName, 
@@ -423,12 +354,14 @@ export default function SuperAdminPage() {
            ownerPhone: editOwnerPhone,
            subscriptionEndDate: formattedEndDate
         })
-      }).catch(() => {});
+      });
 
-      // Actualizar inmediatamente en estado local y caché persistente
+      if (!res.ok) throw new Error('Error al actualizar en el servidor');
+
+      // Actualizar estado local (solo React)
       const updatedPlan = availablePlans.find(p => p.id === editPlanId);
       setRestaurants(prev => {
-        const updated = prev.map(r => {
+        return prev.map(r => {
           if (r.id === editingId) {
             return {
               ...r,
@@ -448,9 +381,6 @@ export default function SuperAdminPage() {
           }
           return r;
         });
-        localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(updated));
-        window.dispatchEvent(new Event('storage'));
-        return updated;
       });
 
       toast.success('Datos y fecha de suscripción actualizados correctamente');
@@ -473,10 +403,12 @@ export default function SuperAdminPage() {
          payload.password = editAdminPassword.trim();
       }
 
-      await apiFetch(`/saas/restaurants/${editingId}/admin`, {
+      const res = await apiFetch(`/saas/restaurants/${editingId}/admin`, {
         method: 'PATCH',
         body: JSON.stringify(payload)
-      }).catch(() => {});
+      });
+      
+      if (!res.ok) throw new Error('Error al actualizar credenciales en el servidor');
       
       try {
         const registeredAdminsStr = localStorage.getItem('pos_registered_admins');

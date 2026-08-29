@@ -19,12 +19,9 @@ interface Category {
 export default function CategoriesPage() {
   const router = useRouter();
   useGuardedRoute('categorias');
-  // Carga instantánea a 0ms desde la caché local
-  const [categories, setCategories] = useState<Category[]>(() => {
-    if (typeof window === 'undefined') return [];
-    return getScopedStorage<Category[]>('pos_registered_categories', []);
-  });
-  const [loading, setLoading] = useState(false);
+  // Remove local cache initialization to avoid showing stale data across devices
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
   // Modal de Crear / Editar
@@ -59,13 +56,7 @@ export default function CategoriesPage() {
       return;
     }
 
-    // 1. Mostrar caché local de inmediato
-    const cached = getScopedStorage<Category[]>('pos_registered_categories', []);
-    if (cached.length > 0) {
-      setCategories(cached);
-    }
-
-    // 2. Suscripción EN TIEMPO REAL a Firebase Firestore (ultra rápida)
+    // 1. Suscripción EN TIEMPO REAL a Firebase Firestore
     const unsubscribe = subscribeToCategories(currentRestId, (firestoreCats) => {
       if (Array.isArray(firestoreCats)) {
         setCategories(prev => {
@@ -80,7 +71,6 @@ export default function CategoriesPage() {
             });
           });
           const merged = Array.from(map.values()).filter(c => c.restaurantId === currentRestId);
-          setScopedStorage('pos_registered_categories', merged);
           return merged;
         });
       }
@@ -109,7 +99,6 @@ export default function CategoriesPage() {
               const map = new Map(prev.map(c => [c.id, c]));
               filtered.forEach(c => map.set(c.id, c));
               const merged = Array.from(map.values());
-              setScopedStorage('pos_registered_categories', merged);
               return merged;
             });
           }
@@ -190,8 +179,6 @@ export default function CategoriesPage() {
         : [...categories, newCategory];
       
       setCategories(updatedCats);
-      setScopedStorage('pos_registered_categories', updatedCats);
-      window.dispatchEvent(new Event('storage'));
 
       if (currentRestId) {
         syncCategoryToFirebase({ id: realId, name: trimmedName, restaurantId: currentRestId }).catch(() => {});
@@ -200,34 +187,6 @@ export default function CategoriesPage() {
       toast.success(isEditing ? 'Categoría actualizada con éxito ✅' : 'Categoría creada con éxito ✅');
       closeModal();
     } catch (err: any) {
-      console.warn('Backend save notice:', err);
-      // Resiliencia offline: si el backend está apagado o no responde
-      if (err.name === 'TypeError' || err.message?.includes('fetch') || err.message?.includes('NetworkError')) {
-        const fallbackId = isEditing ? formData.id : `cat-${Date.now()}`;
-        const offlineCategory: Category = { 
-          id: fallbackId, 
-          name: trimmedName,
-          restaurantId: currentRestId || undefined,
-          products: isEditing 
-            ? (categories.find(c => c.id === formData.id)?.products || []) 
-            : []
-        };
-        const updatedCats = isEditing
-          ? categories.map(c => c.id === formData.id ? { ...c, ...offlineCategory } : c)
-          : [...categories, offlineCategory];
-        
-        setCategories(updatedCats);
-        setScopedStorage('pos_registered_categories', updatedCats);
-        window.dispatchEvent(new Event('storage'));
-
-        if (currentRestId) {
-          syncCategoryToFirebase({ id: fallbackId, name: trimmedName, restaurantId: currentRestId }).catch(() => {});
-        }
-
-        closeModal();
-        toast.success(isEditing ? 'Categoría actualizada ✅' : 'Categoría creada con éxito ✅');
-        return;
-      }
       toast.error(err.message || 'No se pudo guardar la categoría en el servidor');
     } finally {
       setIsSaving(false);
@@ -273,26 +232,12 @@ export default function CategoriesPage() {
 
       const updatedCats = categories.filter(c => c.id !== categoryToDelete.id);
       setCategories(updatedCats);
-      setScopedStorage('pos_registered_categories', updatedCats);
-      window.dispatchEvent(new Event('storage'));
 
       deleteCategoryFromFirebase(categoryToDelete.id).catch(() => {});
 
       toast.success('Categoría eliminada exitosamente ✅');
       closeDeleteModal();
     } catch (err: any) {
-      console.warn('Backend delete notice:', err);
-      if (err.name === 'TypeError' || err.message?.includes('fetch') || err.message?.includes('NetworkError')) {
-        const updatedCats = categories.filter(c => c.id !== categoryToDelete.id);
-        setCategories(updatedCats);
-        setScopedStorage('pos_registered_categories', updatedCats);
-        window.dispatchEvent(new Event('storage'));
-        deleteCategoryFromFirebase(categoryToDelete.id).catch(() => {});
-        closeDeleteModal();
-        toast.success('Categoría eliminada exitosamente ✅');
-        return;
-      }
-
       toast.error(err.message || 'Error al eliminar la categoría del servidor');
     } finally {
       setIsDeleting(false);
