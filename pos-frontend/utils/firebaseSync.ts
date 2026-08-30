@@ -40,15 +40,13 @@ export const subscribeToKitchenOrders = (restaurantId: string, onUpdate: (orders
     const ordersRef = collection(db, 'orders');
     const q = query(
       ordersRef,
-      where('restaurantId', '==', restaurantId),
       where('status', '==', 'OPEN'),
       orderBy('createdAt', 'desc')
     );
     return onSnapshot(q, (snapshot) => {
-      const ordersData: FirebaseOrder[] = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as FirebaseOrder));
+      const ordersData: FirebaseOrder[] = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() } as FirebaseOrder))
+        .filter(order => !order.restaurantId || order.restaurantId === restaurantId);
       onUpdate(ordersData);
     }, (error) => {
       console.warn("Firestore real-time subscription (orders) info:", error.message);

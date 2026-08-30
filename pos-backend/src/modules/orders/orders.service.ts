@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { ClsService } from 'nestjs-cls';
 
 @Injectable()
 export class OrdersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private cls: ClsService) {}
 
   async createOrder(data: CreateOrderDto) {
     if (!data.tableId) {
@@ -16,6 +17,7 @@ export class OrdersService {
       return total + (item.quantity * item.unitPrice) + subItemsTotal;
     }, 0);
 
+    const restaurantId = this.cls.get('restaurantId');
     // Usamos una transacción para crear la orden explicitamente con subItems
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.create({
@@ -23,7 +25,8 @@ export class OrdersService {
           tableId: data.tableId,
           customerName: data.customerName,
           totalAmount: totalAmount,
-          status: 'OPEN'
+          status: 'OPEN',
+          restaurantId: restaurantId,
         }
       });
 
