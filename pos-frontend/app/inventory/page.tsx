@@ -168,10 +168,10 @@ export default function InventoryPage() {
       }
     });
 
-    // 3. Consulta secundaria opcional al backend con timeout estricto de 1.2s para jamás ralentizar la pantalla
+    // 3. Consulta al backend
     const token = localStorage.getItem('pos_token');
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 1200);
+    const timer = setTimeout(() => controller.abort(), 15000);
 
     fetch(getApiUrl('/products'), {
       headers: { 
@@ -184,7 +184,7 @@ export default function InventoryPage() {
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
-          const filtered = data.filter((p: any) => p.restaurantId === currentRestId);
+          const filtered = data.filter((p: any) => !p.restaurantId || p.restaurantId === currentRestId);
           if (filtered.length > 0) {
             setProducts(prev => {
               const map = new Map(prev.map(p => [p.id, p]));

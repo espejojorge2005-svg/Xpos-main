@@ -77,10 +77,10 @@ export default function CategoriesPage() {
       setLoading(false);
     });
 
-    // 3. Consulta secundaria al backend (con timeout estricto de 1.2s para jamás ralentizar la pantalla)
+    // 3. Consulta al backend
     const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 1200);
+    const timer = setTimeout(() => controller.abort(), 15000);
 
     fetch(getApiUrl('/inventory/categories'), {
       headers: { 
@@ -93,12 +93,13 @@ export default function CategoriesPage() {
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
-          const filtered = data.filter((c: any) => c.restaurantId === currentRestId);
+          const filtered = data.filter((c: any) => !c.restaurantId || c.restaurantId === currentRestId);
           if (filtered.length > 0) {
             setCategories(prev => {
               const map = new Map(prev.map(c => [c.id, c]));
               filtered.forEach(c => map.set(c.id, c));
               const merged = Array.from(map.values());
+              setScopedStorage('pos_registered_categories', merged);
               return merged;
             });
           }

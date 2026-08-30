@@ -39,15 +39,11 @@ export interface FirebaseTable {
 export const subscribeToKitchenOrders = (restaurantId: string, onUpdate: (orders: FirebaseOrder[]) => void) => {
   try {
     const ordersRef = collection(db, 'orders');
-    const q = query(
-      ordersRef,
-      where('status', '==', 'OPEN'),
-      orderBy('createdAt', 'desc')
-    );
-    return onSnapshot(q, (snapshot) => {
+    return onSnapshot(ordersRef, (snapshot) => {
       const ordersData: FirebaseOrder[] = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as FirebaseOrder))
-        .filter(order => !order.restaurantId || order.restaurantId === restaurantId);
+        .filter(order => (!restaurantId || !order.restaurantId || order.restaurantId === restaurantId) && order.status === 'OPEN')
+        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
       onUpdate(ordersData);
     }, (error) => {
       console.warn("Firestore real-time subscription (orders) info:", error.message);
@@ -258,9 +254,10 @@ export const deleteProductFromFirebase = async (productId: string) => {
 export const getProductsFromFirebase = async (restaurantId: string): Promise<any[]> => {
   try {
     const ref = collection(db, 'products');
-    const q = query(ref, where('restaurantId', '==', restaurantId));
-    const snap = await getDocs(q);
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const snap = await getDocs(ref);
+    return snap.docs
+      .map(d => ({ id: d.id, ...(d.data() as any) }))
+      .filter((p: any) => !restaurantId || !p.restaurantId || p.restaurantId === restaurantId);
   } catch (err) {
     console.warn("Error fetching products from Firebase:", err);
     return [];
@@ -273,9 +270,10 @@ export const getProductsFromFirebase = async (restaurantId: string): Promise<any
 export const subscribeToCategories = (restaurantId: string, onUpdate: (categories: any[]) => void) => {
   try {
     const ref = collection(db, 'categories');
-    const q = query(ref, where('restaurantId', '==', restaurantId));
-    return onSnapshot(q, (snapshot) => {
-      const cats = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    return onSnapshot(ref, (snapshot) => {
+      const cats = snapshot.docs
+        .map(d => ({ id: d.id, ...(d.data() as any) }))
+        .filter((c: any) => !restaurantId || !c.restaurantId || c.restaurantId === restaurantId);
       onUpdate(cats);
     }, (error) => {
       console.warn("Firestore real-time subscription (categories) info:", error.message);
@@ -289,9 +287,10 @@ export const subscribeToCategories = (restaurantId: string, onUpdate: (categorie
 export const subscribeToKitchenStations = (restaurantId: string, onUpdate: (stations: any[]) => void) => {
   try {
     const ref = collection(db, 'kitchen_stations');
-    const q = query(ref, where('restaurantId', '==', restaurantId));
-    return onSnapshot(q, (snapshot) => {
-      const stations = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    return onSnapshot(ref, (snapshot) => {
+      const stations = snapshot.docs
+        .map(d => ({ id: d.id, ...(d.data() as any) }))
+        .filter((s: any) => !restaurantId || !s.restaurantId || s.restaurantId === restaurantId);
       onUpdate(stations);
     }, (error) => {
       console.warn("Firestore real-time subscription (stations) info:", error.message);
@@ -305,9 +304,10 @@ export const subscribeToKitchenStations = (restaurantId: string, onUpdate: (stat
 export const subscribeToProducts = (restaurantId: string, onUpdate: (products: any[]) => void) => {
   try {
     const ref = collection(db, 'products');
-    const q = query(ref, where('restaurantId', '==', restaurantId));
-    return onSnapshot(q, (snapshot) => {
-      const products = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    return onSnapshot(ref, (snapshot) => {
+      const products = snapshot.docs
+        .map(d => ({ id: d.id, ...(d.data() as any) }))
+        .filter((p: any) => !restaurantId || !p.restaurantId || p.restaurantId === restaurantId);
       onUpdate(products);
     }, (error) => {
       console.warn("Firestore real-time subscription (products) info:", error.message);

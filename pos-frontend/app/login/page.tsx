@@ -390,7 +390,7 @@ export default function LoginPage() {
             restaurantId: matchedStaff.restaurantId || restaurantId,
           };
           syncRestaurantSession(loggedStaffUser.restaurantId, null);
-          localStorage.setItem('pos_token', `staff-token-${Date.now()}`);
+          localStorage.setItem('pos_token', `client-token-${loggedStaffUser.restaurantId || 'main'}`);
           localStorage.setItem('pos_user', JSON.stringify(loggedStaffUser));
 
           // Registrar en el Personal PIN del restaurante
@@ -506,7 +506,7 @@ export default function LoginPage() {
         allowedViews: selectedUser.allowedViews || ['pos', 'cocina', 'caja'],
         restaurantId: targetRestId || restaurantId,
       };
-      localStorage.setItem('pos_token', `client-token-${Date.now()}`);
+      localStorage.setItem('pos_token', `client-token-${targetRestId || restaurantId || 'main'}`);
       localStorage.setItem('pos_user', JSON.stringify(loggedUser));
       toast.success(`¡Hola de nuevo, ${loggedUser.name}!`);
       const dest = getFirstAllowedPath(loggedUser.allowedViews);

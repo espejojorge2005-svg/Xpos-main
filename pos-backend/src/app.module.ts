@@ -29,8 +29,8 @@ import { SaasModule } from './modules/saas/saas.module';
             const auth = req.headers?.['authorization'] as string | undefined;
             if (auth && auth.startsWith('Bearer ')) {
               const token = auth.substring(7).trim();
-              if (token.startsWith('client-token-')) {
-                restId = token.replace('client-token-', '').trim();
+              if (token.startsWith('client-token-') || token.startsWith('staff-token-')) {
+                restId = token.replace(/^(client|staff)-token-/, '').trim();
               } else if (token.includes('.')) {
                 try {
                   const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());

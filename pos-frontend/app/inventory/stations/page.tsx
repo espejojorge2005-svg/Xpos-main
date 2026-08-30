@@ -86,10 +86,10 @@ export default function KitchenStationsPage() {
       setLoading(false);
     });
 
-    // 3. Consulta secundaria rápida al backend (timeout estricto 1.2s para no colgar la UI)
+    // 3. Consulta al backend
     const token = localStorage.getItem('pos_token');
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 1200);
+    const timer = setTimeout(() => controller.abort(), 15000);
 
     fetch(getApiUrl('/kitchen-stations'), {
       headers: { 
@@ -102,7 +102,7 @@ export default function KitchenStationsPage() {
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
-          const filtered = data.filter((s: any) => s.restaurantId === currentRestId);
+          const filtered = data.filter((s: any) => !s.restaurantId || s.restaurantId === currentRestId);
           if (filtered.length > 0) {
             setStations(prev => {
               const map = new Map(prev.map(s => [s.id, s]));

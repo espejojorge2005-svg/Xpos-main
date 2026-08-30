@@ -611,7 +611,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         }).catch(() => {});
         
         if (tableId !== 'takeout') {
-          syncTableToFirebase(tableId, 'OCCUPIED').catch(() => {});
+          syncTableToFirebase(tableId, 'OCCUPIED', restaurantId).catch(() => {});
         }
       }
     } catch (netErr) {

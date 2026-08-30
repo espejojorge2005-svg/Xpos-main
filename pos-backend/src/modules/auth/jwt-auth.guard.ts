@@ -26,15 +26,16 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     const authHeader = req.headers['authorization'] || '';
     const token = authHeader.replace(/^Bearer\s+/i, '').trim();
 
-    // Si el token enviado contiene el identificador del restaurante: client-token-<restaurantId>
-    if (token.startsWith('client-token-')) {
-      const restId = token.replace('client-token-', '').trim();
+    // Si el token enviado contiene el identificador del restaurante: client-token-<restaurantId> o staff-token-
+    if (token.startsWith('client-token-') || token.startsWith('staff-token-')) {
+      const restId = token.replace(/^(client|staff)-token-/, '').trim();
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(restId);
+      const effectiveRestId = isUuid ? restId : (isHeaderUuid ? headerRestId : null);
       return {
-        userId: `admin-${restId}`,
-        email: 'admin@restaurante.com',
-        role: 'ADMIN',
-        restaurantId: isUuid ? restId : (isHeaderUuid ? headerRestId : null),
+        userId: `user-${restId}`,
+        email: 'staff@restaurante.com',
+        role: token.startsWith('client-token-') ? 'ADMIN' : 'WAITER',
+        restaurantId: effectiveRestId,
       };
     }
 

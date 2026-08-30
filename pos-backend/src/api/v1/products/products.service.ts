@@ -27,17 +27,37 @@ export class ProductsService {
   }
 
   async create(createProductDto: any, reqUser?: any, restaurantIdParam?: string | null) {
-    const restaurantId = this.getTenantRestaurantId(reqUser, restaurantIdParam) || createProductDto.restaurantId;
+    let restaurantId = this.getTenantRestaurantId(reqUser, restaurantIdParam) || createProductDto.restaurantId;
+    if (!restaurantId) {
+      const defaultRest = await this.prisma.restaurant.findFirst({ orderBy: { createdAt: 'asc' } });
+      if (defaultRest) restaurantId = defaultRest.id;
+    }
+
     const { modifierGroups, stationIds, categoryId, ...productData } = createProductDto;
 
     let validCategoryId = categoryId;
-    if (categoryId) {
+    if (categoryId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(categoryId)) {
       const catExists = await this.prisma.category.findFirst({
         where: { id: categoryId, ...(restaurantId ? { restaurantId } : {}) }
       });
       if (!catExists) {
-        validCategoryId = undefined; // Do not fallback to a random category
+        validCategoryId = undefined;
       }
+    } else {
+      validCategoryId = undefined;
+    }
+
+    // Auto-vincular o crear categoría "General" si no se especificó una categoría válida
+    if (!validCategoryId && restaurantId) {
+      let defaultCat = await this.prisma.category.findFirst({
+        where: { name: 'General', restaurantId }
+      });
+      if (!defaultCat) {
+        defaultCat = await this.prisma.category.create({
+          data: { name: 'General', restaurantId }
+        });
+      }
+      validCategoryId = defaultCat.id;
     }
 
     const newProduct = await this.prisma.product.create({
@@ -83,14 +103,24 @@ export class ProductsService {
   }
 
   async findAll(reqUser?: any, restaurantIdParam?: string | null) {
-    const restaurantId = this.getTenantRestaurantId(reqUser, restaurantIdParam);
+    let restaurantId = this.getTenantRestaurantId(reqUser, restaurantIdParam);
+    if (!restaurantId && reqUser?.id) {
+      const u = await this.prisma.user.findUnique({ where: { id: reqUser.id } }).catch(() => null);
+      if (u?.restaurantId) restaurantId = u.restaurantId;
+    }
     if (!restaurantId) {
-      return [];
+      const defaultRest = await this.prisma.restaurant.findFirst({ orderBy: { createdAt: 'asc' } }).catch(() => null);
+      if (defaultRest) restaurantId = defaultRest.id;
     }
 
     const whereClause: any = { 
       isActive: true,
-      restaurantId: restaurantId,
+      ...(restaurantId ? {
+        OR: [
+          { restaurantId },
+          { restaurantId: null }
+        ]
+      } : {})
     };
 
     const products = await this.prisma.product.findMany({

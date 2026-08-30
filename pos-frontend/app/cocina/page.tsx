@@ -123,11 +123,15 @@ export default function CocinaPage() {
   const fetchKitchenOrders = async () => {
     if (isUpdatingRef.current) return;
     const token = localStorage.getItem('pos_token');
+    const currentRestId = getRestaurantId();
     if (!token) return router.push('/login');
     let serverOrders: KitchenOrder[] = [];
     try {
       const response = await fetch(getApiUrl('/orders/kitchen'), {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'x-restaurant-id': currentRestId || ''
+        }
       });
       if (response.ok) {
         const data = await response.json();
@@ -331,16 +335,33 @@ export default function CocinaPage() {
     const unsubscribeFirebase = currentRestId ? subscribeToKitchenOrders(currentRestId, (firebaseOrders) => {
       if (firebaseOrders && firebaseOrders.length > 0) {
         setOrders(prev => {
-          // Merge Firebase orders with existing orders based on ID
           const map = new Map(prev.map(o => [o.id, o]));
           firebaseOrders.forEach(fo => {
-            // Convert FirebaseOrder to KitchenOrder format if needed, or just merge
-            // Assuming FirebaseOrder matches KitchenOrder mostly, but we'll re-fetch to get full details safely
-            // or just trigger fetchKitchenOrders() instantly
+            if (!map.has(fo.id)) {
+              map.set(fo.id, {
+                id: fo.id,
+                createdAt: fo.createdAt,
+                status: fo.status || 'OPEN',
+                previousTableName: null,
+                table: fo.tableName ? { name: fo.tableName, number: parseInt(fo.tableName.replace(/\D/g, '')) || 1 } : null,
+                items: (fo.items || []).map((it: any) => ({
+                  id: it.id,
+                  quantity: it.quantity,
+                  notes: it.notes || '',
+                  parentItemId: null,
+                  status: (it.status === 'CANCELLED' || it.status === 'CANCELED') ? 'CANCELLED' : (it.status === 'SERVED' ? 'SERVED' : 'ACTIVE'),
+                  product: {
+                    name: it.productName,
+                    category: { name: 'Cocina' },
+                    stations: []
+                  }
+                }))
+              });
+            }
           });
-          return prev;
+          return Array.from(map.values());
         });
-        // Trigger a fresh fetch from API to get all relations instantly
+        // Sincronizar en segundo plano con el backend para relaciones completas
         fetchKitchenOrders();
       }
     }) : undefined;
