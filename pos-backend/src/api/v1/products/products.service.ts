@@ -141,8 +141,8 @@ export class ProductsService {
   }
 
 
-  async update(id: string, updateProductDto: UpdateProductDto, reqUser?: any) {
-    await this.findOne(id, reqUser);
+  async update(id: string, updateProductDto: UpdateProductDto, reqUser?: any, restaurantIdParam?: string | null) {
+    await this.findOne(id, reqUser, restaurantIdParam);
     
     const { modifierGroups, stationIds, ...productData } = updateProductDto as any;
 
@@ -185,21 +185,21 @@ export class ProductsService {
     };
   }
 
-  async remove(id: string, reqUser?: any) {
-    await this.findOne(id, reqUser);
+  async remove(id: string, reqUser?: any, restaurantIdParam?: string | null) {
+    await this.findOne(id, reqUser, restaurantIdParam);
     return await this.prisma.product.update({
       where: { id },
       data: { isActive: false }
     });
   }
 
-  async adjustStock(id: string, delta: number, reason?: string, reqUser?: any) {
+  async adjustStock(id: string, delta: number, reason?: string, reqUser?: any, restaurantIdParam?: string | null) {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
     if (!isUuid) {
       throw new NotFoundException(`ID inválido: ${id}`);
     }
 
-    const product = await this.findOne(id, reqUser);
+    const product = await this.findOne(id, reqUser, restaurantIdParam);
     const stockBefore = product.stock ?? 0;
     const stockAfter = Math.max(0, stockBefore + delta);
 
@@ -224,11 +224,11 @@ export class ProductsService {
     return updated;
   }
 
-  async getStockHistory(id: string, days = 7, reqUser?: any) {
+  async getStockHistory(id: string, days = 7, reqUser?: any, restaurantIdParam?: string | null) {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
     if (!isUuid) return [];
 
-    await this.findOne(id, reqUser);
+    await this.findOne(id, reqUser, restaurantIdParam);
     const since = new Date();
     since.setDate(since.getDate() - days);
     since.setHours(0, 0, 0, 0);
@@ -244,9 +244,9 @@ export class ProductsService {
     return movements;
   }
 
-  async getKardex(days = 7, reqUser?: any) {
+  async getKardex(days = 7, reqUser?: any, restaurantIdParam?: string | null) {
     try {
-      const restaurantId = this.getTenantRestaurantId(reqUser);
+      const restaurantId = this.getTenantRestaurantId(reqUser, restaurantIdParam);
       const since = new Date();
       since.setDate(since.getDate() - (days - 1));
       since.setHours(0, 0, 0, 0);

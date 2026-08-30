@@ -50,7 +50,7 @@ export class FloorService {
   }
 
 
-  async updateZone(id: string, data: UpdateZoneDto, reqUser?: any) {
+  async updateZone(id: string, data: UpdateZoneDto, reqUser?: any, restaurantIdParam?: string | null) {
     const zone = await this.prisma.zone.findUnique({ where: { id } });
     if (!zone) throw new NotFoundException('Zona no encontrada');
 
@@ -63,7 +63,7 @@ export class FloorService {
     });
   }
 
-  async deleteZone(id: string, reqUser?: any) {
+  async deleteZone(id: string, reqUser?: any, restaurantIdParam?: string | null) {
     const zone = await this.prisma.zone.findUnique({
       where: { id },
       include: { tables: true }
@@ -82,7 +82,7 @@ export class FloorService {
     });
   }
 
-  async createTable(data: CreateTableDto, reqUser?: any) {
+  async createTable(data: CreateTableDto, reqUser?: any, restaurantIdParam?: string | null) {
     const zone = await this.prisma.zone.findUnique({ where: { id: data.zoneId } });
     if (!zone) throw new NotFoundException('La zona especificada no existe');
 
@@ -97,7 +97,7 @@ export class FloorService {
     });
   }
 
-  async updateTable(id: string, data: UpdateTableDto, reqUser?: any) {
+  async updateTable(id: string, data: UpdateTableDto, reqUser?: any, restaurantIdParam?: string | null) {
     const table = await this.prisma.table.findUnique({ where: { id } });
     if (!table) throw new NotFoundException('Mesa no encontrada');
 
@@ -120,7 +120,7 @@ export class FloorService {
     });
   }
 
-  async deleteTable(id: string, reqUser?: any) {
+  async deleteTable(id: string, reqUser?: any, restaurantIdParam?: string | null) {
     const table = await this.prisma.table.findUnique({ where: { id } });
     if (!table) throw new NotFoundException('Mesa no encontrada');
 
