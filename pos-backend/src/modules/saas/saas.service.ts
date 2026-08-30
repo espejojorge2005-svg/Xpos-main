@@ -158,7 +158,8 @@ export class SaasService {
 
       return {
         ...restaurant,
-        adminUser: adminUser ? { id: adminUser.id, name: adminUser.name, email: adminUser.email } : null
+        adminUser: adminUser ? { id: adminUser.id, name: adminUser.name, email: adminUser.email } : null,
+        _count: { users: 1, orders: 0 }
       };
     });
   }

@@ -287,7 +287,11 @@ export default function SuperAdminPage() {
     }
 
     setRestaurants(prev => {
-      return [createdOnServer, ...prev];
+      const finalRest = {
+        ...createdOnServer,
+        _count: createdOnServer?._count || { users: 1, orders: 0 }
+      };
+      return [finalRest, ...prev];
     });
 
     toast.success(`¡Inquilino "${tenantName}" y Administrador creados exitosamente!`);
