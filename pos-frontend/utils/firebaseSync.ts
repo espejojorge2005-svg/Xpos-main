@@ -15,7 +15,7 @@ export interface FirebaseOrder {
     unitPrice: number;
     subtotal: number;
     notes?: string;
-    status: 'ACTIVE' | 'SERVED' | 'CANCELED';
+    status: 'ACTIVE' | 'SERVED' | 'CANCELED' | 'CANCELLED';
   }>;
   createdAt: string;
   updatedAt: string;
