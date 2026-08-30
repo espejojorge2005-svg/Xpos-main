@@ -41,6 +41,7 @@ enum Role {
   ADMIN
   CASHIER
   WAITER
+  COOK
 }
 
 // ==========================================
