@@ -3,12 +3,35 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ClsService } from 'nestjs-cls';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 
+const isValidUuid = (val: any): boolean =>
+  typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
 @Injectable()
 export class PaymentsService {
   constructor(
     private prisma: PrismaService,
     private cls: ClsService,
   ) {}
+
+  private async resolveRestaurantId(reqUser?: any, restaurantIdParam?: string | null): Promise<string | null> {
+    const rawId = restaurantIdParam || reqUser?.restaurantId || this.cls.get('restaurantId');
+    if (isValidUuid(rawId)) {
+      const rest = await this.prisma.restaurant.findUnique({ where: { id: rawId } });
+      if (rest) return rest.id;
+    }
+
+    if (reqUser?.userId && isValidUuid(reqUser.userId)) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: reqUser.userId },
+        select: { restaurantId: true }
+      });
+      if (user?.restaurantId && isValidUuid(user.restaurantId)) {
+        return user.restaurantId;
+      }
+    }
+
+    return null;
+  }
 
   async processPayment(data: CreatePaymentDto) {
     const order = await this.prisma.order.findUnique({
@@ -83,7 +106,104 @@ export class PaymentsService {
     return newPayment;
   }
 
-  async getDailyClosure(dateString?: string) {
+  async getCurrentShift(reqUser?: any, restaurantIdParam?: string | null) {
+    const restaurantId = await this.resolveRestaurantId(reqUser, restaurantIdParam);
+    if (!restaurantId) return null;
+
+    return this.prisma.cashShift.findFirst({
+      where: {
+        restaurantId,
+        status: 'OPEN',
+      },
+      include: {
+        expenses: {
+          orderBy: { createdAt: 'desc' }
+        }
+      },
+      orderBy: { openedAt: 'desc' }
+    });
+  }
+
+  async openShift(data: { openingAmount: number }, reqUser?: any, restaurantIdParam?: string | null) {
+    const restaurantId = await this.resolveRestaurantId(reqUser, restaurantIdParam);
+    if (!restaurantId) throw new BadRequestException('Restaurante no identificado');
+
+    // Verificar si ya existe un turno abierto para este restaurante
+    const existing = await this.prisma.cashShift.findFirst({
+      where: {
+        restaurantId,
+        status: 'OPEN',
+      },
+      include: { expenses: true }
+    });
+
+    if (existing) {
+      return this.prisma.cashShift.update({
+        where: { id: existing.id },
+        data: { openingAmount: data.openingAmount },
+        include: { expenses: true }
+      });
+    }
+
+    const userId = reqUser?.userId || reqUser?.id || null;
+
+    return this.prisma.cashShift.create({
+      data: {
+        restaurantId,
+        userId: userId && isValidUuid(userId) ? userId : null,
+        openingAmount: data.openingAmount,
+        status: 'OPEN',
+      },
+      include: { expenses: true }
+    });
+  }
+
+  async addExpense(data: { amount: number; description: string }, reqUser?: any, restaurantIdParam?: string | null) {
+    const restaurantId = await this.resolveRestaurantId(reqUser, restaurantIdParam);
+    if (!restaurantId) throw new BadRequestException('Restaurante no identificado');
+
+    let shift = await this.prisma.cashShift.findFirst({
+      where: { restaurantId, status: 'OPEN' },
+    });
+
+    if (!shift) {
+      shift = await this.prisma.cashShift.create({
+        data: {
+          restaurantId,
+          openingAmount: 0,
+          status: 'OPEN',
+        }
+      });
+    }
+
+    return this.prisma.cashExpense.create({
+      data: {
+        shiftId: shift.id,
+        amount: data.amount,
+        description: data.description || 'Gasto de caja',
+      }
+    });
+  }
+
+  async closeShift(data: { closureNote?: string }, reqUser?: any, restaurantIdParam?: string | null) {
+    const restaurantId = await this.resolveRestaurantId(reqUser, restaurantIdParam);
+    if (!restaurantId) throw new BadRequestException('Restaurante no identificado');
+
+    const openShifts = await this.prisma.cashShift.findMany({
+      where: { restaurantId, status: 'OPEN' }
+    });
+
+    if (openShifts.length > 0) {
+      await this.prisma.cashShift.updateMany({
+        where: { restaurantId, status: 'OPEN' },
+        data: { status: 'CLOSED', closedAt: new Date() }
+      });
+    }
+
+    return { message: 'Caja cerrada exitosamente', closedCount: openShifts.length };
+  }
+
+  async getDailyClosure(dateString?: string, reqUser?: any, restaurantIdParam?: string | null) {
     let startOfDay: Date;
     let endOfDay: Date;
 
@@ -105,7 +225,7 @@ export class PaymentsService {
       endOfDay.setHours(23, 59, 59, 999);
     }
 
-    const restaurantId = this.cls.get('restaurantId');
+    const restaurantId = await this.resolveRestaurantId(reqUser, restaurantIdParam);
     const paymentWhere: any = { createdAt: { gte: startOfDay, lte: endOfDay } };
     if (restaurantId) {
       paymentWhere.order = { restaurantId };
@@ -114,7 +234,8 @@ export class PaymentsService {
     if (restaurantId) {
       orderWhere.restaurantId = restaurantId;
     }
-    const shiftWhere: any = { status: 'OPEN', openedAt: { gte: startOfDay, lte: endOfDay } };
+    // El turno activo de la caja (cualquiera que esté actualmente OPEN para este restaurante)
+    const shiftWhere: any = { status: 'OPEN' };
     if (restaurantId) {
       shiftWhere.restaurantId = restaurantId;
     }
@@ -256,6 +377,7 @@ export class PaymentsService {
       breakdown,
       closedOrdersCount,
       expectedCashInDrawer,
+      expenses: activeShift?.expenses || [],
     };
   }
 

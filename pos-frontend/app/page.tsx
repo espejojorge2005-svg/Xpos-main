@@ -1,8 +1,8 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
-import { getScopedStorage, getRestaurantId } from '@/utils/storage';
+import { getScopedStorage, getRestaurantId, setScopedStorage, removeScopedStorage } from '@/utils/storage';
 
-import { subscribeToTables } from '@/utils/firebaseSync';
+import { subscribeToTables, subscribeToCashShift } from '@/utils/firebaseSync';
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -356,9 +356,37 @@ export default function Home() {
       } catch {}
     }
 
-    // NUEVO: Verificamos si existe el turno guardado en LocalStorage
-    const shiftData = getScopedStorage<any>('mock_cash_shift', null);
-    setIsShiftOpen(!!shiftData);
+    // 1. Verificar primero si hay un turno abierto en la nube / backend
+    const checkServerShift = async () => {
+      try {
+        const token = localStorage.getItem('pos_token');
+        if (!token) return;
+        const res = await fetch(getApiUrl('/payments/shift/current'), {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'x-restaurant-id': getRestaurantId() || ''
+          }
+        });
+        if (res.ok) {
+          const shift = await res.json();
+          if (shift && shift.status === 'OPEN') {
+            setIsShiftOpen(true);
+            setScopedStorage('mock_cash_shift', {
+              openingCash: Number(shift.openingAmount || 0),
+              expenses: shift.expenses || [],
+              shiftId: shift.id
+            });
+            return;
+          }
+        }
+      } catch {}
+      
+      // Fallback a localStorage local
+      const shiftData = getScopedStorage<any>('mock_cash_shift', null);
+      setIsShiftOpen(!!shiftData);
+    };
+
+    checkServerShift();
 
     // Detección automática de vista según dispositivo
     if (window.innerWidth >= 768) {
@@ -368,21 +396,59 @@ export default function Home() {
     fetchZonas();
   }, [router]);
 
-  // Auto-refresh tables every 10 seconds & Firebase real-time listener to catch new orders from other devices
+  // Auto-refresh tables every 8 seconds & Firebase real-time listeners (mesas y turno de caja)
   useEffect(() => {
     const token = localStorage.getItem('pos_token');
     if (!token || isEditMode) return;
     
-    const interval = setInterval(fetchZonas, 10000);
-    const unsubscribeFirebase = subscribeToTables((firebaseTables) => {
+    const currentRestId = getRestaurantId();
+    const interval = setInterval(fetchZonas, 8000);
+
+    // 1. Escucha en tiempo real de mesas desde Firebase
+    const unsubscribeTables = subscribeToTables(currentRestId, (firebaseTables) => {
       if (firebaseTables && firebaseTables.length > 0) {
-        // Integrate real-time table statuses
+        const tableMap = new Map(firebaseTables.map(t => [t.id, t.status]));
+        setZones(prevZones => prevZones.map(zone => ({
+          ...zone,
+          tables: zone.tables.map(table => {
+            const remoteStatus = tableMap.get(table.id);
+            if (remoteStatus && remoteStatus !== table.status) {
+              return {
+                ...table,
+                status: remoteStatus,
+                orders: remoteStatus === 'OCCUPIED' && (!table.orders || table.orders.length === 0)
+                  ? [{ id: `ord-${table.id}`, createdAt: new Date().toISOString() }]
+                  : (remoteStatus === 'FREE' ? [] : table.orders)
+              };
+            }
+            return table;
+          })
+        })));
+        fetchZonas();
       }
     });
 
+    // 2. Escucha en tiempo real de turno de caja desde Firebase
+    const unsubscribeShift = currentRestId ? subscribeToCashShift(currentRestId, (cloudShift) => {
+      if (cloudShift) {
+        setIsShiftOpen(cloudShift.isOpen);
+        if (cloudShift.isOpen) {
+          const current = getScopedStorage<any>('mock_cash_shift', {}) || {};
+          setScopedStorage('mock_cash_shift', {
+            ...current,
+            openingCash: cloudShift.openingAmount || current.openingCash || 0,
+            shiftId: cloudShift.shiftId || current.shiftId
+          });
+        } else {
+          removeScopedStorage('mock_cash_shift');
+        }
+      }
+    }) : undefined;
+
     return () => {
       clearInterval(interval);
-      if (typeof unsubscribeFirebase === 'function') unsubscribeFirebase();
+      if (typeof unsubscribeTables === 'function') unsubscribeTables();
+      if (typeof unsubscribeShift === 'function') unsubscribeShift();
     };
   }, [router, isEditMode]);
 

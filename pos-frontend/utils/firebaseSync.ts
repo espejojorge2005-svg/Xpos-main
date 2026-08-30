@@ -30,6 +30,7 @@ export interface FirebaseTable {
   status: 'FREE' | 'OCCUPIED' | 'WAITING_FOOD';
   posX: number;
   posY: number;
+  restaurantId?: string;
 }
 
 /**
@@ -60,14 +61,16 @@ export const subscribeToKitchenOrders = (restaurantId: string, onUpdate: (orders
 /**
  * Escuchar estado de mesas en tiempo real desde Firebase Firestore
  */
-export const subscribeToTables = (onUpdate: (tables: FirebaseTable[]) => void) => {
+export const subscribeToTables = (restaurantId: string | null | undefined, onUpdate: (tables: FirebaseTable[]) => void) => {
   try {
     const tablesRef = collection(db, 'tables');
     return onSnapshot(tablesRef, (snapshot) => {
-      const tablesData: FirebaseTable[] = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as FirebaseTable));
+      const tablesData: FirebaseTable[] = snapshot.docs
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        } as FirebaseTable))
+        .filter(t => !restaurantId || !t.restaurantId || t.restaurantId === restaurantId);
       onUpdate(tablesData);
     }, (error) => {
       console.warn("Firestore real-time subscription (tables) info:", error.message);
@@ -96,15 +99,61 @@ export const syncOrderToFirebase = async (order: FirebaseOrder) => {
 /**
  * Actualizar el estado de una mesa en Firebase
  */
-export const syncTableToFirebase = async (tableId: string, status: 'FREE' | 'OCCUPIED' | 'WAITING_FOOD') => {
+export const syncTableToFirebase = async (tableId: string, status: 'FREE' | 'OCCUPIED' | 'WAITING_FOOD', restaurantId?: string | null) => {
   try {
     const tableDocRef = doc(db, 'tables', tableId);
-    await updateDoc(tableDocRef, {
+    await setDoc(tableDocRef, {
+      id: tableId,
       status,
+      ...(restaurantId ? { restaurantId } : {}),
       updatedAt: new Date().toISOString()
-    });
+    }, { merge: true });
   } catch (err) {
     console.warn("Error syncing table to Firebase:", err);
+  }
+};
+
+/**
+ * Turno de caja en Firebase Firestore (Multi-inquilino en Tiempo Real)
+ */
+export interface FirebaseShift {
+  restaurantId: string;
+  isOpen: boolean;
+  openingAmount: number;
+  shiftId?: string;
+  openedAt?: string;
+  closedAt?: string;
+  updatedAt?: string;
+}
+
+export const syncShiftToFirebase = async (restaurantId: string, shift: Partial<FirebaseShift>) => {
+  try {
+    const shiftDocRef = doc(db, 'shifts', restaurantId);
+    await setDoc(shiftDocRef, {
+      ...shift,
+      restaurantId,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (err) {
+    console.warn("Error syncing shift to Firebase:", err);
+  }
+};
+
+export const subscribeToCashShift = (restaurantId: string, onUpdate: (shift: FirebaseShift | null) => void) => {
+  try {
+    const shiftDocRef = doc(db, 'shifts', restaurantId);
+    return onSnapshot(shiftDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        onUpdate(docSnap.data() as FirebaseShift);
+      } else {
+        onUpdate(null);
+      }
+    }, (error) => {
+      console.warn("Firestore real-time subscription (shift) info:", error.message);
+    });
+  } catch (err) {
+    console.warn("Firebase shift listener initialization:", err);
+    return () => {};
   }
 };
 

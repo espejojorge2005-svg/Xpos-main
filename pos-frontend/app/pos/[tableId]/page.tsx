@@ -744,6 +744,10 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
     }
     if (!confirm('¿Deseas liberar y desocupar esta mesa?')) return;
     clearLocalTableOccupancy();
+    const restId = getRestaurantId();
+    if (restId && tableId !== 'takeout') {
+      syncTableToFirebase(tableId, 'FREE', restId).catch(() => {});
+    }
     if (activeOrderId) {
       const token = localStorage.getItem('pos_token');
       fetch(getApiUrl(`/orders/${activeOrderId}`), {
@@ -1064,6 +1068,10 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
       
       if (newTotalPaid >= (existingSubtotal || paymentAmount)) {
         clearLocalTableOccupancy();
+        const restId = getRestaurantId();
+        if (restId && tableId !== 'takeout') {
+          syncTableToFirebase(tableId, 'FREE', restId).catch(() => {});
+        }
         toast.success("Cuenta cobrada en su totalidad y mesa liberada ✅");
         setShowCheckout(false);
         if (isCashierMode) {

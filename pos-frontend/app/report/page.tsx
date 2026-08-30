@@ -1,6 +1,7 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
-import { getScopedStorage, setScopedStorage, removeScopedStorage } from '@/utils/storage';
+import { getScopedStorage, setScopedStorage, removeScopedStorage, getRestaurantId } from '@/utils/storage';
+import { syncShiftToFirebase } from '@/utils/firebaseSync';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -110,9 +111,13 @@ export default function CashRegisterPage() {
     try {
       setLoading(true);
       let data: any = {};
+      const currentRestId = getRestaurantId();
       try {
         const response = await fetch(getApiUrl('/payments/closure'), {
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'x-restaurant-id': currentRestId || ''
+          }
         });
         if (response && response.ok) {
           data = await response.json();
@@ -131,7 +136,23 @@ export default function CashRegisterPage() {
       const parsedShiftData = getScopedStorage<any>('mock_cash_shift', null);
       let localOpeningCash = 0, localExpensesArray: Expense[] = [], isLocalShiftOpen = false;
 
-      if (parsedShiftData) {
+      // Si el servidor confirma un turno activo en la nube
+      if (data.shiftId) {
+        isLocalShiftOpen = true;
+        localOpeningCash = Number(data.openingCash || 0);
+        localExpensesArray = Array.isArray(data.expenses) ? data.expenses.map((e: any) => ({
+          id: e.id,
+          amount: Number(e.amount),
+          description: e.description
+        })) : [];
+
+        // Mantener sincronizado el caché local
+        setScopedStorage('mock_cash_shift', {
+          shiftId: data.shiftId,
+          openingCash: localOpeningCash,
+          expenses: localExpensesArray,
+        });
+      } else if (parsedShiftData) {
         localOpeningCash = parsedShiftData.openingCash || 0;
         localExpensesArray = parsedShiftData.expenses || [];
         isLocalShiftOpen = true;
@@ -239,10 +260,56 @@ export default function CashRegisterPage() {
     e.preventDefault();
     if (!openingAmount || isNaN(Number(openingAmount))) return toast.error('Monto inválido');
     const amount = Number(openingAmount);
+    const token = localStorage.getItem('pos_token');
+    const restId = getRestaurantId();
+
+    let serverShift: any = null;
+    try {
+      if (token) {
+        const res = await fetch(getApiUrl('/payments/shift/open'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            'x-restaurant-id': restId || ''
+          },
+          body: JSON.stringify({ openingAmount: amount })
+        });
+        if (res.ok) {
+          serverShift = await res.json().catch(() => null);
+        }
+      }
+    } catch (netErr) {
+      console.warn('Shift open network fallback:', netErr);
+    }
+
     const currentData = getScopedStorage<any>('mock_cash_shift', { expenses: [] }) || { expenses: [] };
-    setScopedStorage('mock_cash_shift', { ...currentData, openingCash: amount });
-    setReport(prev => ({ ...prev, openingCash: amount, expectedCashInDrawer: amount + prev.cash - prev.totalExpenses }));
-    setIsShiftOpen(true); setShowOpenModal(false); toast.success('Caja actualizada');
+    const newShiftData = {
+      ...currentData,
+      shiftId: serverShift?.id || currentData.shiftId || `shift-${Date.now()}`,
+      openingCash: amount
+    };
+    setScopedStorage('mock_cash_shift', newShiftData);
+    setReport(prev => ({
+      ...prev,
+      shiftId: newShiftData.shiftId,
+      openingCash: amount,
+      expectedCashInDrawer: amount + prev.cash - prev.totalExpenses
+    }));
+    setIsShiftOpen(true);
+    setShowOpenModal(false);
+
+    // Sincronizar con Firebase en tiempo real para todos los dispositivos
+    if (restId) {
+      syncShiftToFirebase(restId, {
+        isOpen: true,
+        openingAmount: amount,
+        shiftId: newShiftData.shiftId,
+      }).catch(() => {});
+    }
+
+    window.dispatchEvent(new Event('storage'));
+    toast.success(isEditingOpening ? 'Fondo inicial actualizado ✅' : '¡Caja abierta y turno iniciado exitosamente! ✅');
   };
 
   const openEditOpeningCash = () => { setOpeningAmount(report.openingCash.toString()); setIsEditingOpening(true); setShowOpenModal(true); };
@@ -250,9 +317,40 @@ export default function CashRegisterPage() {
   const handleSaveExpense = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = Number(expenseForm.amount);
+    const token = localStorage.getItem('pos_token');
+    const restId = getRestaurantId();
+
+    let serverExpense: any = null;
+    try {
+      if (token) {
+        const res = await fetch(getApiUrl('/payments/shift/expense'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            'x-restaurant-id': restId || ''
+          },
+          body: JSON.stringify({
+            amount,
+            description: expenseForm.description
+          })
+        });
+        if (res.ok) {
+          serverExpense = await res.json().catch(() => null);
+        }
+      }
+    } catch {}
+
     let updated = [...expenses];
-    if (expenseForm.id) { updated = updated.map(exp => exp.id === expenseForm.id ? { ...exp, amount, description: expenseForm.description } : exp); }
-    else { updated.push({ id: Date.now().toString(), amount, description: expenseForm.description }); }
+    if (expenseForm.id) {
+      updated = updated.map(exp => exp.id === expenseForm.id ? { ...exp, amount, description: expenseForm.description } : exp);
+    } else {
+      updated.push({
+        id: serverExpense?.id || Date.now().toString(),
+        amount,
+        description: expenseForm.description
+      });
+    }
 
     const newTotal = updated.reduce((s, exp) => s + exp.amount, 0);
     const local = getScopedStorage<any>('mock_cash_shift', {}) || {};
@@ -260,7 +358,10 @@ export default function CashRegisterPage() {
     setScopedStorage('mock_cash_shift', local);
     setExpenses(updated);
     setReport(prev => ({ ...prev, totalExpenses: newTotal, expectedCashInDrawer: prev.openingCash + prev.cash - newTotal }));
-    setShowExpenseModal(false); setExpenseForm({ id: '', amount: '', description: '' }); toast.success('Gasto guardado');
+    setShowExpenseModal(false);
+    setExpenseForm({ id: '', amount: '', description: '' });
+    window.dispatchEvent(new Event('storage'));
+    toast.success('Gasto guardado ✅');
   };
 
   const handleDeleteExpense = (id: string) => {
@@ -284,6 +385,30 @@ export default function CashRegisterPage() {
 
   const executeCloseRegister = async () => {
     handlePrint('detailed', closureNote, report, expenses);
+    const token = localStorage.getItem('pos_token');
+    const restId = getRestaurantId();
+
+    try {
+      if (token) {
+        await fetch(getApiUrl('/payments/shift/close'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            'x-restaurant-id': restId || ''
+          },
+          body: JSON.stringify({ closureNote })
+        }).catch(() => null);
+      }
+    } catch {}
+
+    // Sincronizar cierre a Firebase para avisar a todos los dispositivos en tiempo real
+    if (restId) {
+      syncShiftToFirebase(restId, {
+        isOpen: false,
+        closedAt: new Date().toISOString()
+      }).catch(() => {});
+    }
 
     const newHistoryRecord: PastClosure = {
       id: Date.now().toString(),
@@ -301,7 +426,8 @@ export default function CashRegisterPage() {
     setScopedStorage('pos_closed_items', [...currentClosedItems, ...itemsToArchive]);
 
     removeScopedStorage('mock_cash_shift');
-    toast.success('Caja cerrada con éxito. Turno reseteado a cero.');
+    window.dispatchEvent(new Event('storage'));
+    toast.success('Caja cerrada con éxito. Turno finalizado.');
 
     setIsShiftOpen(false);
     setOpeningAmount('');
