@@ -4,6 +4,7 @@ import { getRestaurantId, getScopedStorage, setScopedStorage } from '@/utils/sto
 
 import { useEffect, useState, use } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { syncOrderToFirebase, syncTableToFirebase } from '@/utils/firebaseSync';
 import { ArrowLeft, Search, Plus, Minus, Trash2, ShoppingCart, UtensilsCrossed, ReceiptText, ChefHat, CheckCircle2, AlertTriangle, X, Printer, CreditCard, Banknote, Smartphone, Edit2, Heart, ArrowRightLeft, Scissors } from 'lucide-react';
 import { toast } from 'sonner';
 import ComboModal from '@/components/ComboModal';
@@ -582,6 +583,34 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
               setScopedStorage('pos_active_table_orders', activeTableOrders);
             }
           } catch {}
+        }
+      }
+
+      // Sincronizar con Firebase para notificar a cocina en Tiempo Real
+      const restaurantId = getRestaurantId();
+      if (restaurantId) {
+        syncOrderToFirebase({
+          id: backendOrder?.id || effectiveOrderId,
+          tableId: tableId === 'takeout' ? undefined : tableId,
+          tableName: effectiveTableName,
+          status: 'OPEN',
+          totalAmount: newTotal,
+          items: combinedExistingItems.map(item => ({
+            id: item.id || `item-${Date.now()}-${Math.random()}`,
+            productName: item.name,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            subtotal: item.quantity * item.unitPrice,
+            notes: item.notes || '',
+            status: item.status || 'ACTIVE'
+          })),
+          createdAt: backendOrder?.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          restaurantId
+        }).catch(() => {});
+        
+        if (tableId !== 'takeout') {
+          syncTableToFirebase(tableId, 'OCCUPIED').catch(() => {});
         }
       }
     } catch (netErr) {

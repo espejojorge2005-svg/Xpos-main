@@ -327,11 +327,23 @@ export default function CocinaPage() {
     window.addEventListener('storage', handleStorageChange);
 
     // Real-time Firebase Firestore synchronization listener
-    const unsubscribeFirebase = subscribeToKitchenOrders((firebaseOrders) => {
+    const currentRestId = getRestaurantId();
+    const unsubscribeFirebase = currentRestId ? subscribeToKitchenOrders(currentRestId, (firebaseOrders) => {
       if (firebaseOrders && firebaseOrders.length > 0) {
-        // Integrate Firestore updates seamlessly
+        setOrders(prev => {
+          // Merge Firebase orders with existing orders based on ID
+          const map = new Map(prev.map(o => [o.id, o]));
+          firebaseOrders.forEach(fo => {
+            // Convert FirebaseOrder to KitchenOrder format if needed, or just merge
+            // Assuming FirebaseOrder matches KitchenOrder mostly, but we'll re-fetch to get full details safely
+            // or just trigger fetchKitchenOrders() instantly
+          });
+          return prev;
+        });
+        // Trigger a fresh fetch from API to get all relations instantly
+        fetchKitchenOrders();
       }
-    });
+    }) : undefined;
 
     return () => {
       clearInterval(interval);

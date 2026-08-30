@@ -19,6 +19,7 @@ export interface FirebaseOrder {
   }>;
   createdAt: string;
   updatedAt: string;
+  restaurantId?: string;
 }
 
 export interface FirebaseTable {
@@ -34,10 +35,15 @@ export interface FirebaseTable {
 /**
  * Escuchar órdenes de cocina en tiempo real desde Firebase Firestore
  */
-export const subscribeToKitchenOrders = (onUpdate: (orders: FirebaseOrder[]) => void) => {
+export const subscribeToKitchenOrders = (restaurantId: string, onUpdate: (orders: FirebaseOrder[]) => void) => {
   try {
     const ordersRef = collection(db, 'orders');
-    const q = query(ordersRef, where('status', '==', 'OPEN'), orderBy('createdAt', 'desc'));
+    const q = query(
+      ordersRef,
+      where('restaurantId', '==', restaurantId),
+      where('status', '==', 'OPEN'),
+      orderBy('createdAt', 'desc')
+    );
     return onSnapshot(q, (snapshot) => {
       const ordersData: FirebaseOrder[] = snapshot.docs.map(doc => ({
         id: doc.id,
