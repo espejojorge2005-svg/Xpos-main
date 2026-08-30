@@ -40,6 +40,7 @@ interface ExistingItem extends CartItem {
   id: string;
   parentItemId?: string | null;
   isPaid?: boolean;
+  status?: 'ACTIVE' | 'SERVED' | 'CANCELED' | 'CANCELLED';
 }
 
 // NUEVO: Interfaz para los pagos registrados
