@@ -293,14 +293,20 @@ export default function Home() {
       loadedZones = loadedZones.map(zone => ({
         ...zone,
         tables: zone.tables.map(table => {
-          const num = String(table.number);
+          const num = String(table.number || '');
+          const cleanNum = num.replace(/\D/g, '');
+          const tableNameLower = (table.name || '').toLowerCase().trim();
+
           const orderInfo = activeTableOrders[table.id] || 
+            (cleanNum ? activeTableOrders[`t-${cleanNum}`] || activeTableOrders[cleanNum] : null) ||
             Object.values(activeTableOrders).find((o: any) => 
               o && o.status === 'OCCUPIED' && (
                 o.tableId === table.id ||
-                (o.tableName && table.name && o.tableName.toLowerCase().trim() === table.name.toLowerCase().trim()) ||
-                (o.tableName && o.tableName.toLowerCase().includes(`mesa ${num}`)) ||
-                (o.tableName && o.tableName.toLowerCase().includes(`${num}`))
+                (cleanNum && o.tableId === `t-${cleanNum}`) ||
+                (cleanNum && o.tableId === cleanNum) ||
+                (o.tableName && tableNameLower && o.tableName.toLowerCase().trim() === tableNameLower) ||
+                (cleanNum && o.tableName && o.tableName.toLowerCase().includes(`mesa ${cleanNum}`)) ||
+                (cleanNum && o.tableName && o.tableName.replace(/\D/g, '') === cleanNum)
               )
             );
 
@@ -422,15 +428,20 @@ export default function Home() {
         
         openOrders.forEach(o => {
           const tId = o.tableId || (o.tableName ? o.tableName.toLowerCase().replace(/\s+/g, '') : null);
-          if (tId) {
-            activeMap[tId] = {
-              orderId: o.id,
-              tableName: o.tableName || tId,
-              createdAt: o.createdAt || new Date().toISOString(),
-              total: o.totalAmount || 0,
-              status: 'OCCUPIED',
-              items: o.items || []
-            };
+          const tNum = o.tableName ? o.tableName.replace(/\D/g, '') : '';
+          const entry = {
+            orderId: o.id,
+            tableId: o.tableId,
+            tableName: o.tableName || tId,
+            createdAt: o.createdAt || new Date().toISOString(),
+            total: o.totalAmount || 0,
+            status: 'OCCUPIED',
+            items: o.items || []
+          };
+          if (tId) activeMap[tId] = entry;
+          if (tNum) {
+            activeMap[`t-${tNum}`] = entry;
+            activeMap[tNum] = entry;
           }
         });
 
@@ -441,12 +452,19 @@ export default function Home() {
         setZones(prevZones => prevZones.map(zone => ({
           ...zone,
           tables: zone.tables.map(table => {
-            const num = String(table.number);
-            const matchedOrder = openOrders.find(o => 
-              o.tableId === table.id || 
-              (table.name && o.tableName && o.tableName.toLowerCase().trim() === table.name.toLowerCase().trim()) ||
-              (o.tableName && o.tableName.toLowerCase().includes(`mesa ${num}`))
-            );
+            const num = String(table.number || '');
+            const cleanTableNum = num.replace(/\D/g, '');
+            const tableNameLower = (table.name || '').toLowerCase().trim();
+
+            const matchedOrder = openOrders.find(o => {
+              if (o.tableId === table.id) return true;
+              if (cleanTableNum && o.tableId === `t-${cleanTableNum}`) return true;
+              if (cleanTableNum && o.tableId === cleanTableNum) return true;
+              if (tableNameLower && o.tableName && o.tableName.toLowerCase().trim() === tableNameLower) return true;
+              if (cleanTableNum && o.tableName && o.tableName.toLowerCase().includes(`mesa ${cleanTableNum}`)) return true;
+              if (cleanTableNum && o.tableName && o.tableName.replace(/\D/g, '') === cleanTableNum) return true;
+              return false;
+            });
 
             if (matchedOrder) {
               return {
@@ -460,7 +478,9 @@ export default function Home() {
               };
             }
 
-            const localOrder = merged[table.id];
+            const localOrder = merged[table.id] || 
+              (cleanTableNum ? merged[`t-${cleanTableNum}`] || merged[cleanTableNum] : null);
+
             if (localOrder && localOrder.status === 'OCCUPIED') {
               return {
                 ...table,

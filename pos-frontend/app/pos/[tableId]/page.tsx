@@ -472,13 +472,17 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
     setSubmitting(true);
     const token = localStorage.getItem('pos_token') || '';
     const restaurantId = getRestaurantId() || '';
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-      'x-restaurant-id': restaurantId
-    };
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tableId);
+    const paramName = searchParams.get('name') || searchParams.get('tableName') || '';
+    const paramNumber = searchParams.get('number') || '';
+    const cleanNum = (!isUuid && tableId.startsWith('t-') ? tableId.replace('t-', '') : '') || 
+                     (!isUuid && !isNaN(parseInt(tableId)) ? String(parseInt(tableId)) : '') || 
+                     paramNumber;
 
-    const effectiveTableName = tableName || `Mesa ${tableId.replace(/[^0-9]/g, '') || tableId.slice(0, 4)}`;
+    const effectiveTableName = tableName || 
+      paramName || 
+      (cleanNum ? `Mesa ${cleanNum}` : (tableId === 'takeout' ? 'Mostrador' : `Mesa ${tableId.slice(0, 4)}`));
+
     const effectiveOrderId = activeOrderId || `ord-${Date.now()}`;
 
     // 1. SINCRONIZACIÓN LOCAL GARANTIZADA PARA COCINA (KDS)
@@ -613,8 +617,9 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
     try {
       const activeTableOrders = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
-      activeTableOrders[tableId] = {
+      const orderEntry = {
         orderId: effectiveOrderId,
+        tableId: tableId,
         tableName: effectiveTableName,
         createdAt: activeTableOrders[tableId]?.createdAt || new Date().toISOString(),
         total: newTotal,
@@ -622,6 +627,12 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         items: combinedExistingItems,
         payments: payments || []
       };
+
+      activeTableOrders[tableId] = orderEntry;
+      if (cleanNum) {
+        activeTableOrders[`t-${cleanNum}`] = orderEntry;
+        activeTableOrders[cleanNum] = orderEntry;
+      }
       setScopedStorage('pos_active_table_orders', activeTableOrders);
     } catch (e) {
       console.warn('Error guardando en pos_active_table_orders:', e);
@@ -713,6 +724,10 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
       
       if (tableId !== 'takeout') {
         syncTableToFirebase(tableId, 'OCCUPIED', restaurantId).catch(() => {});
+        if (cleanNum) {
+          syncTableToFirebase(`t-${cleanNum}`, 'OCCUPIED', restaurantId).catch(() => {});
+          syncTableToFirebase(cleanNum, 'OCCUPIED', restaurantId).catch(() => {});
+        }
         try {
           const currentActive = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
           syncActiveTableOrdersToFirebase(restaurantId, currentActive).catch(() => {});
