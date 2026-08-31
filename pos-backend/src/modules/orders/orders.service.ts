@@ -521,13 +521,16 @@ export class OrdersService {
         );
 
         if (intervened && currentTicketItems.length > 0) {
-           tickets.push({
-             ...order,
-             id: ticketIndex === 0 ? order.id : `${order.id}-adic-${ticketIndex}`,
-             table: ticketIndex === 0 ? resolvedTable : { ...resolvedTable, name: `${resolvedTable.name} - ADICIONAL` },
-             createdAt: currentTicketCreatedAt,
-             items: currentTicketItems
-           });
+           const hasActive = currentTicketItems.some(i => i.status === 'ACTIVE');
+           if (hasActive || order.status === 'CANCELLED') {
+             tickets.push({
+               ...order,
+               id: ticketIndex === 0 ? order.id : `${order.id}-adic-${ticketIndex}`,
+               table: ticketIndex === 0 ? resolvedTable : { ...resolvedTable, name: `${resolvedTable.name} - ADICIONAL` },
+               createdAt: currentTicketCreatedAt,
+               items: currentTicketItems
+             });
+           }
            
            ticketIndex++;
            currentTicketItems = [item];
@@ -538,13 +541,16 @@ export class OrdersService {
       }
 
       if (currentTicketItems.length > 0) {
-         tickets.push({
-             ...order,
-             id: ticketIndex === 0 ? order.id : `${order.id}-adic-${ticketIndex}`,
-             table: ticketIndex === 0 ? resolvedTable : { ...resolvedTable, name: `${resolvedTable.name} - ADICIONAL` },
-             createdAt: currentTicketCreatedAt,
-             items: currentTicketItems
-         });
+         const hasActive = currentTicketItems.some(i => i.status === 'ACTIVE');
+         if (hasActive || order.status === 'CANCELLED') {
+           tickets.push({
+               ...order,
+               id: ticketIndex === 0 ? order.id : `${order.id}-adic-${ticketIndex}`,
+               table: ticketIndex === 0 ? resolvedTable : { ...resolvedTable, name: `${resolvedTable.name} - ADICIONAL` },
+               createdAt: currentTicketCreatedAt,
+               items: currentTicketItems
+           });
+         }
       }
     }
 
