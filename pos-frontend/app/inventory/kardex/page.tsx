@@ -170,25 +170,23 @@ export default function KardexPage() {
   useEffect(() => {
     loadKardexData();
 
-    const currentRestId = getRestaurantId();
+    const currentRestId = getRestaurantId() || 'main';
     let unsubMovs: (() => void) | undefined;
     let unsubProds: (() => void) | undefined;
 
-    if (currentRestId) {
-      unsubMovs = subscribeToStockMovements(currentRestId, (cloudMovements) => {
-        if (Array.isArray(cloudMovements)) {
-          setScopedStorage('pos_stock_movements', cloudMovements);
-          setData(computeLocalKardex(7));
-        }
-      });
+    unsubMovs = subscribeToStockMovements(currentRestId, (cloudMovements) => {
+      if (Array.isArray(cloudMovements)) {
+        setScopedStorage('pos_stock_movements', cloudMovements);
+        setData(computeLocalKardex(7));
+      }
+    });
 
-      unsubProds = subscribeToProducts(currentRestId, (cloudProducts) => {
-        if (Array.isArray(cloudProducts) && cloudProducts.length > 0) {
-          setScopedStorage('pos_registered_products', cloudProducts);
-          setData(computeLocalKardex(7));
-        }
-      });
-    }
+    unsubProds = subscribeToProducts(currentRestId, (cloudProducts) => {
+      if (Array.isArray(cloudProducts) && cloudProducts.length > 0) {
+        setScopedStorage('pos_registered_products', cloudProducts);
+        setData(computeLocalKardex(7));
+      }
+    });
 
     return () => {
       if (typeof unsubMovs === 'function') unsubMovs();

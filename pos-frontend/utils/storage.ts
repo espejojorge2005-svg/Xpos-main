@@ -28,7 +28,9 @@ export const getRestaurantId = (): string | null => {
       if (u.restaurantId) return u.restaurantId;
     }
   } catch {}
-  return null;
+
+  // 4. Default tenant fallback para instalaciones locales y sincronización resiliente multidispositivo
+  return 'main';
 };
 
 

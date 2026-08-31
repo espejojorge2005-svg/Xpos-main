@@ -95,11 +95,7 @@ export default function InventoryPage() {
 
   // Carga y sincronización EN TIEMPO REAL (ultra rápida)
   useEffect(() => {
-    const currentRestId = getRestaurantId();
-    if (!currentRestId) {
-      setLoading(false);
-      return;
-    }
+    const currentRestId = getRestaurantId() || 'main';
 
     // 1. Mostrar de inmediato la caché local (0ms)
     const localProds = getScopedStorage<Product[]>('pos_registered_products', []);
@@ -290,19 +286,18 @@ export default function InventoryPage() {
       setScopedStorage('pos_registered_products', existingProducts);
       setProducts(existingProducts);
 
-      if (currentRestId) {
-        syncProductToFirebase({
-          id: newProductObj.id,
-          name: newProductObj.name,
-          category: newProductObj.category,
-          categoryId: newProductObj.categoryId,
-          price: newProductObj.price,
-          stock: newProductObj.stock,
-          minStock: newProductObj.minStock,
-          stationIds: newProductObj.stationIds,
-          restaurantId: currentRestId
-        }).catch(() => {});
-      }
+      const targetRestId = currentRestId || 'main';
+      syncProductToFirebase({
+        id: newProductObj.id,
+        name: newProductObj.name,
+        category: newProductObj.category,
+        categoryId: newProductObj.categoryId,
+        price: newProductObj.price,
+        stock: newProductObj.stock,
+        minStock: newProductObj.minStock,
+        stationIds: newProductObj.stationIds,
+        restaurantId: targetRestId
+      }).catch(() => {});
 
       // Registrar movimiento de stock inicial si es producto nuevo con stock
       if (!isEditing && newProductObj.stock > 0) {
@@ -423,15 +418,13 @@ export default function InventoryPage() {
       stockMovements.unshift(movement);
       setScopedStorage('pos_stock_movements', stockMovements);
 
-      const currentRestId = getRestaurantId();
-      if (currentRestId) {
-        syncStockMovementToFirebase(currentRestId, movement).catch(() => {});
-        syncProductToFirebase({
-          ...adjustingProduct,
-          stock: newStock,
-          restaurantId: currentRestId
-        }).catch(() => {});
-      }
+      const currentRestId = getRestaurantId() || 'main';
+      syncStockMovementToFirebase(currentRestId, movement).catch(() => {});
+      syncProductToFirebase({
+        ...adjustingProduct,
+        stock: newStock,
+        restaurantId: currentRestId
+      }).catch(() => {});
 
       window.dispatchEvent(new Event('storage'));
     } catch (e) {

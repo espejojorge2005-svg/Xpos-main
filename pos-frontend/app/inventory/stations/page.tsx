@@ -51,11 +51,7 @@ export default function KitchenStationsPage() {
 
   // Carga y sincronización EN TIEMPO REAL (0ms de retraso)
   useEffect(() => {
-    const currentRestId = getRestaurantId();
-    if (!currentRestId) {
-      setLoading(false);
-      return;
-    }
+    const currentRestId = getRestaurantId() || 'main';
 
     // 1. Mostrar caché local de inmediato
     const cached = getScopedStorage<KitchenStation[]>('pos_registered_stations', []);
@@ -187,10 +183,9 @@ export default function KitchenStationsPage() {
       }
     } catch {}
 
-    if (currentRestId) {
-      const finalId = isEditing ? formData.id : updatedStations[updatedStations.length - 1]?.id;
-      syncStationToFirebase({ id: finalId, name: formData.name, colorHex: formData.colorHex, printerName: formData.printerName || null, restaurantId: currentRestId }).catch(() => {});
-    }
+    const targetRestId = currentRestId || 'main';
+    const finalId = isEditing ? formData.id : updatedStations[updatedStations.length - 1]?.id;
+    syncStationToFirebase({ id: finalId, name: formData.name, colorHex: formData.colorHex, printerName: formData.printerName || null, restaurantId: targetRestId }).catch(() => {});
 
     toast.success(isEditing ? 'Estación actualizada ✅' : 'Estación creada con éxito ✅');
     closeModal();
@@ -199,7 +194,7 @@ export default function KitchenStationsPage() {
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('¿Estás seguro de eliminar esta Área de Preparación?')) return;
-    const currentRestId = getRestaurantId();
+    const currentRestId = getRestaurantId() || 'main';
     
     const updated = stations.filter(s => s.id !== id);
     setStations(updated);

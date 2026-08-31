@@ -1,7 +1,7 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
 import { getRestaurantId, getScopedStorage, setScopedStorage } from '@/utils/storage';
-import { syncCategoryToFirebase, deleteCategoryFromFirebase, subscribeToCategories } from '@/utils/firebaseSync';
+import { syncCategoryToFirebase, deleteCategoryFromFirebase, subscribeToCategories, subscribeToProducts } from '@/utils/firebaseSync';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -19,9 +19,14 @@ interface Category {
 export default function CategoriesPage() {
   const router = useRouter();
   useGuardedRoute('categorias');
-  // Remove local cache initialization to avoid showing stale data across devices
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Cargar estado inicial desde almacenamiento local de forma inmediata
+  const [categories, setCategories] = useState<Category[]>(() => {
+    return getScopedStorage<Category[]>('pos_registered_categories', []);
+  });
+  const [products, setProducts] = useState<any[]>(() => {
+    return getScopedStorage<any[]>('pos_registered_products', []);
+  });
+  const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
   // Modal de Crear / Editar
@@ -48,16 +53,12 @@ export default function CategoriesPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isModalOpen, isDeleteModalOpen, isSaving, isDeleting]);
 
-  // Carga y suscripción en tiempo real (ultra rápida)
+  // Carga y suscripción en tiempo real (ultra rápida para móviles y PC)
   useEffect(() => {
-    const currentRestId = getRestaurantId();
-    if (!currentRestId) {
-      setLoading(false);
-      return;
-    }
+    const currentRestId = getRestaurantId() || 'main';
 
-    // 1. Suscripción EN TIEMPO REAL a Firebase Firestore
-    const unsubscribe = subscribeToCategories(currentRestId, (firestoreCats) => {
+    // 1. Suscripción EN TIEMPO REAL a Categorías en Firebase Firestore
+    const unsubCategories = subscribeToCategories(currentRestId, (firestoreCats) => {
       if (Array.isArray(firestoreCats)) {
         const mapped: Category[] = firestoreCats
           .filter((fc: any) => !currentRestId || !fc.restaurantId || fc.restaurantId === currentRestId)
@@ -73,10 +74,20 @@ export default function CategoriesPage() {
       setLoading(false);
     });
 
-    // 3. Consulta al backend
+    // 2. Suscripción EN TIEMPO REAL a Productos en Firebase Firestore (para cálculo reactivo)
+    const unsubProducts = subscribeToProducts(currentRestId, (firestoreProds) => {
+      if (Array.isArray(firestoreProds)) {
+        const mappedProds = firestoreProds
+          .filter((fp: any) => !currentRestId || !fp.restaurantId || fp.restaurantId === currentRestId);
+        setProducts(mappedProds);
+        setScopedStorage('pos_registered_products', mappedProds);
+      }
+    });
+
+    // 3. Consulta al backend (si está disponible)
     const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15000);
+    const timer = setTimeout(() => controller.abort(), 10000);
 
     fetch(getApiUrl('/inventory/categories'), {
       headers: { 
@@ -106,7 +117,8 @@ export default function CategoriesPage() {
     return () => {
       clearTimeout(timer);
       controller.abort();
-      if (typeof unsubscribe === 'function') unsubscribe();
+      if (typeof unsubCategories === 'function') unsubCategories();
+      if (typeof unsubProducts === 'function') unsubProducts();
     };
   }, [router]);
 
@@ -176,10 +188,10 @@ export default function CategoriesPage() {
         : [...categories, newCategory];
       
       setCategories(updatedCats);
+      setScopedStorage('pos_registered_categories', updatedCats);
 
-      if (currentRestId) {
-        syncCategoryToFirebase({ id: realId, name: trimmedName, restaurantId: currentRestId }).catch(() => {});
-      }
+      const targetRestId = currentRestId || 'main';
+      syncCategoryToFirebase({ id: realId, name: trimmedName, restaurantId: targetRestId }).catch(() => {});
 
       toast.success(isEditing ? 'Categoría actualizada con éxito ✅' : 'Categoría creada con éxito ✅');
       closeModal();
@@ -319,7 +331,9 @@ export default function CategoriesPage() {
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
               {filteredCategories.map((category) => {
-                const prodCount = category.products?.length ?? 0;
+                const prodCount = (products || []).filter(
+                  p => p.categoryId === category.id || (p.category && p.category.toLowerCase() === category.name.toLowerCase())
+                ).length;
                 return (
                   <tr key={category.id} className="hover:bg-slate-50/80 transition-colors group">
                     <td className="p-5 font-bold text-slate-800">

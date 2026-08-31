@@ -337,8 +337,8 @@ export default function CocinaPage() {
     window.addEventListener('storage', handleStorageChange);
 
     // Real-time Firebase Firestore synchronization listener
-    const currentRestId = getRestaurantId();
-    const unsubscribeFirebase = currentRestId ? subscribeToKitchenOrders(currentRestId, (firebaseOrders) => {
+    const currentRestId = getRestaurantId() || 'main';
+    const unsubscribeFirebase = subscribeToKitchenOrders(currentRestId, (firebaseOrders) => {
       if (firebaseOrders && firebaseOrders.length > 0) {
         setOrders(prev => {
           const map = new Map(prev.map(o => [o.id, o]));
@@ -370,7 +370,7 @@ export default function CocinaPage() {
         // Sincronizar en segundo plano con el backend para relaciones completas
         fetchKitchenOrders();
       }
-    }) : undefined;
+    });
 
     return () => {
       clearInterval(interval);

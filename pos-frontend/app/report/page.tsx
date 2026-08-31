@@ -252,34 +252,32 @@ export default function CashRegisterPage() {
     fetchDailyReport(); 
     fetchPendingTables();
 
-    const restId = getRestaurantId();
+    const restId = getRestaurantId() || 'main';
     let unsubShift: (() => void) | undefined;
     let unsubClosures: (() => void) | undefined;
 
-    if (restId) {
-      unsubShift = subscribeToCashShift(restId, (cloudShift) => {
-        if (cloudShift) {
-          setIsShiftOpen(cloudShift.isOpen);
-          const currentMock = getScopedStorage<any>('mock_cash_shift', {}) || {};
-          const mergedMock = {
-            ...currentMock,
-            openingCash: cloudShift.openingAmount || currentMock.openingCash || 0,
-            shiftId: cloudShift.shiftId || currentMock.shiftId,
-            expenses: cloudShift.expenses || currentMock.expenses || [],
-            payments: cloudShift.payments || currentMock.payments || []
-          };
-          setScopedStorage('mock_cash_shift', mergedMock);
-          fetchDailyReport();
-        }
-      });
+    unsubShift = subscribeToCashShift(restId, (cloudShift) => {
+      if (cloudShift) {
+        setIsShiftOpen(cloudShift.isOpen);
+        const currentMock = getScopedStorage<any>('mock_cash_shift', {}) || {};
+        const mergedMock = {
+          ...currentMock,
+          openingCash: cloudShift.openingAmount || currentMock.openingCash || 0,
+          shiftId: cloudShift.shiftId || currentMock.shiftId,
+          expenses: cloudShift.expenses || currentMock.expenses || [],
+          payments: cloudShift.payments || currentMock.payments || []
+        };
+        setScopedStorage('mock_cash_shift', mergedMock);
+        fetchDailyReport();
+      }
+    });
 
-      unsubClosures = subscribeToPastClosures(restId, (cloudClosures) => {
-        if (Array.isArray(cloudClosures)) {
-          setPastClosures(cloudClosures);
-          setScopedStorage('pos_shift_history', cloudClosures);
-        }
-      });
-    }
+    unsubClosures = subscribeToPastClosures(restId, (cloudClosures) => {
+      if (Array.isArray(cloudClosures)) {
+        setPastClosures(cloudClosures);
+        setScopedStorage('pos_shift_history', cloudClosures);
+      }
+    });
 
     return () => {
       if (typeof unsubShift === 'function') unsubShift();

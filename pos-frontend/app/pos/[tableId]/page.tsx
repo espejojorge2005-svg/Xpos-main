@@ -274,26 +274,24 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
     fetchData();
 
-    const currentRestId = getRestaurantId();
+    const currentRestId = getRestaurantId() || 'main';
     let unsubProds: (() => void) | undefined;
     let unsubCats: (() => void) | undefined;
 
-    if (currentRestId) {
-      unsubProds = subscribeToProducts(currentRestId, (cloudProds) => {
-        if (Array.isArray(cloudProds) && cloudProds.length > 0) {
-          const activeProds = cloudProds.filter((p: any) => p.isActive !== false);
-          setProducts(activeProds);
-          setScopedStorage('pos_registered_products', cloudProds);
-        }
-      });
+    unsubProds = subscribeToProducts(currentRestId, (cloudProds) => {
+      if (Array.isArray(cloudProds) && cloudProds.length > 0) {
+        const activeProds = cloudProds.filter((p: any) => p.isActive !== false);
+        setProducts(activeProds);
+        setScopedStorage('pos_registered_products', cloudProds);
+      }
+    });
 
-      unsubCats = subscribeToCategories(currentRestId, (cloudCats) => {
-        if (Array.isArray(cloudCats) && cloudCats.length > 0) {
-          setCategories(cloudCats);
-          setScopedStorage('pos_registered_categories', cloudCats);
-        }
-      });
-    }
+    unsubCats = subscribeToCategories(currentRestId, (cloudCats) => {
+      if (Array.isArray(cloudCats) && cloudCats.length > 0) {
+        setCategories(cloudCats);
+        setScopedStorage('pos_registered_categories', cloudCats);
+      }
+    });
 
     return () => {
       if (typeof unsubProds === 'function') unsubProds();

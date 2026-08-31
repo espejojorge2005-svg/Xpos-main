@@ -1,10 +1,10 @@
 import { getRestaurantId } from './storage';
 
 export const getApiUrl = (path: string): string => {
-  const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
-  if (!base) {
-    console.warn('NEXT_PUBLIC_API_URL not defined');
-    return path; // fallback to relative path for dev
+  let base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
+  if (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    // Si accedemos desde un dispositivo móvil o tablet en la misma red Wi-Fi, dirigir al backend en la misma IP host
+    base = base.replace('localhost', window.location.hostname).replace('127.0.0.1', window.location.hostname);
   }
   const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
   return `${base}/${normalizedPath}`;

@@ -401,7 +401,7 @@ export default function Home() {
     const token = localStorage.getItem('pos_token');
     if (!token || isEditMode) return;
     
-    const currentRestId = getRestaurantId();
+    const currentRestId = getRestaurantId() || 'main';
     const interval = setInterval(fetchZonas, 8000);
 
     // 1. Escucha en tiempo real de mesas desde Firebase
@@ -429,25 +429,25 @@ export default function Home() {
     });
 
     // 2. Escucha en tiempo real de plano de sala (Zonas y Mesas creadas)
-    const unsubscribeZones = currentRestId ? subscribeToZones(currentRestId, (cloudZones) => {
+    const unsubscribeZones = subscribeToZones(currentRestId, (cloudZones) => {
       if (Array.isArray(cloudZones) && cloudZones.length > 0) {
         setScopedStorage('pos_registered_zones', cloudZones);
         fetchZonas();
       }
-    }) : undefined;
+    });
 
     // 3. Escucha en tiempo real de comandas activas en mesas (consumos en vivo)
-    const unsubscribeActiveOrders = currentRestId ? subscribeToActiveTableOrders(currentRestId, (cloudActiveOrders) => {
+    const unsubscribeActiveOrders = subscribeToActiveTableOrders(currentRestId, (cloudActiveOrders) => {
       if (cloudActiveOrders && typeof cloudActiveOrders === 'object') {
         const currentActive = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
         const merged = { ...currentActive, ...cloudActiveOrders };
         setScopedStorage('pos_active_table_orders', merged);
         fetchZonas();
       }
-    }) : undefined;
+    });
 
     // 4. Escucha en tiempo real de turno de caja desde Firebase
-    const unsubscribeShift = currentRestId ? subscribeToCashShift(currentRestId, (cloudShift) => {
+    const unsubscribeShift = subscribeToCashShift(currentRestId, (cloudShift) => {
       if (cloudShift) {
         setIsShiftOpen(cloudShift.isOpen);
         if (cloudShift.isOpen) {
@@ -461,7 +461,7 @@ export default function Home() {
           removeScopedStorage('mock_cash_shift');
         }
       }
-    }) : undefined;
+    });
 
     return () => {
       clearInterval(interval);
