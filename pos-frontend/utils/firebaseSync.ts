@@ -5,7 +5,7 @@ export interface FirebaseOrder {
   id: string;
   tableId?: string;
   tableName?: string;
-  status: 'OPEN' | 'CLOSED' | 'CANCELLED';
+  status: 'OPEN' | 'CLOSED' | 'CANCELLED' | 'SERVED';
   customerName?: string;
   totalAmount: number;
   items: Array<{
@@ -19,6 +19,7 @@ export interface FirebaseOrder {
   }>;
   createdAt: string;
   updatedAt: string;
+  dispatchedAt?: string;
   restaurantId?: string;
 }
 
@@ -434,11 +435,30 @@ export const subscribeToActiveTableOrders = (restaurantId: string, onUpdate: (or
  */
 export const updateKitchenOrderStatusInFirebase = async (orderId: string, status: 'OPEN' | 'SERVED' | 'CANCELLED') => {
   try {
-    const orderDocRef = doc(db, 'orders', orderId);
-    await updateDoc(orderDocRef, {
-      status,
-      updatedAt: new Date().toISOString()
-    });
+    const realOrderId = (orderId || '').split('-adic-')[0];
+    const orderDocRef = doc(db, 'orders', realOrderId);
+    const snap = await getDoc(orderDocRef);
+    const nowIso = new Date().toISOString();
+
+    if (snap.exists()) {
+      const order = snap.data() as FirebaseOrder;
+      const updatedItems = (order.items || []).map((it: any) => 
+        status === 'SERVED' ? { ...it, status: 'SERVED' as const } : it
+      );
+      await updateDoc(orderDocRef, {
+        status,
+        items: updatedItems,
+        ...(status === 'SERVED' ? { dispatchedAt: nowIso } : {}),
+        updatedAt: nowIso
+      });
+    } else {
+      await setDoc(orderDocRef, {
+        id: realOrderId,
+        status,
+        ...(status === 'SERVED' ? { dispatchedAt: nowIso } : {}),
+        updatedAt: nowIso
+      }, { merge: true });
+    }
   } catch (err) {
     console.warn("Error updating order status in Firebase:", err);
   }
@@ -446,11 +466,13 @@ export const updateKitchenOrderStatusInFirebase = async (orderId: string, status
 
 export const serveKitchenItemInFirebase = async (orderId: string, itemId: string) => {
   try {
-    const orderDocRef = doc(db, 'orders', orderId);
+    const realOrderId = (orderId || '').split('-adic-')[0];
+    const orderDocRef = doc(db, 'orders', realOrderId);
     const snap = await getDoc(orderDocRef);
     if (snap.exists()) {
       const order = snap.data() as FirebaseOrder;
       let allServed = true;
+      const nowIso = new Date().toISOString();
       const updatedItems = (order.items || []).map((it: any) => {
         if (it.id === itemId) {
           return { ...it, status: 'SERVED' as const };
@@ -464,11 +486,32 @@ export const serveKitchenItemInFirebase = async (orderId: string, itemId: string
       await updateDoc(orderDocRef, {
         items: updatedItems,
         status: allServed ? 'SERVED' : order.status,
-        updatedAt: new Date().toISOString()
+        ...(allServed ? { dispatchedAt: nowIso } : {}),
+        updatedAt: nowIso
       });
     }
   } catch (err) {
     console.warn("Error serving kitchen item in Firebase:", err);
+  }
+};
+
+/**
+ * Escuchar todas las órdenes en tiempo real para notificaciones y sincronización
+ */
+export const subscribeToOrders = (restaurantId: string | null | undefined, onUpdate: (orders: FirebaseOrder[]) => void) => {
+  try {
+    const ordersRef = collection(db, 'orders');
+    return onSnapshot(ordersRef, (snapshot) => {
+      const ordersData: FirebaseOrder[] = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() } as FirebaseOrder))
+        .filter(order => !restaurantId || !order.restaurantId || order.restaurantId === restaurantId);
+      onUpdate(ordersData);
+    }, (error) => {
+      console.warn("Firestore real-time subscription (all orders) info:", error.message);
+    });
+  } catch (err) {
+    console.warn("Firebase listener initialization:", err);
+    return () => {};
   }
 };
 

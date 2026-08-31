@@ -148,9 +148,16 @@ export default function CocinaPage() {
     try {
       const localOrders = getScopedStorage<KitchenOrder[]>('pos_local_kitchen_orders', []);
       if (Array.isArray(localOrders) && localOrders.length > 0) {
+        // Filtrar solo las órdenes locales que sigan activas y tengan platos activos
+        const activeLocalOrders = localOrders.filter(lo => 
+          lo.status !== 'SERVED' && 
+          lo.status !== 'CANCELLED' && 
+          Array.isArray(lo.items) && 
+          lo.items.some(it => it.status === 'ACTIVE')
+        );
         const map = new Map<string, KitchenOrder>();
         serverOrders.forEach(o => map.set(o.id, o));
-        localOrders.forEach(lo => {
+        activeLocalOrders.forEach(lo => {
           if (!map.has(lo.id)) {
             map.set(lo.id, lo);
           }
@@ -336,45 +343,92 @@ export default function CocinaPage() {
     };
     window.addEventListener('storage', handleStorageChange);
 
+    const handleOrderServedEvent = (e: any) => {
+      const servedOrderId = e.detail?.id;
+      if (servedOrderId) {
+        setOrders(prev => prev.filter(o => o.id !== servedOrderId));
+      } else {
+        fetchKitchenOrders();
+      }
+    };
+    window.addEventListener('pos:order_served', handleOrderServedEvent as EventListener);
+
     // Real-time Firebase Firestore synchronization listener
     const currentRestId = getRestaurantId() || 'main';
     const unsubscribeFirebase = subscribeToKitchenOrders(currentRestId, (firebaseOrders) => {
-      if (firebaseOrders && firebaseOrders.length > 0) {
-        setOrders(prev => {
-          const map = new Map(prev.map(o => [o.id, o]));
-          firebaseOrders.forEach(fo => {
-            if (!map.has(fo.id)) {
-              map.set(fo.id, {
-                id: fo.id,
-                createdAt: fo.createdAt,
-                status: fo.status || 'OPEN',
-                previousTableName: null,
-                table: fo.tableName ? { name: fo.tableName, number: parseInt(fo.tableName.replace(/\D/g, '')) || 1 } : null,
-                items: (fo.items || []).map((it: any) => ({
-                  id: it.id,
-                  quantity: it.quantity,
-                  notes: it.notes || '',
-                  parentItemId: null,
-                  status: (it.status === 'CANCELLED' || it.status === 'CANCELED') ? 'CANCELLED' : (it.status === 'SERVED' ? 'SERVED' : 'ACTIVE'),
-                  product: {
-                    name: it.productName,
-                    category: { name: 'Cocina' },
-                    stations: []
-                  }
-                }))
-              });
-            }
-          });
-          return Array.from(map.values());
-        });
-        // Sincronizar en segundo plano con el backend para relaciones completas
-        fetchKitchenOrders();
+      if (isUpdatingRef.current) return;
+      
+      // Si no hay órdenes abiertas en Firebase, limpiar pantalla y caché local
+      if (!firebaseOrders || firebaseOrders.length === 0) {
+        setOrders(prev => prev.filter(o => o.id.startsWith('local-') && o.status === 'OPEN'));
+        try {
+          let localOrders = getScopedStorage<KitchenOrder[]>('pos_local_kitchen_orders', []);
+          if (Array.isArray(localOrders) && localOrders.length > 0) {
+            const cleaned = localOrders.filter(lo => lo.id.startsWith('local-'));
+            setScopedStorage('pos_local_kitchen_orders', cleaned);
+          }
+        } catch {}
+        return;
       }
+
+      // Limpiar de la caché local aquellas órdenes que ya no están abiertas en Firebase
+      const openFirebaseIds = new Set(firebaseOrders.map(fo => fo.id));
+      try {
+        let localOrders = getScopedStorage<KitchenOrder[]>('pos_local_kitchen_orders', []);
+        if (Array.isArray(localOrders) && localOrders.length > 0) {
+          const cleaned = localOrders.filter(lo => openFirebaseIds.has(lo.id) || lo.id.startsWith('local-'));
+          setScopedStorage('pos_local_kitchen_orders', cleaned);
+        }
+      } catch {}
+
+      setOrders(prev => {
+        const prevMap = new Map(prev.map(o => [o.id, o]));
+        const updatedList: KitchenOrder[] = [];
+
+        firebaseOrders.forEach(fo => {
+          const prevOrder = prevMap.get(fo.id);
+          const itemsList: KitchenItem[] = (fo.items || []).map((it: any) => {
+            const prevItem = prevOrder?.items.find(pi => pi.id === it.id);
+            const status = (it.status === 'CANCELLED' || it.status === 'CANCELED') 
+              ? 'CANCELLED' 
+              : (it.status === 'SERVED' ? 'SERVED' : 'ACTIVE');
+
+            return {
+              id: it.id,
+              quantity: it.quantity,
+              notes: it.notes || prevItem?.notes || '',
+              parentItemId: prevItem?.parentItemId || null,
+              status,
+              product: {
+                name: it.productName || prevItem?.product?.name || 'Producto',
+                category: prevItem?.product?.category || { name: 'Cocina' },
+                stations: prevItem?.product?.stations || []
+              }
+            };
+          });
+
+          // Solo incluir tickets que tengan al menos 1 plato activo (o cancelado para visualización)
+          const hasActiveItems = itemsList.some(i => i.status === 'ACTIVE');
+          if (hasActiveItems || fo.status === 'CANCELLED') {
+            updatedList.push({
+              id: fo.id,
+              createdAt: fo.createdAt || prevOrder?.createdAt || new Date().toISOString(),
+              status: fo.status || 'OPEN',
+              previousTableName: prevOrder?.previousTableName || null,
+              table: fo.tableName ? { name: fo.tableName, number: parseInt(fo.tableName.replace(/\D/g, '')) || 1 } : (prevOrder?.table || null),
+              items: itemsList
+            });
+          }
+        });
+
+        return updatedList;
+      });
     });
 
     return () => {
       clearInterval(interval);
       window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('pos:order_served', handleOrderServedEvent as EventListener);
       if (typeof unsubscribeFirebase === 'function') unsubscribeFirebase();
     };
   }, [router]);

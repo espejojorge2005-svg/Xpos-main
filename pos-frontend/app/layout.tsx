@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from 'sonner';
 import Sidebar from '@/components/Sidebar';
+import OrderNotificationListener from '@/components/OrderNotificationListener';
 
 export const metadata: Metadata = {
   title: 'Xpos - ',
@@ -19,6 +20,7 @@ export default function RootLayout({
       <body className="flex flex-col md:flex-row h-screen w-screen overflow-hidden bg-slate-50 text-slate-900 font-sans antialiased">
         
         <Toaster position="top-right" richColors closeButton theme="light" />
+        <OrderNotificationListener />
         
         {/* Aquí está tu Menú Lateral restaurado */}
         <Sidebar />
