@@ -1,11 +1,25 @@
 import { getRestaurantId } from './storage';
 
 export const getApiUrl = (path: string): string => {
-  let base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
-  if (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-    // Si accedemos desde un dispositivo móvil o tablet en la misma red Wi-Fi, dirigir al backend en la misma IP host
-    base = base.replace('localhost', window.location.hostname).replace('127.0.0.1', window.location.hostname);
+  let base = process.env.NEXT_PUBLIC_API_URL || '';
+  
+  if (typeof window !== 'undefined' && window.location.hostname) {
+    const hostname = window.location.hostname;
+    // Si estamos en Vercel o en cualquier dominio de producción público
+    if (hostname.includes('vercel.app') || (hostname !== 'localhost' && hostname !== '127.0.0.1' && !/^\d+\.\d+\.\d+\.\d+$/.test(hostname))) {
+      base = 'https://xpos-backend-x2vz.onrender.com/api/v1';
+    } else if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+      // Si accedemos por IP de red local (ej. 192.168.x.x desde móvil)
+      base = `http://${hostname}:3001/api/v1`;
+    }
   }
+
+  if (!base) {
+    base = process.env.NODE_ENV === 'production' 
+      ? 'https://xpos-backend-x2vz.onrender.com/api/v1' 
+      : 'http://localhost:3001/api/v1';
+  }
+
   const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
   return `${base}/${normalizedPath}`;
 };

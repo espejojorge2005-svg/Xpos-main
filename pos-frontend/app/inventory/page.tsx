@@ -160,39 +160,41 @@ export default function InventoryPage() {
       }
     });
 
-    // 3. Consulta al backend
+    // 3. Consulta y sincronización activa con el backend en la nube
     const token = localStorage.getItem('pos_token');
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15000);
-
-    fetch(getApiUrl('/products'), {
-      headers: { 
-        'Authorization': `Bearer ${token}`,
-        'x-restaurant-id': currentRestId || ''
-      },
-      signal: controller.signal
-    }).then(async res => {
-      clearTimeout(timer);
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          const filtered = data.filter((p: any) => !p.restaurantId || p.restaurantId === currentRestId);
-          if (filtered.length > 0) {
-            setProducts(prev => {
-              if (prev.length === 0) {
-                setScopedStorage('pos_registered_products', filtered);
-                return filtered;
-              }
-              return prev;
-            });
+    const syncBackendProducts = async () => {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 10000);
+        const res = await fetch(getApiUrl('/products'), {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'x-restaurant-id': currentRestId || ''
+          },
+          signal: controller.signal
+        });
+        clearTimeout(timer);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            const filtered = data.filter((p: any) => !p.restaurantId || !currentRestId || p.restaurantId === currentRestId);
+            setProducts(filtered);
+            setScopedStorage('pos_registered_products', filtered);
+            setLoading(false);
           }
         }
+      } catch (err) {
+        console.warn('Sync backend notice:', err);
       }
-    }).catch(() => {});
+    };
+
+    syncBackendProducts();
+    const pollInterval = setInterval(syncBackendProducts, 10000);
+    window.addEventListener('focus', syncBackendProducts);
 
     return () => {
-      clearTimeout(timer);
-      controller.abort();
+      clearInterval(pollInterval);
+      window.removeEventListener('focus', syncBackendProducts);
       if (typeof unsubProducts === 'function') unsubProducts();
       if (typeof unsubCats === 'function') unsubCats();
       if (typeof unsubStations === 'function') unsubStations();

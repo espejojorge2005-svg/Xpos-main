@@ -13,12 +13,18 @@ export class InventoryService {
     private cls: ClsService,
   ) {}
 
-  private resolveTenantId(restaurantId?: string | null): string | null {
-    return restaurantId || this.cls.get('restaurantId') || null;
+  private async resolveTenantId(restaurantId?: string | null): Promise<string | null> {
+    const candidate = restaurantId || this.cls.get('restaurantId') || null;
+    if (candidate && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(candidate)) {
+      return candidate;
+    }
+    // Si no es un UUID válido (ej. 'main' o undefined), resolver el restaurante por defecto
+    const defaultRest = await this.prisma.restaurant.findFirst({ orderBy: { createdAt: 'asc' } }).catch(() => null);
+    return defaultRest ? defaultRest.id : null;
   }
 
   async createCategory(data: CreateCategoryDto, restaurantId?: string | null) {
-    let targetRestId = this.resolveTenantId(restaurantId || data.restaurantId);
+    let targetRestId = await this.resolveTenantId(restaurantId || data.restaurantId);
     if (!targetRestId) {
       throw new BadRequestException('El ID del restaurante es obligatorio para crear una categoría');
     }
@@ -33,14 +39,19 @@ export class InventoryService {
 
 
   async findAllCategories(restaurantId?: string | null) {
-    const targetRestId = this.resolveTenantId(restaurantId);
+    const targetRestId = await this.resolveTenantId(restaurantId);
 
     if (!targetRestId) {
       return [];
     }
 
     return this.prisma.category.findMany({
-      where: { restaurantId: targetRestId },
+      where: {
+        OR: [
+          { restaurantId: targetRestId },
+          { restaurantId: null }
+        ]
+      },
       include: {
         products: true,
       },

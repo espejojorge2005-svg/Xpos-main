@@ -66,8 +66,8 @@ export class ProductsService {
         stock: productData.stock ?? 0,
         minStock: productData.minStock ?? 0,
         price: Number(productData.price) || 0,
-        ...(restaurantId ? { restaurantId } : {}),
-        ...(validCategoryId ? { category: { connect: { id: validCategoryId } } } : {}),
+        restaurantId: restaurantId || null,
+        categoryId: validCategoryId,
         ...(stationIds?.length > 0 && {
           stations: { connect: stationIds.map((id: string) => ({ id })) }
         }),

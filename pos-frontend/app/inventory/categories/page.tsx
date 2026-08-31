@@ -84,39 +84,41 @@ export default function CategoriesPage() {
       }
     });
 
-    // 3. Consulta al backend (si está disponible)
+    // 3. Consulta y sincronización activa con el backend
     const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
-
-    fetch(getApiUrl('/inventory/categories'), {
-      headers: { 
-        'Authorization': `Bearer ${token}`,
-        'x-restaurant-id': currentRestId || ''
-      },
-      signal: controller.signal
-    }).then(async res => {
-      clearTimeout(timer);
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          const filtered = data.filter((c: any) => !c.restaurantId || c.restaurantId === currentRestId);
-          if (filtered.length > 0) {
-            setCategories(prev => {
-              const map = new Map(prev.map(c => [c.id, c]));
-              filtered.forEach(c => map.set(c.id, c));
-              const merged = Array.from(map.values());
-              setScopedStorage('pos_registered_categories', merged);
-              return merged;
-            });
+    const syncBackendCategories = async () => {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 10000);
+        const res = await fetch(getApiUrl('/inventory/categories'), {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'x-restaurant-id': currentRestId || ''
+          },
+          signal: controller.signal
+        });
+        clearTimeout(timer);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            const filtered = data.filter((c: any) => !c.restaurantId || !currentRestId || c.restaurantId === currentRestId);
+            setCategories(filtered);
+            setScopedStorage('pos_registered_categories', filtered);
+            setLoading(false);
           }
         }
+      } catch (err) {
+        console.warn('Sync categories notice:', err);
       }
-    }).catch(() => {});
+    };
+
+    syncBackendCategories();
+    const pollInterval = setInterval(syncBackendCategories, 10000);
+    window.addEventListener('focus', syncBackendCategories);
 
     return () => {
-      clearTimeout(timer);
-      controller.abort();
+      clearInterval(pollInterval);
+      window.removeEventListener('focus', syncBackendCategories);
       if (typeof unsubCategories === 'function') unsubCategories();
       if (typeof unsubProducts === 'function') unsubProducts();
     };
