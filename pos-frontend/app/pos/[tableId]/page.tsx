@@ -472,6 +472,11 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
     setSubmitting(true);
     const token = localStorage.getItem('pos_token') || '';
     const restaurantId = getRestaurantId() || '';
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+      'x-restaurant-id': restaurantId
+    };
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tableId);
     const paramName = searchParams.get('name') || searchParams.get('tableName') || '';
     const paramNumber = searchParams.get('number') || '';
