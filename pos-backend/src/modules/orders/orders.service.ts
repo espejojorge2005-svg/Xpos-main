@@ -38,14 +38,15 @@ export class OrdersService {
     if (data.tableId) {
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.tableId);
       const parsedNum = parseInt(data.tableId.replace(/\D/g, ''));
+      const numStr = !isNaN(parsedNum) ? String(parsedNum) : null;
       
       const dbTable = await this.prisma.table.findFirst({
         where: {
           ...(restaurantId ? { zone: { restaurantId } } : {}),
           OR: [
             ...(isUuid ? [{ id: data.tableId }] : []),
-            { name: { equals: data.tableName || data.tableId, mode: 'insensitive' as const } },
-            ...(!isNaN(parsedNum) ? [{ number: parsedNum }] : [])
+            { number: data.tableId },
+            ...(numStr ? [{ number: numStr }] : [])
           ]
         }
       });
@@ -117,6 +118,7 @@ export class OrdersService {
   async getOpenOrderForTable(tableId: string) {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tableId);
     const parsedNum = parseInt(tableId.replace(/\D/g, ''));
+    const numStr = !isNaN(parsedNum) ? String(parsedNum) : null;
 
     const order = await this.prisma.order.findFirst({
       where: {
@@ -124,12 +126,12 @@ export class OrdersService {
         OR: [
           ...(isUuid ? [{ tableId: tableId }] : []),
           { table: { id: tableId } },
-          { table: { name: { equals: tableId, mode: 'insensitive' as const } } },
+          { table: { number: tableId } },
           { customerName: { contains: tableId, mode: 'insensitive' as const } },
-          ...(!isNaN(parsedNum) ? [
-            { table: { number: parsedNum } },
-            { customerName: { contains: `Mesa ${parsedNum}`, mode: 'insensitive' as const } },
-            { customerName: { contains: `${parsedNum}`, mode: 'insensitive' as const } }
+          ...(numStr ? [
+            { table: { number: numStr } },
+            { customerName: { contains: `Mesa ${numStr}`, mode: 'insensitive' as const } },
+            { customerName: { contains: `${numStr}`, mode: 'insensitive' as const } }
           ] : [])
         ],
       },
