@@ -27,8 +27,12 @@ export class CreateOrderItemDto {
 
 export class CreateOrderDto {
   @IsOptional()
-  @IsUUID('all')
+  @IsString()
   tableId?: string;
+
+  @IsOptional()
+  @IsString()
+  tableName?: string;
 
   @IsOptional()
   @IsString()

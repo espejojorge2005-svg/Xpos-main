@@ -7,23 +7,47 @@ import { ClsService } from 'nestjs-cls';
 export class OrdersService {
   constructor(private prisma: PrismaService, private cls: ClsService) {}
 
-  async createOrder(data: CreateOrderDto) {
-    if (!data.tableId) {
-      throw new BadRequestException('tableId is required');
+  private async resolveTenantRestaurantId(reqUser?: any, restaurantIdParam?: string | null): Promise<string | null> {
+    if (restaurantIdParam && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(restaurantIdParam)) {
+      return restaurantIdParam;
     }
+    const clsId = this.cls.get('restaurantId');
+    if (clsId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clsId)) {
+      return clsId;
+    }
+    const userRestId = reqUser?.restaurantId;
+    if (userRestId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userRestId)) {
+      return userRestId;
+    }
+    const defaultRest = await this.prisma.restaurant.findFirst({ orderBy: { createdAt: 'asc' } });
+    return defaultRest ? defaultRest.id : null;
+  }
 
+  async createOrder(data: CreateOrderDto, reqUser?: any, restaurantIdParam?: string | null) {
     const totalAmount = data.items.reduce((total, item) => {
       const subItemsTotal = item.subItems ? item.subItems.reduce((sTotal: number, sub: any) => sTotal + (sub.quantity * sub.unitPrice), 0) : 0;
       return total + (item.quantity * item.unitPrice) + subItemsTotal;
     }, 0);
 
-    const restaurantId = this.cls.get('restaurantId');
+    const restaurantId = await this.resolveTenantRestaurantId(reqUser, restaurantIdParam);
+
+    // Validar si tableId es un UUID válido y si existe en la base de datos
+    let validTableId: string | null = null;
+    let effectiveCustomerName = data.customerName || data.tableName || (data.tableId ? `Mesa ${data.tableId}` : 'Mostrador');
+
+    if (data.tableId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.tableId)) {
+      const dbTable = await this.prisma.table.findUnique({ where: { id: data.tableId } });
+      if (dbTable) {
+        validTableId = dbTable.id;
+      }
+    }
+
     // Usamos una transacción para crear la orden explicitamente con subItems
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.create({
         data: {
-          tableId: data.tableId,
-          customerName: data.customerName,
+          tableId: validTableId,
+          customerName: effectiveCustomerName,
           totalAmount: totalAmount,
           status: 'OPEN',
           restaurantId: restaurantId,
@@ -59,22 +83,31 @@ export class OrdersService {
         }
       }
 
-      await tx.table.update({
-        where: { id: data.tableId },
-        data: { status: 'OCCUPIED' },
+      if (validTableId) {
+        await tx.table.update({
+          where: { id: validTableId },
+          data: { status: 'OCCUPIED' },
+        });
+      }
+
+      const createdOrder = await tx.order.findUnique({
+        where: { id: order.id },
+        include: { 
+          table: true,
+          items: { include: { product: true, subItems: { include: { product: true } } } } 
+        }
       });
 
-      return await tx.order.findUnique({
-        where: { id: order.id },
-        include: { items: { include: { product: true, subItems: { include: { product: true } } } } }
-      });
+      return createdOrder;
     });
   }
 
   async getOpenOrderForTable(tableId: string) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tableId);
+
     const order = await this.prisma.order.findFirst({
       where: {
-        tableId: tableId,
+        ...(isUuid ? { tableId: tableId } : { customerName: { contains: tableId, mode: 'insensitive' } }),
         status: 'OPEN',
       },
       include: {
@@ -435,6 +468,20 @@ export class OrdersService {
     for (const order of orders) {
       if (!order.items || order.items.length === 0) continue;
 
+      const fallbackTableName = order.customerName || order.previousTableName || 'MOSTRADOR';
+      const resolvedTable: any = order.table 
+        ? { ...order.table, name: (order.table as any).name || `MESA ${order.table.number}` }
+        : {
+            id: order.id,
+            name: fallbackTableName,
+            number: parseInt(fallbackTableName.replace(/\D/g, '')) || 1,
+            capacity: 4,
+            status: 'OCCUPIED',
+            posX: 0,
+            posY: 0,
+            zoneId: ''
+          };
+
       let currentTicketItems: any[] = [];
       let currentTicketCreatedAt = order.createdAt;
       let ticketIndex = 0;
@@ -452,7 +499,7 @@ export class OrdersService {
            tickets.push({
              ...order,
              id: ticketIndex === 0 ? order.id : `${order.id}-adic-${ticketIndex}`,
-             table: ticketIndex === 0 ? order.table : { ...(order.table as any), name: `${(order.table as any)?.name || ('MESA ' + order.table?.number)} - ADICIONAL` },
+             table: ticketIndex === 0 ? resolvedTable : { ...resolvedTable, name: `${resolvedTable.name} - ADICIONAL` },
              createdAt: currentTicketCreatedAt,
              items: currentTicketItems
            });
@@ -469,7 +516,7 @@ export class OrdersService {
          tickets.push({
              ...order,
              id: ticketIndex === 0 ? order.id : `${order.id}-adic-${ticketIndex}`,
-             table: ticketIndex === 0 ? order.table : { ...(order.table as any), name: `${(order.table as any)?.name || ('MESA ' + order.table?.number)} - ADICIONAL` },
+             table: ticketIndex === 0 ? resolvedTable : { ...resolvedTable, name: `${resolvedTable.name} - ADICIONAL` },
              createdAt: currentTicketCreatedAt,
              items: currentTicketItems
          });

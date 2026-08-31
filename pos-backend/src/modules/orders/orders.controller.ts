@@ -17,8 +17,12 @@ export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @Post() // POST /api/v1/orders
-  async createOrder(@Body() createOrderDto: CreateOrderDto) {
-    return this.ordersService.createOrder(createOrderDto);
+  async createOrder(
+    @Body() createOrderDto: CreateOrderDto,
+    @Req() req: any,
+    @Headers('x-restaurant-id') restHeader?: string
+  ) {
+    return this.ordersService.createOrder(createOrderDto, req?.user, restHeader);
   }
 
   @Get('kitchen')

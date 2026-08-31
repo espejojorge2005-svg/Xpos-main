@@ -409,9 +409,11 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
     setSubmitting(true);
     const token = localStorage.getItem('pos_token') || '';
-    const headers = {
+    const restaurantId = getRestaurantId() || '';
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
+      'Authorization': `Bearer ${token}`,
+      'x-restaurant-id': restaurantId
     };
 
     const effectiveTableName = tableName || `Mesa ${tableId.replace(/[^0-9]/g, '') || tableId.slice(0, 4)}`;
@@ -592,6 +594,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
           headers,
           body: JSON.stringify({
             tableId,
+            tableName: effectiveTableName,
             items: cart.map(item => ({
               productId: item.productId,
               quantity: item.quantity,
@@ -625,7 +628,6 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
     }
 
     // Sincronizar SIEMPRE con Firebase para notificar a cocina y mesas en Tiempo Real (Garantizado Offline/Online)
-    const restaurantId = getRestaurantId();
     if (restaurantId) {
       syncOrderToFirebase({
         id: backendOrder?.id || effectiveOrderId,

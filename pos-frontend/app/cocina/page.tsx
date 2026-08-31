@@ -472,7 +472,7 @@ export default function CocinaPage() {
           }).map((order) => {
             // NUEVO: Verificamos si la orden completa fue cancelada por el mozo
             const isOrderCanceled = order.status === 'CANCELLED';
-            const tableName = order.table?.name || `MESA ${order.table?.number}` || 'MOSTRADOR';
+            const tableName = order.table?.name || (order.table?.number ? `MESA ${order.table?.number}` : null) || (order as any).customerName || order.previousTableName || 'MOSTRADOR';
 
             return (
               <div 
