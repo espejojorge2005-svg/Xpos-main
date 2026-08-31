@@ -6,7 +6,13 @@ export class AppController {
   constructor(private readonly appService: AppService) {}
 
   @Get()
-  getHello(): string {
-    return this.appService.getHello();
+  getStatus() {
+    return {
+      status: 'online',
+      message: '🚀 Xpos Backend API is running successfully!',
+      prefix: '/api/v1',
+      documentation: '/api/v1',
+      timestamp: new Date().toISOString()
+    };
   }
 }

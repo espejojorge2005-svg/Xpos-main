@@ -24,8 +24,10 @@ async function bootstrap() {
   );
 
 
-  // Prefijo global para nuestra API (buena práctica para versionamiento futuro)
-  app.setGlobalPrefix('api/v1');
+  // Prefijo global para nuestra API con exclusión de la raíz para health-checks y bienvenida
+  app.setGlobalPrefix('api/v1', {
+    exclude: ['/'],
+  });
 
   const port = process.env.PORT ?? 3001;
   await app.listen(port);
