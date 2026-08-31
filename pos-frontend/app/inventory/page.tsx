@@ -183,11 +183,11 @@ export default function InventoryPage() {
           const filtered = data.filter((p: any) => !p.restaurantId || p.restaurantId === currentRestId);
           if (filtered.length > 0) {
             setProducts(prev => {
-              const map = new Map(prev.map(p => [p.id, p]));
-              filtered.forEach(p => map.set(p.id, p));
-              const merged = Array.from(map.values());
-              setScopedStorage('pos_registered_products', merged);
-              return merged;
+              if (prev.length === 0) {
+                setScopedStorage('pos_registered_products', filtered);
+                return filtered;
+              }
+              return prev;
             });
           }
         }
