@@ -117,7 +117,7 @@ export interface FirebaseShift {
   openedAt?: string;
   closedAt?: string;
   updatedAt?: string;
-  expenses?: Array<{ id: string; amount: number; description: string; createdAt: string }>;
+  expenses?: Array<{ id: string; amount: number; description: string; createdAt?: string }>;
   payments?: Array<{ id: string; orderId?: string; table?: string; amount: number; method?: string; tipAmount?: number; date?: string; items?: any[] }>;
 }
 

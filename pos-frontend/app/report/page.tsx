@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 import { useGuardedRoute } from '@/hooks/useGuardedRoute';
 
 // Interfaces
-interface Expense { id: string; amount: number; description: string; }
+interface Expense { id: string; amount: number; description: string; createdAt?: string; }
 interface TipDetail { id: string; table: string; amount: number; method: string; }
 interface SoldProduct { id: string; name: string; quantity: number; }
 interface OrderDetail {
