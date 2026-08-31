@@ -31,12 +31,24 @@ export class OrdersService {
 
     const restaurantId = await this.resolveTenantRestaurantId(reqUser, restaurantIdParam);
 
-    // Validar si tableId es un UUID válido y si existe en la base de datos
+    // Validar y encontrar la mesa en la base de datos (por UUID, nombre o número)
     let validTableId: string | null = null;
     let effectiveCustomerName = data.customerName || data.tableName || (data.tableId ? `Mesa ${data.tableId}` : 'Mostrador');
 
-    if (data.tableId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.tableId)) {
-      const dbTable = await this.prisma.table.findUnique({ where: { id: data.tableId } });
+    if (data.tableId) {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.tableId);
+      const parsedNum = parseInt(data.tableId.replace(/\D/g, ''));
+      
+      const dbTable = await this.prisma.table.findFirst({
+        where: {
+          ...(restaurantId ? { zone: { restaurantId } } : {}),
+          OR: [
+            ...(isUuid ? [{ id: data.tableId }] : []),
+            { name: { equals: data.tableName || data.tableId, mode: 'insensitive' as const } },
+            ...(!isNaN(parsedNum) ? [{ number: parsedNum }] : [])
+          ]
+        }
+      });
       if (dbTable) {
         validTableId = dbTable.id;
       }
@@ -104,11 +116,22 @@ export class OrdersService {
 
   async getOpenOrderForTable(tableId: string) {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tableId);
+    const parsedNum = parseInt(tableId.replace(/\D/g, ''));
 
     const order = await this.prisma.order.findFirst({
       where: {
-        ...(isUuid ? { tableId: tableId } : { customerName: { contains: tableId, mode: 'insensitive' } }),
         status: 'OPEN',
+        OR: [
+          ...(isUuid ? [{ tableId: tableId }] : []),
+          { table: { id: tableId } },
+          { table: { name: { equals: tableId, mode: 'insensitive' as const } } },
+          { customerName: { contains: tableId, mode: 'insensitive' as const } },
+          ...(!isNaN(parsedNum) ? [
+            { table: { number: parsedNum } },
+            { customerName: { contains: `Mesa ${parsedNum}`, mode: 'insensitive' as const } },
+            { customerName: { contains: `${parsedNum}`, mode: 'insensitive' as const } }
+          ] : [])
+        ],
       },
       include: {
         items: {

@@ -4,7 +4,7 @@ import { getRestaurantId, getScopedStorage, setScopedStorage } from '@/utils/sto
 
 import { useEffect, useState, use } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { syncOrderToFirebase, syncTableToFirebase, syncStockMovementToFirebase, syncProductToFirebase, syncActiveTableOrdersToFirebase, syncShiftPaymentToFirebase, subscribeToProducts, subscribeToCategories } from '@/utils/firebaseSync';
+import { syncOrderToFirebase, syncTableToFirebase, syncStockMovementToFirebase, syncProductToFirebase, syncActiveTableOrdersToFirebase, syncShiftPaymentToFirebase, subscribeToProducts, subscribeToCategories, getActiveTableOrderFromFirebase } from '@/utils/firebaseSync';
 import { ArrowLeft, Search, Plus, Minus, Trash2, ShoppingCart, UtensilsCrossed, ReceiptText, ChefHat, CheckCircle2, AlertTriangle, X, Printer, CreditCard, Banknote, Smartphone, Edit2, Heart, ArrowRightLeft, Scissors } from 'lucide-react';
 import { toast } from 'sonner';
 import ComboModal from '@/components/ComboModal';
@@ -180,35 +180,93 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
           } catch {}
         }
 
+        let foundActiveOrder = false;
+
         if (activeOrderRes && activeOrderRes.ok) {
           try {
             const activeOrderData = await activeOrderRes.json();
-            setActiveOrderId(activeOrderData.id);
-            setTableName(activeOrderData.table?.name || activeOrderData.table?.number || `Mesa ${tableId.slice(0,4)}`);
-            
-            if (activeOrderData.payments) {
-              const loadedPayments = activeOrderData.payments.map((p: any) => ({
-                id: p.id,
-                amount: Number(p.amount),
-                method: p.paymentMethod,
-                tipAmount: Number(p.tipAmount || 0)
-              }));
-              setPayments(loadedPayments);
-            }
-            
-            if (activeOrderData.items) {
-              setExistingItems(activeOrderData.items.map((item: any) => ({
-                id: item.id,
-                productId: item.productId,
-                name: item.product?.name || 'Producto Desconocido',
-                quantity: item.quantity,
-                unitPrice: Number(item.unitPrice),
-                notes: item.notes,
-                parentItemId: item.parentItemId,
-                isPaid: item.isPaid
-              })));
+            if (activeOrderData && activeOrderData.id) {
+              foundActiveOrder = true;
+              setActiveOrderId(activeOrderData.id);
+              setTableName(activeOrderData.table?.name || activeOrderData.table?.number || `Mesa ${tableId.slice(0,4)}`);
+              
+              if (activeOrderData.payments) {
+                const loadedPayments = activeOrderData.payments.map((p: any) => ({
+                  id: p.id,
+                  amount: Number(p.amount),
+                  method: p.paymentMethod,
+                  tipAmount: Number(p.tipAmount || 0)
+                }));
+                setPayments(loadedPayments);
+              }
+              
+              if (activeOrderData.items) {
+                const mappedItems = activeOrderData.items.map((item: any) => ({
+                  id: item.id,
+                  productId: item.productId,
+                  name: item.product?.name || 'Producto Desconocido',
+                  quantity: item.quantity,
+                  unitPrice: Number(item.unitPrice),
+                  notes: item.notes,
+                  parentItemId: item.parentItemId,
+                  isPaid: item.isPaid
+                }));
+                setExistingItems(mappedItems);
+
+                // Guardar en la memoria local de esta terminal para sincronización
+                const activeTableOrders = getScopedStorage<any>('pos_active_table_orders', {});
+                activeTableOrders[tableId] = {
+                  orderId: activeOrderData.id,
+                  tableName: activeOrderData.table?.name || `Mesa ${tableId.slice(0,4)}`,
+                  createdAt: activeOrderData.createdAt || new Date().toISOString(),
+                  total: Number(activeOrderData.totalAmount || 0),
+                  status: 'OCCUPIED',
+                  items: mappedItems,
+                  payments: activeOrderData.payments || []
+                };
+                setScopedStorage('pos_active_table_orders', activeTableOrders);
+              }
             }
           } catch {}
+        }
+
+        // Sincronización remota desde Firebase Firestore si no se obtuvo por backend (multidispositivo garantizado)
+        if (!foundActiveOrder) {
+          try {
+            const fbOrder = await getActiveTableOrderFromFirebase(currentRestId || 'main', tableId, tableName);
+            if (fbOrder && fbOrder.status === 'OPEN') {
+              foundActiveOrder = true;
+              setActiveOrderId(fbOrder.id);
+              if (fbOrder.tableName) setTableName(fbOrder.tableName);
+              if (Array.isArray(fbOrder.items) && fbOrder.items.length > 0) {
+                const mappedItems = fbOrder.items.map((it: any) => ({
+                  id: it.id,
+                  productId: it.productId || it.id,
+                  name: it.productName || 'Producto',
+                  quantity: it.quantity,
+                  unitPrice: Number(it.unitPrice || 0),
+                  notes: it.notes || '',
+                  status: it.status || 'ACTIVE',
+                  isPaid: false
+                }));
+                setExistingItems(mappedItems);
+
+                const activeTableOrders = getScopedStorage<any>('pos_active_table_orders', {});
+                activeTableOrders[tableId] = {
+                  orderId: fbOrder.id,
+                  tableName: fbOrder.tableName || tableName || `Mesa ${tableId.slice(0,4)}`,
+                  createdAt: fbOrder.createdAt || new Date().toISOString(),
+                  total: fbOrder.totalAmount || mappedItems.reduce((s: number, i: any) => s + i.quantity * i.unitPrice, 0),
+                  status: 'OCCUPIED',
+                  items: mappedItems,
+                  payments: []
+                };
+                setScopedStorage('pos_active_table_orders', activeTableOrders);
+              }
+            }
+          } catch (fbErr) {
+            console.warn('Firebase active table lookup fallback:', fbErr);
+          }
         }
       } catch (error) {
         console.warn('Network error loading remote table data, using local cache:', error);

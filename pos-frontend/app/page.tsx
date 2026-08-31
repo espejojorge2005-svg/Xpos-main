@@ -2,7 +2,7 @@
 import { getApiUrl } from '@/utils/api';
 import { getScopedStorage, getRestaurantId, setScopedStorage, removeScopedStorage } from '@/utils/storage';
 
-import { subscribeToTables, subscribeToCashShift, subscribeToZones, subscribeToActiveTableOrders } from '@/utils/firebaseSync';
+import { subscribeToTables, subscribeToCashShift, subscribeToZones, subscribeToActiveTableOrders, subscribeToOrders } from '@/utils/firebaseSync';
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -404,7 +404,80 @@ export default function Home() {
     const currentRestId = getRestaurantId() || 'main';
     const interval = setInterval(fetchZonas, 8000);
 
-    // 1. Escucha en tiempo real de mesas desde Firebase
+    // 1. Escucha en tiempo real de órdenes abiertas en Firebase (Sincronización Multidispositivo de Mesas Ocupadas)
+    const unsubscribeOrders = subscribeToOrders(currentRestId, (allOrders) => {
+      if (Array.isArray(allOrders)) {
+        const openOrders = allOrders.filter(o => o.status === 'OPEN');
+        const activeMap: Record<string, any> = {};
+        
+        openOrders.forEach(o => {
+          const tId = o.tableId || (o.tableName ? o.tableName.toLowerCase().replace(/\s+/g, '') : null);
+          if (tId) {
+            activeMap[tId] = {
+              orderId: o.id,
+              tableName: o.tableName || tId,
+              createdAt: o.createdAt || new Date().toISOString(),
+              total: o.totalAmount || 0,
+              status: 'OCCUPIED',
+              items: o.items || []
+            };
+          }
+        });
+
+        const currentActive = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
+        const merged = { ...currentActive, ...activeMap };
+        setScopedStorage('pos_active_table_orders', merged);
+
+        setZones(prevZones => prevZones.map(zone => ({
+          ...zone,
+          tables: zone.tables.map(table => {
+            const num = String(table.number);
+            const matchedOrder = openOrders.find(o => 
+              o.tableId === table.id || 
+              (table.name && o.tableName && o.tableName.toLowerCase().trim() === table.name.toLowerCase().trim()) ||
+              (o.tableName && o.tableName.toLowerCase().includes(`mesa ${num}`))
+            );
+
+            if (matchedOrder) {
+              return {
+                ...table,
+                status: 'OCCUPIED' as const,
+                orders: [{
+                  id: matchedOrder.id,
+                  createdAt: matchedOrder.createdAt || new Date().toISOString(),
+                  totalAmount: matchedOrder.totalAmount || 0
+                }]
+              };
+            }
+
+            const localOrder = merged[table.id];
+            if (localOrder && localOrder.status === 'OCCUPIED') {
+              return {
+                ...table,
+                status: 'OCCUPIED' as const,
+                orders: [{
+                  id: localOrder.orderId || `ord-${table.id}`,
+                  createdAt: localOrder.createdAt || new Date().toISOString(),
+                  totalAmount: localOrder.total || 0
+                }]
+              };
+            }
+
+            if (table.orders && table.orders.length > 0 && table.status === 'OCCUPIED') {
+              return table;
+            }
+
+            return {
+              ...table,
+              status: 'FREE' as const,
+              orders: []
+            };
+          })
+        })));
+      }
+    });
+
+    // 2. Escucha en tiempo real de mesas desde Firebase
     const unsubscribeTables = subscribeToTables(currentRestId, (firebaseTables) => {
       if (firebaseTables && firebaseTables.length > 0) {
         const tableMap = new Map(firebaseTables.map(t => [t.id, t.status]));
@@ -424,11 +497,10 @@ export default function Home() {
             return table;
           })
         })));
-        fetchZonas();
       }
     });
 
-    // 2. Escucha en tiempo real de plano de sala (Zonas y Mesas creadas)
+    // 3. Escucha en tiempo real de plano de sala (Zonas y Mesas creadas)
     const unsubscribeZones = subscribeToZones(currentRestId, (cloudZones) => {
       if (Array.isArray(cloudZones) && cloudZones.length > 0) {
         setScopedStorage('pos_registered_zones', cloudZones);
@@ -436,7 +508,7 @@ export default function Home() {
       }
     });
 
-    // 3. Escucha en tiempo real de comandas activas en mesas (consumos en vivo)
+    // 4. Escucha en tiempo real de comandas activas en mesas (consumos en vivo)
     const unsubscribeActiveOrders = subscribeToActiveTableOrders(currentRestId, (cloudActiveOrders) => {
       if (cloudActiveOrders && typeof cloudActiveOrders === 'object') {
         const currentActive = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
@@ -446,7 +518,7 @@ export default function Home() {
       }
     });
 
-    // 4. Escucha en tiempo real de turno de caja desde Firebase
+    // 5. Escucha en tiempo real de turno de caja desde Firebase
     const unsubscribeShift = subscribeToCashShift(currentRestId, (cloudShift) => {
       if (cloudShift) {
         setIsShiftOpen(cloudShift.isOpen);
@@ -465,6 +537,7 @@ export default function Home() {
 
     return () => {
       clearInterval(interval);
+      if (typeof unsubscribeOrders === 'function') unsubscribeOrders();
       if (typeof unsubscribeTables === 'function') unsubscribeTables();
       if (typeof unsubscribeZones === 'function') unsubscribeZones();
       if (typeof unsubscribeActiveOrders === 'function') unsubscribeActiveOrders();
