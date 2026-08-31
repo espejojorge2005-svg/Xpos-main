@@ -119,21 +119,44 @@ export const syncTableToFirebase = async (tableId: string, status: 'FREE' | 'OCC
 /**
  * Obtener la orden abierta de una mesa directamente desde Firebase Firestore
  */
-export const getActiveTableOrderFromFirebase = async (restaurantId: string, tableId: string, tableName?: string): Promise<FirebaseOrder | null> => {
+export const getActiveTableOrderFromFirebase = async (
+  restaurantId: string, 
+  tableId: string, 
+  tableName?: string,
+  tableNumber?: string | number
+): Promise<FirebaseOrder | null> => {
   try {
     const ordersRef = collection(db, 'orders');
     const snap = await getDocs(ordersRef);
-    const num = tableId.replace(/\D/g, '');
+    
+    // Extraer número limpio de mesa evitando procesar UUIDs como números gigantes
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tableId);
+    const cleanNum = (!isUuid && tableId.startsWith('t-') ? tableId.replace('t-', '') : '') || 
+                     (!isUuid && !isNaN(parseInt(tableId)) ? String(parseInt(tableId)) : '') ||
+                     (tableNumber ? String(tableNumber) : '') ||
+                     (tableName ? tableName.replace(/\D/g, '') : '');
 
     const found = snap.docs
       .map(d => ({ id: d.id, ...d.data() } as FirebaseOrder))
       .find(o => {
         if (o.status !== 'OPEN') return false;
         if (!isMatchingTenant(o.restaurantId, restaurantId)) return false;
+        
+        // Coincidencia 1: ID de mesa exacto
         if (o.tableId === tableId) return true;
-        if (tableName && o.tableName && o.tableName.toLowerCase() === tableName.toLowerCase()) return true;
-        if (num && o.tableName && o.tableName.toLowerCase().includes(`mesa ${num}`)) return true;
-        if (num && o.tableId && o.tableId.replace(/\D/g, '') === num) return true;
+        
+        // Coincidencia 2: Nombre de mesa exacto (ej: "Mesa 1")
+        if (tableName && o.tableName && o.tableName.toLowerCase().trim() === tableName.toLowerCase().trim()) return true;
+        
+        // Coincidencia 3: Por número de mesa (ej: "Mesa 1" vs "t-1" vs "1")
+        if (cleanNum) {
+          if (o.tableName && o.tableName.toLowerCase().includes(`mesa ${cleanNum}`)) return true;
+          if (o.tableId === `t-${cleanNum}` || o.tableId === cleanNum) return true;
+        }
+
+        // Coincidencia 4: Comparación relajada de nombre sin espacios
+        if (o.tableName && o.tableName.toLowerCase().replace(/\s+/g, '') === tableId.toLowerCase().replace(/\s+/g, '')) return true;
+
         return false;
       });
 

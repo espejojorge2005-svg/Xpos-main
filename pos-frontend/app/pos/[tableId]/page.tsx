@@ -233,11 +233,15 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         // Sincronización remota desde Firebase Firestore si no se obtuvo por backend (multidispositivo garantizado)
         if (!foundActiveOrder) {
           try {
-            const fbOrder = await getActiveTableOrderFromFirebase(currentRestId || 'main', tableId, tableName);
+            const queryTableName = searchParams.get('name') || searchParams.get('tableName') || '';
+            const queryTableNumber = searchParams.get('number') || '';
+            const fbOrder = await getActiveTableOrderFromFirebase(currentRestId || 'main', tableId, queryTableName || tableName, queryTableNumber);
             if (fbOrder && fbOrder.status === 'OPEN') {
               foundActiveOrder = true;
               setActiveOrderId(fbOrder.id);
               if (fbOrder.tableName) setTableName(fbOrder.tableName);
+              else if (queryTableName) setTableName(queryTableName);
+
               if (Array.isArray(fbOrder.items) && fbOrder.items.length > 0) {
                 const mappedItems = fbOrder.items.map((it: any) => ({
                   id: it.id,
@@ -254,7 +258,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                 const activeTableOrders = getScopedStorage<any>('pos_active_table_orders', {});
                 activeTableOrders[tableId] = {
                   orderId: fbOrder.id,
-                  tableName: fbOrder.tableName || tableName || `Mesa ${tableId.slice(0,4)}`,
+                  tableName: fbOrder.tableName || queryTableName || tableName || `Mesa ${tableId.slice(0,4)}`,
                   createdAt: fbOrder.createdAt || new Date().toISOString(),
                   total: fbOrder.totalAmount || mappedItems.reduce((s: number, i: any) => s + i.quantity * i.unitPrice, 0),
                   status: 'OCCUPIED',

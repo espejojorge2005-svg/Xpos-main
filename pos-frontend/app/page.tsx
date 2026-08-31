@@ -63,7 +63,7 @@ const DraggableTable = ({
   table: Table; 
   isEditMode: boolean; 
   handleStop: (e: DraggableEvent, data: DraggableData, id: string) => void;
-  handleTableClick: (id: string, isDragging: boolean) => void;
+  handleTableClick: (table: Table, isDragging: boolean) => void;
 }) => {
   const nodeRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -99,7 +99,7 @@ const DraggableTable = ({
         ref={nodeRef}
         onClick={() => {
           if (!isDragging) {
-            handleTableClick(table.id, isDragging);
+            handleTableClick(table, isDragging);
           }
         }}
         className={`absolute w-28 h-28 p-3 rounded-2xl border-2 flex flex-col items-center justify-center shadow-sm group select-none
@@ -157,7 +157,7 @@ const GridTable = ({
   handleTableClick 
 }: { 
   table: Table; 
-  handleTableClick: (id: string, isDragging: boolean) => void;
+  handleTableClick: (table: Table, isDragging: boolean) => void;
 }) => {
   const [now, setNow] = useState(new Date());
   const isFree = table.status === 'FREE';
@@ -172,7 +172,7 @@ const GridTable = ({
 
   return (
     <button
-      onClick={() => handleTableClick(table.id, false)}
+      onClick={() => handleTableClick(table, false)}
       className={`relative p-4 rounded-3xl border-2 flex flex-col items-center justify-center text-center transition-all active:scale-95 min-h-[130px] w-full
         ${isFree 
           ? 'bg-white border-emerald-100 hover:border-emerald-300 shadow-sm hover:shadow-emerald-100' 
@@ -583,9 +583,16 @@ export default function Home() {
     }
   };
 
-  const handleTableClick = (tableId: string, isDragging: boolean) => {
+  const handleTableClick = (tableOrId: any, isDragging: boolean) => {
     if (!isEditMode && !isDragging) {
-      router.push(`/pos/${tableId}`);
+      if (typeof tableOrId === 'object' && tableOrId !== null) {
+        const tId = tableOrId.id;
+        const tName = tableOrId.name || `Mesa ${tableOrId.number}`;
+        const tNum = tableOrId.number || '';
+        router.push(`/pos/${tId}?name=${encodeURIComponent(tName)}&number=${encodeURIComponent(tNum)}`);
+      } else {
+        router.push(`/pos/${tableOrId}`);
+      }
     }
   };
 

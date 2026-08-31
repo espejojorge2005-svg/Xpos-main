@@ -466,7 +466,7 @@ export default function CocinaPage() {
           <div className="bg-slate-700 px-4 py-2 rounded-xl border border-slate-600 flex items-center flex-1 md:flex-none justify-between md:justify-start min-w-[160px] snap-center">
             <span className="text-slate-300 font-bold text-sm mr-2 leading-tight">Pedidos<br className="md:hidden"/> Activos:</span>
             <span className="text-2xl font-black text-emerald-400">
-              {orders.filter(o => !ackedOrders.includes(o.id) && o.status !== 'CANCELLED').length}
+              {orders.filter(o => !ackedOrders.includes(o.id) && o.status !== 'CANCELLED' && o.status !== 'SERVED' && o.items.some(i => i.status === 'ACTIVE')).length}
             </span>
           </div>
         </div>
@@ -504,7 +504,7 @@ export default function CocinaPage() {
       </div>
 
       {/* ÁREA DE TICKETS */}
-      {orders.length === 0 ? (
+      {orders.filter(o => !ackedOrders.includes(o.id) && o.status !== 'SERVED' && (o.status === 'CANCELLED' || o.items.some(i => i.status === 'ACTIVE'))).length === 0 ? (
         <div className="flex flex-col items-center justify-center h-[70vh] text-slate-500 gap-4">
           <UtensilsCrossed className="w-24 h-24 text-slate-700 opacity-50" />
           <h2 className="text-3xl font-black text-slate-600">Cocina Despejada</h2>
@@ -513,7 +513,12 @@ export default function CocinaPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 xl:gap-6 gap-4 items-start">
           {orders.filter(o => {
             if (ackedOrders.includes(o.id)) return false;
-            // Si no hay filtro, mostrar todas
+            if (o.status === 'SERVED') return false;
+            // Si todos los platos fueron servidos y la orden no está cancelada, no mostrar
+            const hasActive = o.items.some(i => i.status === 'ACTIVE');
+            if (!hasActive && o.status !== 'CANCELLED') return false;
+
+            // Si no hay filtro por estación, mostrar
             if (!selectedStation) return true;
             return o.items.some(i => {
               const itemStations = i.product?.stations || [];
