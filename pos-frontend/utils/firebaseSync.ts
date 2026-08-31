@@ -455,13 +455,15 @@ export const subscribeToZones = (restaurantId: string, onUpdate: (zones: any[]) 
  */
 export const syncActiveTableOrdersToFirebase = async (restaurantId: string, activeTableOrders: Record<string, any>) => {
   try {
-    if (!restaurantId) return;
-    const ref = doc(db, 'active_table_orders', restaurantId);
-    await setDoc(ref, {
-      restaurantId,
-      orders: activeTableOrders,
-      updatedAt: new Date().toISOString()
-    }, { merge: true });
+    const targets = Array.from(new Set([restaurantId, 'main'])).filter(Boolean);
+    for (const target of targets) {
+      const ref = doc(db, 'active_table_orders', target);
+      await setDoc(ref, {
+        restaurantId,
+        orders: activeTableOrders,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    }
   } catch (err) {
     console.warn("Error syncing active table orders to Firebase:", err);
   }
@@ -469,8 +471,8 @@ export const syncActiveTableOrdersToFirebase = async (restaurantId: string, acti
 
 export const subscribeToActiveTableOrders = (restaurantId: string, onUpdate: (orders: Record<string, any>) => void) => {
   try {
-    if (!restaurantId) return () => {};
-    const ref = doc(db, 'active_table_orders', restaurantId);
+    const target = restaurantId || 'main';
+    const ref = doc(db, 'active_table_orders', target);
     return onSnapshot(ref, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -484,6 +486,47 @@ export const subscribeToActiveTableOrders = (restaurantId: string, onUpdate: (or
   } catch (err) {
     console.warn("Firebase active_table_orders listener initialization:", err);
     return () => {};
+  }
+};
+
+/**
+ * Consulta directa de órdenes abiertas en Firebase para sincronización inmediata de mesas ocupadas
+ */
+export const fetchOpenOrdersFromFirebase = async (restaurantId?: string | null): Promise<Record<string, any>> => {
+  try {
+    const ordersRef = collection(db, 'orders');
+    const snap = await getDocs(ordersRef);
+    const cloudOpenOrders = snap.docs
+      .map(d => ({ id: d.id, ...d.data() } as FirebaseOrder))
+      .filter(o => isMatchingTenant(o.restaurantId, restaurantId) && o.status === 'OPEN');
+
+    const activeMap: Record<string, any> = {};
+    cloudOpenOrders.forEach(o => {
+      const tId = o.tableId || (o.tableName ? o.tableName.toLowerCase().replace(/\s+/g, '') : null);
+      const tNum = o.tableName ? o.tableName.replace(/\D/g, '') : '';
+      const cleanNum = (!tId?.includes('-') && !isNaN(parseInt(tId || '')) ? String(parseInt(tId!)) : '') || tNum;
+
+      const entry = {
+        orderId: o.id,
+        tableId: o.tableId,
+        tableName: o.tableName || tId,
+        createdAt: o.createdAt || new Date().toISOString(),
+        total: o.totalAmount || 0,
+        status: 'OCCUPIED',
+        items: o.items || []
+      };
+
+      if (tId) activeMap[tId] = entry;
+      if (cleanNum) {
+        activeMap[`t-${cleanNum}`] = entry;
+        activeMap[cleanNum] = entry;
+      }
+    });
+
+    return activeMap;
+  } catch (err) {
+    console.warn("Error fetching open orders from Firebase:", err);
+    return {};
   }
 };
 

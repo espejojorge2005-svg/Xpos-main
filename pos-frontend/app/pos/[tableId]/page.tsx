@@ -279,7 +279,24 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
       // Local fallback for active table order (dishes already ordered)
       try {
         const activeTableOrders = getScopedStorage<any>('pos_active_table_orders', {});
-        const tableOrder = activeTableOrders[tableId];
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tableId);
+        const queryTableNumber = searchParams.get('number') || '';
+        const cleanNum = (!isUuid && tableId.startsWith('t-') ? tableId.replace('t-', '') : '') || 
+                         (!isUuid && !isNaN(parseInt(tableId)) ? String(parseInt(tableId)) : '') ||
+                         queryTableNumber;
+
+        const tableOrder = activeTableOrders[tableId] || 
+          (cleanNum ? activeTableOrders[`t-${cleanNum}`] || activeTableOrders[cleanNum] : null) ||
+          Object.values(activeTableOrders).find((o: any) => 
+            o && o.status === 'OCCUPIED' && (
+              o.tableId === tableId ||
+              (cleanNum && o.tableId === `t-${cleanNum}`) ||
+              (cleanNum && o.tableId === cleanNum) ||
+              (cleanNum && o.tableName && o.tableName.toLowerCase().includes(`mesa ${cleanNum}`)) ||
+              (cleanNum && o.tableName && o.tableName.replace(/\D/g, '') === cleanNum)
+            )
+          );
+
         if (tableOrder) {
           if (!activeOrderId && tableOrder.orderId) setActiveOrderId(tableOrder.orderId);
           if (tableOrder.tableName) setTableName(tableOrder.tableName);

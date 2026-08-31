@@ -2,7 +2,7 @@
 import { getApiUrl } from '@/utils/api';
 import { getScopedStorage, getRestaurantId, setScopedStorage, removeScopedStorage } from '@/utils/storage';
 
-import { subscribeToTables, subscribeToCashShift, subscribeToZones, subscribeToActiveTableOrders, subscribeToOrders } from '@/utils/firebaseSync';
+import { subscribeToTables, subscribeToCashShift, subscribeToZones, subscribeToActiveTableOrders, subscribeToOrders, fetchOpenOrdersFromFirebase } from '@/utils/firebaseSync';
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -225,15 +225,28 @@ export default function Home() {
 
   const fetchZonas = async () => {
     const token = localStorage.getItem('pos_token');
+    const currentRestId = getRestaurantId() || 'main';
     let loadedZones: Zone[] = [];
+
+    // 1. Cargar comandas abiertas directamente desde Firebase Firestore para garantizar sincronización multidispositivo
+    try {
+      const cloudMap = await fetchOpenOrdersFromFirebase(currentRestId);
+      if (cloudMap && Object.keys(cloudMap).length > 0) {
+        const currentActive = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
+        const merged = { ...currentActive, ...cloudMap };
+        setScopedStorage('pos_active_table_orders', merged);
+      }
+    } catch (e) {
+      console.warn("Error cargando órdenes de Firebase en fetchZonas:", e);
+    }
+
     try {
       const response = await fetch(getApiUrl('/floor/zones'), {
         headers: { 
           'Authorization': `Bearer ${token}`,
-          'x-restaurant-id': getRestaurantId() || ''
+          'x-restaurant-id': currentRestId
         }
       });
-
 
       if (response.ok) {
         const data = await response.json();
