@@ -66,22 +66,17 @@ export default function KitchenStationsPage() {
     // 2. Suscripción EN TIEMPO REAL a Firebase Firestore
     const unsubscribe = subscribeToKitchenStations(currentRestId, (firestoreStations) => {
       if (Array.isArray(firestoreStations)) {
-        setStations(prev => {
-          const map = new Map<string, KitchenStation>();
-          prev.forEach(s => map.set(s.id, s));
-          firestoreStations.forEach((fs: any) => {
-            map.set(fs.id, {
-              id: fs.id,
-              name: fs.name,
-              colorHex: fs.colorHex || '#f1f5f9',
-              printerName: fs.printerName,
-              restaurantId: fs.restaurantId
-            });
-          });
-          const merged = Array.from(map.values()).filter(s => s.restaurantId === currentRestId);
-          setScopedStorage('pos_registered_stations', merged);
-          return merged;
-        });
+        const mapped: KitchenStation[] = firestoreStations
+          .filter((fs: any) => !currentRestId || !fs.restaurantId || fs.restaurantId === currentRestId)
+          .map((fs: any) => ({
+            id: fs.id,
+            name: fs.name,
+            colorHex: fs.colorHex || '#f1f5f9',
+            printerName: fs.printerName,
+            restaurantId: fs.restaurantId
+          }));
+        setStations(mapped);
+        setScopedStorage('pos_registered_stations', mapped);
       }
       setLoading(false);
     });

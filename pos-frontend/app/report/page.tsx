@@ -1,7 +1,7 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
 import { getScopedStorage, setScopedStorage, removeScopedStorage, getRestaurantId } from '@/utils/storage';
-import { syncShiftToFirebase } from '@/utils/firebaseSync';
+import { syncShiftToFirebase, syncShiftExpenseToFirebase, syncPastClosureToFirebase, subscribeToPastClosures, subscribeToCashShift } from '@/utils/firebaseSync';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -251,6 +251,40 @@ export default function CashRegisterPage() {
   useEffect(() => { 
     fetchDailyReport(); 
     fetchPendingTables();
+
+    const restId = getRestaurantId();
+    let unsubShift: (() => void) | undefined;
+    let unsubClosures: (() => void) | undefined;
+
+    if (restId) {
+      unsubShift = subscribeToCashShift(restId, (cloudShift) => {
+        if (cloudShift) {
+          setIsShiftOpen(cloudShift.isOpen);
+          const currentMock = getScopedStorage<any>('mock_cash_shift', {}) || {};
+          const mergedMock = {
+            ...currentMock,
+            openingCash: cloudShift.openingAmount || currentMock.openingCash || 0,
+            shiftId: cloudShift.shiftId || currentMock.shiftId,
+            expenses: cloudShift.expenses || currentMock.expenses || [],
+            payments: cloudShift.payments || currentMock.payments || []
+          };
+          setScopedStorage('mock_cash_shift', mergedMock);
+          fetchDailyReport();
+        }
+      });
+
+      unsubClosures = subscribeToPastClosures(restId, (cloudClosures) => {
+        if (Array.isArray(cloudClosures)) {
+          setPastClosures(cloudClosures);
+          setScopedStorage('pos_shift_history', cloudClosures);
+        }
+      });
+    }
+
+    return () => {
+      if (typeof unsubShift === 'function') unsubShift();
+      if (typeof unsubClosures === 'function') unsubClosures();
+    };
   }, [router]);
 
   // ==========================================
@@ -356,6 +390,13 @@ export default function CashRegisterPage() {
     const local = getScopedStorage<any>('mock_cash_shift', {}) || {};
     local.expenses = updated; 
     setScopedStorage('mock_cash_shift', local);
+    if (restId) {
+      syncShiftExpenseToFirebase(restId, {
+        id: serverExpense?.id || Date.now().toString(),
+        amount,
+        description: expenseForm.description
+      }).catch(() => {});
+    }
     setExpenses(updated);
     setReport(prev => ({ ...prev, totalExpenses: newTotal, expectedCashInDrawer: prev.openingCash + prev.cash - newTotal }));
     setShowExpenseModal(false);
@@ -371,6 +412,10 @@ export default function CashRegisterPage() {
     const local = getScopedStorage<any>('mock_cash_shift', {}) || {};
     local.expenses = updated; 
     setScopedStorage('mock_cash_shift', local);
+    const restId = getRestaurantId();
+    if (restId) {
+      syncShiftToFirebase(restId, { expenses: updated }).catch(() => {});
+    }
     setExpenses(updated);
     setReport(prev => ({ ...prev, totalExpenses: newTotal, expectedCashInDrawer: prev.openingCash + prev.cash - newTotal }));
   };
@@ -402,14 +447,6 @@ export default function CashRegisterPage() {
       }
     } catch {}
 
-    // Sincronizar cierre a Firebase para avisar a todos los dispositivos en tiempo real
-    if (restId) {
-      syncShiftToFirebase(restId, {
-        isOpen: false,
-        closedAt: new Date().toISOString()
-      }).catch(() => {});
-    }
-
     const newHistoryRecord: PastClosure = {
       id: Date.now().toString(),
       date: new Date().toLocaleString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
@@ -417,6 +454,16 @@ export default function CashRegisterPage() {
       expenses: [...expenses],
       closureNote
     };
+
+    // Sincronizar cierre a Firebase para avisar a todos los dispositivos en tiempo real
+    if (restId) {
+      syncShiftToFirebase(restId, {
+        isOpen: false,
+        closedAt: new Date().toISOString()
+      }).catch(() => {});
+      syncPastClosureToFirebase(restId, newHistoryRecord).catch(() => {});
+    }
+
     const currentHistory = getScopedStorage<PastClosure[]>('pos_shift_history', []);
     setScopedStorage('pos_shift_history', [newHistoryRecord, ...currentHistory]);
     setPastClosures([newHistoryRecord, ...currentHistory]);

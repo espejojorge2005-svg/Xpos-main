@@ -1,6 +1,7 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
-import { getScopedStorage, setScopedStorage } from '@/utils/storage';
+import { getScopedStorage, setScopedStorage, getRestaurantId } from '@/utils/storage';
+import { syncZonesToFirebase, subscribeToZones } from '@/utils/firebaseSync';
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -63,8 +64,29 @@ export default function SettingsPage() {
     } catch { /* silently ignore */ }
   };
 
+  useEffect(() => {
+    fetchConfig();
+    fetchZones();
+
+    const currentRestId = getRestaurantId();
+    let unsubscribe: (() => void) | undefined;
+    if (currentRestId) {
+      unsubscribe = subscribeToZones(currentRestId, (cloudZones) => {
+        if (Array.isArray(cloudZones) && cloudZones.length > 0) {
+          setZones(cloudZones);
+          setScopedStorage('pos_registered_zones', cloudZones);
+        }
+      });
+    }
+
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, []);
+
   const fetchZones = async () => {
     const token = localStorage.getItem('pos_token') || '';
+    const currentRestId = getRestaurantId();
     let serverZones: Zone[] | null = null;
     try {
       const response = await fetch(getApiUrl('/floor/zones'), {
@@ -72,10 +94,13 @@ export default function SettingsPage() {
       });
       if (response.ok) {
         const data = await response.json();
-        if (Array.isArray(data)) {
+        if (Array.isArray(data) && data.length > 0) {
           serverZones = data;
           setZones(data);
           setScopedStorage('pos_registered_zones', data);
+          if (currentRestId) {
+            syncZonesToFirebase(currentRestId, data).catch(() => {});
+          }
         }
       }
     } catch (error) {
@@ -105,6 +130,9 @@ export default function SettingsPage() {
             }
           ];
           setScopedStorage('pos_registered_zones', localZones);
+          if (currentRestId) {
+            syncZonesToFirebase(currentRestId, localZones).catch(() => {});
+          }
         }
         setZones(localZones);
       }
@@ -213,6 +241,10 @@ export default function SettingsPage() {
 
     setScopedStorage('pos_registered_zones', updatedZones);
     setZones(updatedZones);
+    const currentRestId = getRestaurantId();
+    if (currentRestId) {
+      syncZonesToFirebase(currentRestId, updatedZones).catch(() => {});
+    }
     setZoneForm({ id: '', name: '' });
     setIsZoneModalOpen(false);
     setIsSaving(false);
@@ -240,6 +272,10 @@ export default function SettingsPage() {
     const updatedZones = currentZones.filter(z => z.id !== id);
     setScopedStorage('pos_registered_zones', updatedZones);
     setZones(updatedZones);
+    const currentRestId = getRestaurantId();
+    if (currentRestId) {
+      syncZonesToFirebase(currentRestId, updatedZones).catch(() => {});
+    }
     toast.success('Zona eliminada exitosamente');
     window.dispatchEvent(new Event('storage'));
   };
@@ -322,6 +358,10 @@ export default function SettingsPage() {
 
     setScopedStorage('pos_registered_zones', updatedZones);
     setZones(updatedZones);
+    const currentRestId = getRestaurantId();
+    if (currentRestId) {
+      syncZonesToFirebase(currentRestId, updatedZones).catch(() => {});
+    }
     toast.success(isEditing ? 'Mesa actualizada exitosamente' : 'Mesa agregada exitosamente');
     setTableForm({ id: '', zoneId: '', number: '', capacity: 4 });
     setIsTableModalOpen(false);
@@ -350,6 +390,10 @@ export default function SettingsPage() {
 
     setScopedStorage('pos_registered_zones', updatedZones);
     setZones(updatedZones);
+    const currentRestId = getRestaurantId();
+    if (currentRestId) {
+      syncZonesToFirebase(currentRestId, updatedZones).catch(() => {});
+    }
     toast.success('Mesa eliminada exitosamente');
     window.dispatchEvent(new Event('storage'));
   };

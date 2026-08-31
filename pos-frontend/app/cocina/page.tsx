@@ -1,6 +1,6 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
-import { subscribeToKitchenOrders } from '@/utils/firebaseSync';
+import { subscribeToKitchenOrders, serveKitchenItemInFirebase, updateKitchenOrderStatusInFirebase } from '@/utils/firebaseSync';
 import { getScopedStorage, setScopedStorage, getRestaurantId } from '@/utils/storage';
 
 import { useEffect, useState, useRef } from 'react';
@@ -198,6 +198,9 @@ export default function CocinaPage() {
     setFinishedCount(prev => prev + 1);
     toast.success('Plato despachado ✅');
 
+    // Sincronizar con Firebase en Tiempo Real
+    serveKitchenItemInFirebase(orderId, itemId).catch(() => {});
+
     try {
       const token = localStorage.getItem('pos_token');
       await fetch(getApiUrl(`/orders/${orderId}/items/${itemId}/serve`), {
@@ -250,6 +253,9 @@ export default function CocinaPage() {
     setOrders(current => current.filter(o => o.id !== orderId));
     setFinishedCount(prev => prev + (itemIds.length || 1));
     toast.success('Comanda despachada por completo ✅');
+
+    // Sincronizar con Firebase en Tiempo Real
+    updateKitchenOrderStatusInFirebase(orderId, 'SERVED').catch(() => {});
 
     try {
       const token = localStorage.getItem('pos_token');

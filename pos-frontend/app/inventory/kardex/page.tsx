@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { LayoutGrid, ArrowLeft, Search, Loader2, AlertCircle, CalendarDays, TrendingDown, Plus, RefreshCw } from 'lucide-react';
 import { getApiUrl } from '@/utils/api';
-import { getScopedStorage } from '@/utils/storage';
+import { getScopedStorage, setScopedStorage, getRestaurantId } from '@/utils/storage';
+import { subscribeToStockMovements, subscribeToProducts } from '@/utils/firebaseSync';
 import { useGuardedRoute } from '@/hooks/useGuardedRoute';
 
 interface KardexRow {
@@ -168,6 +169,31 @@ export default function KardexPage() {
 
   useEffect(() => {
     loadKardexData();
+
+    const currentRestId = getRestaurantId();
+    let unsubMovs: (() => void) | undefined;
+    let unsubProds: (() => void) | undefined;
+
+    if (currentRestId) {
+      unsubMovs = subscribeToStockMovements(currentRestId, (cloudMovements) => {
+        if (Array.isArray(cloudMovements)) {
+          setScopedStorage('pos_stock_movements', cloudMovements);
+          setData(computeLocalKardex(7));
+        }
+      });
+
+      unsubProds = subscribeToProducts(currentRestId, (cloudProducts) => {
+        if (Array.isArray(cloudProducts) && cloudProducts.length > 0) {
+          setScopedStorage('pos_registered_products', cloudProducts);
+          setData(computeLocalKardex(7));
+        }
+      });
+    }
+
+    return () => {
+      if (typeof unsubMovs === 'function') unsubMovs();
+      if (typeof unsubProds === 'function') unsubProds();
+    };
   }, [router]);
 
   const handleManualRefresh = () => {

@@ -1,4 +1,4 @@
-import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, getDocs, query, where, orderBy } from 'firebase/firestore';
+import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, getDoc, getDocs, query, where, orderBy } from 'firebase/firestore';
 import { db } from './firebase';
 
 export interface FirebaseOrder {
@@ -109,9 +109,6 @@ export const syncTableToFirebase = async (tableId: string, status: 'FREE' | 'OCC
   }
 };
 
-/**
- * Turno de caja en Firebase Firestore (Multi-inquilino en Tiempo Real)
- */
 export interface FirebaseShift {
   restaurantId: string;
   isOpen: boolean;
@@ -120,6 +117,8 @@ export interface FirebaseShift {
   openedAt?: string;
   closedAt?: string;
   updatedAt?: string;
+  expenses?: Array<{ id: string; amount: number; description: string; createdAt: string }>;
+  payments?: Array<{ id: string; orderId?: string; table?: string; amount: number; method?: string; tipAmount?: number; date?: string; items?: any[] }>;
 }
 
 export const syncShiftToFirebase = async (restaurantId: string, shift: Partial<FirebaseShift>) => {
@@ -132,6 +131,44 @@ export const syncShiftToFirebase = async (restaurantId: string, shift: Partial<F
     }, { merge: true });
   } catch (err) {
     console.warn("Error syncing shift to Firebase:", err);
+  }
+};
+
+export const syncShiftExpenseToFirebase = async (restaurantId: string, expense: { id: string; amount: number; description: string; createdAt?: string }) => {
+  try {
+    const shiftDocRef = doc(db, 'shifts', restaurantId);
+    const snap = await getDoc(shiftDocRef);
+    const existingExpenses = snap.exists() && Array.isArray(snap.data()?.expenses) ? snap.data().expenses : [];
+    const updatedExpenses = [
+      ...existingExpenses.filter((e: any) => e.id !== expense.id),
+      { ...expense, createdAt: expense.createdAt || new Date().toISOString() }
+    ];
+    await setDoc(shiftDocRef, {
+      expenses: updatedExpenses,
+      restaurantId,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (err) {
+    console.warn("Error syncing expense to Firebase:", err);
+  }
+};
+
+export const syncShiftPaymentToFirebase = async (restaurantId: string, payment: any) => {
+  try {
+    const shiftDocRef = doc(db, 'shifts', restaurantId);
+    const snap = await getDoc(shiftDocRef);
+    const existingPayments = snap.exists() && Array.isArray(snap.data()?.payments) ? snap.data().payments : [];
+    const updatedPayments = [
+      ...existingPayments.filter((p: any) => p.id !== payment.id),
+      { ...payment, date: payment.date || new Date().toISOString() }
+    ];
+    await setDoc(shiftDocRef, {
+      payments: updatedPayments,
+      restaurantId,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (err) {
+    console.warn("Error syncing payment to Firebase:", err);
   }
 };
 
@@ -318,4 +355,191 @@ export const subscribeToProducts = (restaurantId: string, onUpdate: (products: a
   }
 };
 
+/**
+ * ZONAS Y MESAS (Plano de Sala) en Firebase Firestore (Multi-inquilino)
+ */
+export const syncZonesToFirebase = async (restaurantId: string, zones: any[]) => {
+  try {
+    if (!restaurantId) return;
+    const ref = doc(db, 'zones', restaurantId);
+    await setDoc(ref, {
+      restaurantId,
+      zones,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (err) {
+    console.warn("Error syncing zones to Firebase:", err);
+  }
+};
 
+export const subscribeToZones = (restaurantId: string, onUpdate: (zones: any[]) => void) => {
+  try {
+    if (!restaurantId) return () => {};
+    const ref = doc(db, 'zones', restaurantId);
+    return onSnapshot(ref, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (Array.isArray(data?.zones)) {
+          onUpdate(data.zones);
+        }
+      }
+    }, (error) => {
+      console.warn("Firestore real-time subscription (zones) info:", error.message);
+    });
+  } catch (err) {
+    console.warn("Firebase zones listener initialization:", err);
+    return () => {};
+  }
+};
+
+/**
+ * COMANDAS ACTIVAS POR MESA (Plano de Sala - Ocupación y consumos)
+ */
+export const syncActiveTableOrdersToFirebase = async (restaurantId: string, activeTableOrders: Record<string, any>) => {
+  try {
+    if (!restaurantId) return;
+    const ref = doc(db, 'active_table_orders', restaurantId);
+    await setDoc(ref, {
+      restaurantId,
+      orders: activeTableOrders,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (err) {
+    console.warn("Error syncing active table orders to Firebase:", err);
+  }
+};
+
+export const subscribeToActiveTableOrders = (restaurantId: string, onUpdate: (orders: Record<string, any>) => void) => {
+  try {
+    if (!restaurantId) return () => {};
+    const ref = doc(db, 'active_table_orders', restaurantId);
+    return onSnapshot(ref, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data?.orders) {
+          onUpdate(data.orders);
+        }
+      }
+    }, (error) => {
+      console.warn("Firestore real-time subscription (active_table_orders) info:", error.message);
+    });
+  } catch (err) {
+    console.warn("Firebase active_table_orders listener initialization:", err);
+    return () => {};
+  }
+};
+
+/**
+ * ACCIONES DE COCINA EN TIEMPO REAL (Despacho de platos y comandas)
+ */
+export const updateKitchenOrderStatusInFirebase = async (orderId: string, status: 'OPEN' | 'SERVED' | 'CANCELLED') => {
+  try {
+    const orderDocRef = doc(db, 'orders', orderId);
+    await updateDoc(orderDocRef, {
+      status,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (err) {
+    console.warn("Error updating order status in Firebase:", err);
+  }
+};
+
+export const serveKitchenItemInFirebase = async (orderId: string, itemId: string) => {
+  try {
+    const orderDocRef = doc(db, 'orders', orderId);
+    const snap = await getDoc(orderDocRef);
+    if (snap.exists()) {
+      const order = snap.data() as FirebaseOrder;
+      let allServed = true;
+      const updatedItems = (order.items || []).map((it: any) => {
+        if (it.id === itemId) {
+          return { ...it, status: 'SERVED' as const };
+        }
+        if (it.status !== 'SERVED' && it.status !== 'CANCELLED' && it.status !== 'CANCELED') {
+          allServed = false;
+        }
+        return it;
+      });
+
+      await updateDoc(orderDocRef, {
+        items: updatedItems,
+        status: allServed ? 'SERVED' : order.status,
+        updatedAt: new Date().toISOString()
+      });
+    }
+  } catch (err) {
+    console.warn("Error serving kitchen item in Firebase:", err);
+  }
+};
+
+/**
+ * MOVIMIENTOS DE STOCK / KARDEX en Firebase Firestore (Multi-inquilino)
+ */
+export const syncStockMovementToFirebase = async (restaurantId: string, movement: any) => {
+  try {
+    if (!restaurantId || !movement?.id) return;
+    const ref = doc(db, 'stock_movements', movement.id);
+    await setDoc(ref, {
+      ...movement,
+      restaurantId,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (err) {
+    console.warn("Error syncing stock movement to Firebase:", err);
+  }
+};
+
+export const subscribeToStockMovements = (restaurantId: string, onUpdate: (movements: any[]) => void) => {
+  try {
+    if (!restaurantId) return () => {};
+    const ref = collection(db, 'stock_movements');
+    return onSnapshot(ref, (snapshot) => {
+      const movements = snapshot.docs
+        .map(d => ({ id: d.id, ...(d.data() as any) }))
+        .filter((m: any) => m.restaurantId === restaurantId)
+        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      onUpdate(movements);
+    }, (error) => {
+      console.warn("Firestore real-time subscription (stock_movements) info:", error.message);
+    });
+  } catch (err) {
+    console.warn("Firebase stock movements listener initialization:", err);
+    return () => {};
+  }
+};
+
+/**
+ * HISTORIAL DE CIERRES DE CAJA / REPORTES en Firebase Firestore (Multi-inquilino)
+ */
+export const syncPastClosureToFirebase = async (restaurantId: string, closure: any) => {
+  try {
+    if (!restaurantId || !closure?.id) return;
+    const ref = doc(db, 'past_closures', closure.id);
+    await setDoc(ref, {
+      ...closure,
+      restaurantId,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (err) {
+    console.warn("Error syncing past closure to Firebase:", err);
+  }
+};
+
+export const subscribeToPastClosures = (restaurantId: string, onUpdate: (closures: any[]) => void) => {
+  try {
+    if (!restaurantId) return () => {};
+    const ref = collection(db, 'past_closures');
+    return onSnapshot(ref, (snapshot) => {
+      const closures = snapshot.docs
+        .map(d => ({ id: d.id, ...(d.data() as any) }))
+        .filter((c: any) => c.restaurantId === restaurantId)
+        .sort((a, b) => new Date(b.closedAt || b.date || 0).getTime() - new Date(a.closedAt || a.date || 0).getTime());
+      onUpdate(closures);
+    }, (error) => {
+      console.warn("Firestore real-time subscription (past_closures) info:", error.message);
+    });
+  } catch (err) {
+    console.warn("Firebase past closures listener initialization:", err);
+    return () => {};
+  }
+};

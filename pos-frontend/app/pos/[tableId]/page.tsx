@@ -4,7 +4,7 @@ import { getRestaurantId, getScopedStorage, setScopedStorage } from '@/utils/sto
 
 import { useEffect, useState, use } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { syncOrderToFirebase, syncTableToFirebase } from '@/utils/firebaseSync';
+import { syncOrderToFirebase, syncTableToFirebase, syncStockMovementToFirebase, syncProductToFirebase, syncActiveTableOrdersToFirebase, syncShiftPaymentToFirebase, subscribeToProducts, subscribeToCategories } from '@/utils/firebaseSync';
 import { ArrowLeft, Search, Plus, Minus, Trash2, ShoppingCart, UtensilsCrossed, ReceiptText, ChefHat, CheckCircle2, AlertTriangle, X, Printer, CreditCard, Banknote, Smartphone, Edit2, Heart, ArrowRightLeft, Scissors } from 'lucide-react';
 import { toast } from 'sonner';
 import ComboModal from '@/components/ComboModal';
@@ -273,6 +273,32 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
     };
 
     fetchData();
+
+    const currentRestId = getRestaurantId();
+    let unsubProds: (() => void) | undefined;
+    let unsubCats: (() => void) | undefined;
+
+    if (currentRestId) {
+      unsubProds = subscribeToProducts(currentRestId, (cloudProds) => {
+        if (Array.isArray(cloudProds) && cloudProds.length > 0) {
+          const activeProds = cloudProds.filter((p: any) => p.isActive !== false);
+          setProducts(activeProds);
+          setScopedStorage('pos_registered_products', cloudProds);
+        }
+      });
+
+      unsubCats = subscribeToCategories(currentRestId, (cloudCats) => {
+        if (Array.isArray(cloudCats) && cloudCats.length > 0) {
+          setCategories(cloudCats);
+          setScopedStorage('pos_registered_categories', cloudCats);
+        }
+      });
+    }
+
+    return () => {
+      if (typeof unsubProds === 'function') unsubProds();
+      if (typeof unsubCats === 'function') unsubCats();
+    };
   }, [router, tableId, isCashierMode]);
 
   const filteredProducts = products.filter(p => {
@@ -461,6 +487,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
     // 1.1 DESCONTAR INVENTARIO / STOCK LOCALMENTE Y REGISTRAR EN KARDEX
     try {
+      const restId = getRestaurantId();
       let storedProducts = getScopedStorage<Product[]>('pos_registered_products', []);
       let stockMovements = getScopedStorage<any[]>('pos_stock_movements', []);
       if (Array.isArray(storedProducts) && storedProducts.length > 0) {
@@ -470,7 +497,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
           if (totalDeduction > 0 && typeof p.stock === 'number') {
             const oldStock = p.stock;
             const newStock = Math.max(0, oldStock - totalDeduction);
-            stockMovements.unshift({
+            const movement = {
               id: `mov-${Date.now()}-${p.id}`,
               productId: p.id,
               productName: p.name,
@@ -480,7 +507,16 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
               stockAfter: newStock,
               type: 'SALE',
               createdAt: new Date().toISOString(),
-            });
+            };
+            stockMovements.unshift(movement);
+            if (restId) {
+              syncStockMovementToFirebase(restId, movement).catch(() => {});
+              syncProductToFirebase({
+                ...p,
+                stock: newStock,
+                restaurantId: restId
+              }).catch(() => {});
+            }
             return {
               ...p,
               stock: newStock
@@ -586,36 +622,40 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
           } catch {}
         }
       }
-
-      // Sincronizar con Firebase para notificar a cocina en Tiempo Real
-      const restaurantId = getRestaurantId();
-      if (restaurantId) {
-        syncOrderToFirebase({
-          id: backendOrder?.id || effectiveOrderId,
-          tableId: tableId === 'takeout' ? undefined : tableId,
-          tableName: effectiveTableName,
-          status: 'OPEN',
-          totalAmount: newTotal,
-          items: combinedExistingItems.map(item => ({
-            id: item.id || `item-${Date.now()}-${Math.random()}`,
-            productName: item.name,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            subtotal: item.quantity * item.unitPrice,
-            notes: item.notes || '',
-            status: item.status || 'ACTIVE'
-          })),
-          createdAt: backendOrder?.createdAt || new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          restaurantId
-        }).catch(() => {});
-        
-        if (tableId !== 'takeout') {
-          syncTableToFirebase(tableId, 'OCCUPIED', restaurantId).catch(() => {});
-        }
-      }
     } catch (netErr) {
       console.warn('Backend remoto offline al registrar pedido, funcionando en modo local:', netErr);
+    }
+
+    // Sincronizar SIEMPRE con Firebase para notificar a cocina y mesas en Tiempo Real (Garantizado Offline/Online)
+    const restaurantId = getRestaurantId();
+    if (restaurantId) {
+      syncOrderToFirebase({
+        id: backendOrder?.id || effectiveOrderId,
+        tableId: tableId === 'takeout' ? undefined : tableId,
+        tableName: effectiveTableName,
+        status: 'OPEN',
+        totalAmount: newTotal,
+        items: combinedExistingItems.map(item => ({
+          id: item.id || `item-${Date.now()}-${Math.random()}`,
+          productName: item.name,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          subtotal: item.quantity * item.unitPrice,
+          notes: item.notes || '',
+          status: item.status || 'ACTIVE'
+        })),
+        createdAt: backendOrder?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        restaurantId
+      }).catch(() => {});
+      
+      if (tableId !== 'takeout') {
+        syncTableToFirebase(tableId, 'OCCUPIED', restaurantId).catch(() => {});
+        try {
+          const currentActive = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
+          syncActiveTableOrdersToFirebase(restaurantId, currentActive).catch(() => {});
+        } catch {}
+      }
     }
 
     // 4. IMPRESIÓN EN COMANDERAS DE COCINA
@@ -1045,32 +1085,43 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
       setPayments(updatedPayments);
 
-      // Record in local cash shift for Cashier / Daily Report
+      // Record in local cash shift for Cashier / Daily Report and sync to Firebase
+      const restId = getRestaurantId();
+      const newPaymentRecord = {
+        id: `pay-${Date.now()}`,
+        orderId: activeOrderId || `ord-${tableId}`,
+        table: tableName || `Mesa ${tableId.replace(/[^0-9]/g, '') || tableId.slice(0, 4)}`,
+        amount: paymentAmount,
+        method: paymentMethod,
+        tipAmount: tipAmount || 0,
+        date: new Date().toISOString(),
+        items: existingItems.map(i => ({ name: i.name, quantity: i.quantity, price: i.unitPrice }))
+      };
+
       try {
         const shiftData = getScopedStorage<any>('mock_cash_shift', null);
         if (shiftData) {
           if (!shiftData.payments) shiftData.payments = [];
-          shiftData.payments.push({
-            id: `pay-${Date.now()}`,
-            orderId: activeOrderId || `ord-${tableId}`,
-            table: tableName || `Mesa ${tableId.replace(/[^0-9]/g, '') || tableId.slice(0, 4)}`,
-            amount: paymentAmount,
-            method: paymentMethod,
-            tipAmount: tipAmount || 0,
-            date: new Date().toISOString(),
-            items: existingItems.map(i => ({ name: i.name, quantity: i.quantity, price: i.unitPrice }))
-          });
+          shiftData.payments.push(newPaymentRecord);
           setScopedStorage('mock_cash_shift', shiftData);
         }
       } catch {}
+
+      if (restId) {
+        syncShiftPaymentToFirebase(restId, newPaymentRecord).catch(() => {});
+      }
 
       const newTotalPaid = updatedPayments.reduce((sum, p) => sum + p.amount, 0);
       
       if (newTotalPaid >= (existingSubtotal || paymentAmount)) {
         clearLocalTableOccupancy();
-        const restId = getRestaurantId();
         if (restId && tableId !== 'takeout') {
           syncTableToFirebase(tableId, 'FREE', restId).catch(() => {});
+          try {
+            const currentActive = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
+            delete currentActive[tableId];
+            syncActiveTableOrdersToFirebase(restId, currentActive).catch(() => {});
+          } catch {}
         }
         toast.success("Cuenta cobrada en su totalidad y mesa liberada ✅");
         setShowCheckout(false);
@@ -1086,6 +1137,9 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
           if (activeTableOrders[tableId]) {
             activeTableOrders[tableId].payments = updatedPayments;
             setScopedStorage('pos_active_table_orders', activeTableOrders);
+            if (restId) {
+              syncActiveTableOrdersToFirebase(restId, activeTableOrders).catch(() => {});
+            }
           }
         } catch {}
         toast.success("Pago parcial registrado ✅");

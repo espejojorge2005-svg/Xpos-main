@@ -59,20 +59,16 @@ export default function CategoriesPage() {
     // 1. Suscripción EN TIEMPO REAL a Firebase Firestore
     const unsubscribe = subscribeToCategories(currentRestId, (firestoreCats) => {
       if (Array.isArray(firestoreCats)) {
-        setCategories(prev => {
-          const map = new Map<string, Category>();
-          prev.forEach(c => map.set(c.id, c));
-          firestoreCats.forEach((fc: any) => {
-            map.set(fc.id, {
-              id: fc.id,
-              name: fc.name,
-              restaurantId: fc.restaurantId,
-              products: map.get(fc.id)?.products || []
-            });
-          });
-          const merged = Array.from(map.values()).filter(c => c.restaurantId === currentRestId);
-          return merged;
-        });
+        const mapped: Category[] = firestoreCats
+          .filter((fc: any) => !currentRestId || !fc.restaurantId || fc.restaurantId === currentRestId)
+          .map((fc: any) => ({
+            id: fc.id,
+            name: fc.name,
+            restaurantId: fc.restaurantId,
+            products: []
+          }));
+        setCategories(mapped);
+        setScopedStorage('pos_registered_categories', mapped);
       }
       setLoading(false);
     });
@@ -144,25 +140,27 @@ export default function CategoriesPage() {
       name: trimmedName,
     };
 
+    let savedCategory: any = null;
     try {
-      const response = await fetch(url, {
-        method,
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-          'x-restaurant-id': currentRestId || ''
-        },
-        body: JSON.stringify(bodyData),
-      });
+      try {
+        const response = await fetch(url, {
+          method,
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            'x-restaurant-id': currentRestId || ''
+          },
+          body: JSON.stringify(bodyData),
+        });
 
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || errorData.error || `Error (${response.status}) al guardar la categoría`);
+        if (response.ok) {
+          savedCategory = await response.json();
+        }
+      } catch (netErr) {
+        console.warn('Backend no disponible para categoría, guardando en Firebase/local:', netErr);
       }
 
-      const savedCategory = await response.json();
-      // Usar el ID real devuelto por la base de datos
+      // Usar el ID real o ID resiliente
       const realId = savedCategory?.id || (isEditing ? formData.id : `cat-${Date.now()}`);
 
       const newCategory: Category = { 
@@ -173,7 +171,6 @@ export default function CategoriesPage() {
           ? (categories.find(c => c.id === formData.id)?.products || []) 
           : (savedCategory?.products || [])
       };
-
 
       const updatedCats = isEditing
         ? categories.map(c => c.id === formData.id ? { ...c, ...newCategory } : c)
@@ -188,7 +185,7 @@ export default function CategoriesPage() {
       toast.success(isEditing ? 'Categoría actualizada con éxito ✅' : 'Categoría creada con éxito ✅');
       closeModal();
     } catch (err: any) {
-      toast.error(err.message || 'No se pudo guardar la categoría en el servidor');
+      toast.error(err.message || 'No se pudo guardar la categoría');
     } finally {
       setIsSaving(false);
     }
