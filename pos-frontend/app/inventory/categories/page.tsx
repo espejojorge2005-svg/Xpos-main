@@ -142,22 +142,21 @@ export default function CategoriesPage() {
 
     let savedCategory: any = null;
     try {
-      try {
-        const response = await fetch(url, {
-          method,
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-            'x-restaurant-id': currentRestId || ''
-          },
-          body: JSON.stringify(bodyData),
-        });
-
-        if (response.ok) {
-          savedCategory = await response.json();
-        }
-      } catch (netErr) {
+      const response = await fetch(url, {
+        method,
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'x-restaurant-id': currentRestId || ''
+        },
+        body: JSON.stringify(bodyData),
+      }).catch(netErr => {
         console.warn('Backend no disponible para categoría, guardando en Firebase/local:', netErr);
+        return null;
+      });
+
+      if (response && response.ok) {
+        savedCategory = await response.json().catch(() => null);
       }
 
       // Usar el ID real o ID resiliente
@@ -211,32 +210,28 @@ export default function CategoriesPage() {
     const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
 
     try {
-      const response = await fetch(getApiUrl(`/inventory/category/${categoryToDelete.id}`), {
-        method: 'DELETE',
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'x-restaurant-id': currentRestId || ''
-        }
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          errorData.message || 
-          errorData.error || 
-          'No se pudo eliminar la categoría. Asegúrate de reasignar o eliminar los productos asociados primero.'
-        );
+      try {
+        await fetch(getApiUrl(`/inventory/category/${categoryToDelete.id}`), {
+          method: 'DELETE',
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'x-restaurant-id': currentRestId || ''
+          }
+        });
+      } catch (e) {
+        console.warn('Backend no disponible para eliminar categoría, eliminando en Firebase/local:', e);
       }
 
       const updatedCats = categories.filter(c => c.id !== categoryToDelete.id);
       setCategories(updatedCats);
+      setScopedStorage('pos_registered_categories', updatedCats);
 
       deleteCategoryFromFirebase(categoryToDelete.id).catch(() => {});
 
       toast.success('Categoría eliminada exitosamente ✅');
       closeDeleteModal();
     } catch (err: any) {
-      toast.error(err.message || 'Error al eliminar la categoría del servidor');
+      toast.error(err.message || 'Error al eliminar la categoría');
     } finally {
       setIsDeleting(false);
     }
