@@ -293,7 +293,17 @@ export default function Home() {
       loadedZones = loadedZones.map(zone => ({
         ...zone,
         tables: zone.tables.map(table => {
-          const orderInfo = activeTableOrders[table.id];
+          const num = String(table.number);
+          const orderInfo = activeTableOrders[table.id] || 
+            Object.values(activeTableOrders).find((o: any) => 
+              o && o.status === 'OCCUPIED' && (
+                o.tableId === table.id ||
+                (o.tableName && table.name && o.tableName.toLowerCase().trim() === table.name.toLowerCase().trim()) ||
+                (o.tableName && o.tableName.toLowerCase().includes(`mesa ${num}`)) ||
+                (o.tableName && o.tableName.toLowerCase().includes(`${num}`))
+              )
+            );
+
           const isOrderActive = orderInfo && (orderInfo.status === 'OCCUPIED' || (Array.isArray(orderInfo.items) && orderInfo.items.length > 0));
           const hasServerOrder = table.orders && table.orders.length > 0 && table.status === 'OCCUPIED';
 

@@ -34,6 +34,12 @@ export interface FirebaseTable {
   restaurantId?: string;
 }
 
+export const isMatchingTenant = (itemRestId?: string | null, currentRestId?: string | null): boolean => {
+  if (!currentRestId || currentRestId === 'main') return true;
+  if (!itemRestId || itemRestId === 'main') return true;
+  return itemRestId === currentRestId;
+};
+
 /**
  * Escuchar órdenes de cocina en tiempo real desde Firebase Firestore
  */
@@ -43,7 +49,7 @@ export const subscribeToKitchenOrders = (restaurantId: string, onUpdate: (orders
     return onSnapshot(ordersRef, (snapshot) => {
       const ordersData: FirebaseOrder[] = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as FirebaseOrder))
-        .filter(order => (!restaurantId || !order.restaurantId || order.restaurantId === restaurantId) && order.status === 'OPEN')
+        .filter(order => isMatchingTenant(order.restaurantId, restaurantId) && order.status === 'OPEN')
         .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
       onUpdate(ordersData);
     }, (error) => {
@@ -67,7 +73,7 @@ export const subscribeToTables = (restaurantId: string | null | undefined, onUpd
           id: doc.id,
           ...doc.data()
         } as FirebaseTable))
-        .filter(t => !restaurantId || !t.restaurantId || t.restaurantId === restaurantId);
+        .filter(t => isMatchingTenant(t.restaurantId, restaurantId));
       onUpdate(tablesData);
     }, (error) => {
       console.warn("Firestore real-time subscription (tables) info:", error.message);
@@ -123,7 +129,7 @@ export const getActiveTableOrderFromFirebase = async (restaurantId: string, tabl
       .map(d => ({ id: d.id, ...d.data() } as FirebaseOrder))
       .find(o => {
         if (o.status !== 'OPEN') return false;
-        if (restaurantId && o.restaurantId && o.restaurantId !== restaurantId) return false;
+        if (!isMatchingTenant(o.restaurantId, restaurantId)) return false;
         if (o.tableId === tableId) return true;
         if (tableName && o.tableName && o.tableName.toLowerCase() === tableName.toLowerCase()) return true;
         if (num && o.tableName && o.tableName.toLowerCase().includes(`mesa ${num}`)) return true;
@@ -532,7 +538,7 @@ export const subscribeToOrders = (restaurantId: string | null | undefined, onUpd
     return onSnapshot(ordersRef, (snapshot) => {
       const ordersData: FirebaseOrder[] = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as FirebaseOrder))
-        .filter(order => !restaurantId || !order.restaurantId || order.restaurantId === restaurantId);
+        .filter(order => isMatchingTenant(order.restaurantId, restaurantId));
       onUpdate(ordersData);
     }, (error) => {
       console.warn("Firestore real-time subscription (all orders) info:", error.message);

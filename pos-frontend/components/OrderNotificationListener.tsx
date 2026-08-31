@@ -8,11 +8,13 @@ import { toast } from 'sonner';
 
 export default function OrderNotificationListener() {
   const router = useRouter();
-  const isInitialSnapshotRef = useRef<boolean>(true);
+  const mountedAtRef = useRef<number>(Date.now());
   const knownOrderStatusRef = useRef<Map<string, string>>(new Map());
   const notifiedOrdersRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
+    mountedAtRef.current = Date.now();
+
     // Restaurar órdenes notificadas en esta sesión para evitar duplicidad al navegar
     try {
       const stored = sessionStorage.getItem('notified_served_orders');
@@ -39,19 +41,6 @@ export default function OrderNotificationListener() {
         }
       } catch {}
 
-      // 1. En la primera carga, registrar el estado actual sin disparar alertas viejas
-      if (isInitialSnapshotRef.current) {
-        orders.forEach((order) => {
-          knownOrderStatusRef.current.set(order.id, order.status);
-          if (order.status === 'SERVED') {
-            notifiedOrdersRef.current.add(order.id);
-          }
-        });
-        isInitialSnapshotRef.current = false;
-        return;
-      }
-
-      // 2. Procesar cambios de estado en tiempo real (instantáneo)
       orders.forEach((order) => {
         const prevStatus = knownOrderStatusRef.current.get(order.id);
         knownOrderStatusRef.current.set(order.id, order.status);
@@ -74,13 +63,16 @@ export default function OrderNotificationListener() {
           })
         );
 
-        // Si la orden ya estaba registrada como servida y ya fue notificada, ignorar
+        // Si la orden ya fue notificada en esta sesión, ignorar
         if (notifiedOrdersRef.current.has(order.id)) return;
 
-        // Si cambió de OPEN a SERVED o es una nueva orden despachada
-        const isNewlyServed = prevStatus === 'OPEN' || !prevStatus || order.status === 'SERVED';
+        // Validar si es un despacho reciente (ocurrido durante la sesión o en los últimos 45 segundos)
+        const dispatchTime = order.dispatchedAt ? new Date(order.dispatchedAt).getTime() : 0;
+        const updateTime = order.updatedAt ? new Date(order.updatedAt).getTime() : 0;
+        const eventTime = dispatchTime || updateTime;
+        const isRecent = eventTime >= mountedAtRef.current - 45000 || prevStatus === 'OPEN';
 
-        if (isNewlyServed && userRole !== 'COOK') {
+        if (isRecent && userRole !== 'COOK') {
           notifiedOrdersRef.current.add(order.id);
           try {
             sessionStorage.setItem(
@@ -91,11 +83,11 @@ export default function OrderNotificationListener() {
 
           const tableLabel = order.tableName || (order.tableId ? `Mesa ${order.tableId}` : 'Pedido');
 
-          // Mostrar mensaje arriba a la derecha (top-right) sin sonido
+          // Mostrar mensaje en la esquina superior derecha (top-right) sin sonido
           toast.success(`🍽️ ¡Pedido Listo para Servir!`, {
             description: `${tableLabel} — Cocina terminó de preparar los platos y están listos para llevar a la mesa.`,
             position: 'top-right',
-            duration: 8000,
+            duration: 9000,
             action: {
               label: 'Ver Mesa',
               onClick: () => {
