@@ -2,7 +2,7 @@
 import { getApiUrl } from '@/utils/api';
 import { getScopedStorage, getRestaurantId, setScopedStorage, removeScopedStorage } from '@/utils/storage';
 
-import { subscribeToTables, subscribeToCashShift, subscribeToZones, subscribeToActiveTableOrders, subscribeToOrders, fetchOpenOrdersFromFirebase } from '@/utils/firebaseSync';
+import { subscribeToCashShift, subscribeToZones, subscribeToOrders } from '@/utils/firebaseSync';
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -227,18 +227,6 @@ export default function Home() {
     const token = localStorage.getItem('pos_token');
     const currentRestId = getRestaurantId() || 'main';
     let loadedZones: Zone[] = [];
-
-    // 1. Cargar comandas abiertas directamente desde Firebase Firestore para garantizar sincronización multidispositivo
-    try {
-      const cloudMap = await fetchOpenOrdersFromFirebase(currentRestId);
-      if (cloudMap && Object.keys(cloudMap).length > 0) {
-        const currentActive = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
-        const merged = { ...currentActive, ...cloudMap };
-        setScopedStorage('pos_active_table_orders', merged);
-      }
-    } catch (e) {
-      console.warn("Error cargando órdenes de Firebase en fetchZonas:", e);
-    }
 
     try {
       const response = await fetch(getApiUrl('/floor/zones'), {
@@ -520,30 +508,7 @@ export default function Home() {
       }
     });
 
-    // 2. Escucha en tiempo real de mesas desde Firebase
-    const unsubscribeTables = subscribeToTables(currentRestId, (firebaseTables) => {
-      if (firebaseTables && firebaseTables.length > 0) {
-        const tableMap = new Map(firebaseTables.map(t => [t.id, t.status]));
-        setZones(prevZones => prevZones.map(zone => ({
-          ...zone,
-          tables: zone.tables.map(table => {
-            const remoteStatus = tableMap.get(table.id);
-            if (remoteStatus && remoteStatus !== table.status) {
-              return {
-                ...table,
-                status: remoteStatus,
-                orders: remoteStatus === 'OCCUPIED' && (!table.orders || table.orders.length === 0)
-                  ? [{ id: `ord-${table.id}`, createdAt: new Date().toISOString() }]
-                  : (remoteStatus === 'FREE' ? [] : table.orders)
-              };
-            }
-            return table;
-          })
-        })));
-      }
-    });
-
-    // 3. Escucha en tiempo real de plano de sala (Zonas y Mesas creadas)
+    // 2. Escucha en tiempo real de plano de sala (Zonas y Mesas creadas)
     const unsubscribeZones = subscribeToZones(currentRestId, (cloudZones) => {
       if (Array.isArray(cloudZones) && cloudZones.length > 0) {
         setScopedStorage('pos_registered_zones', cloudZones);
@@ -551,17 +516,7 @@ export default function Home() {
       }
     });
 
-    // 4. Escucha en tiempo real de comandas activas en mesas (consumos en vivo)
-    const unsubscribeActiveOrders = subscribeToActiveTableOrders(currentRestId, (cloudActiveOrders) => {
-      if (cloudActiveOrders && typeof cloudActiveOrders === 'object') {
-        const currentActive = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
-        const merged = { ...currentActive, ...cloudActiveOrders };
-        setScopedStorage('pos_active_table_orders', merged);
-        fetchZonas();
-      }
-    });
-
-    // 5. Escucha en tiempo real de turno de caja desde Firebase
+    // 3. Escucha en tiempo real de turno de caja desde Firebase
     const unsubscribeShift = subscribeToCashShift(currentRestId, (cloudShift) => {
       if (cloudShift) {
         setIsShiftOpen(cloudShift.isOpen);
@@ -581,9 +536,7 @@ export default function Home() {
     return () => {
       clearInterval(interval);
       if (typeof unsubscribeOrders === 'function') unsubscribeOrders();
-      if (typeof unsubscribeTables === 'function') unsubscribeTables();
       if (typeof unsubscribeZones === 'function') unsubscribeZones();
-      if (typeof unsubscribeActiveOrders === 'function') unsubscribeActiveOrders();
       if (typeof unsubscribeShift === 'function') unsubscribeShift();
     };
   }, [router, isEditMode]);
