@@ -7,28 +7,40 @@ export class AiAnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Obtiene el resumen financiero y de pedidos del día actual
+   * Obtiene el resumen financiero y de pedidos del día actual para un restaurante específico
    */
   async getRealtimeSalesSummary(restaurantId: string | null): Promise<SalesSummary> {
+    if (!restaurantId) {
+      return {
+        date: new Date().toLocaleDateString('es-PE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+        totalRevenue: 0,
+        totalTips: 0,
+        totalOrdersCount: 0,
+        closedOrdersCount: 0,
+        openOrdersCount: 0,
+        cancelledOrdersCount: 0,
+        averageTicket: 0,
+        paymentBreakdown: {},
+      };
+    }
+
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
     const endOfDay = new Date();
     endOfDay.setHours(23, 59, 59, 999);
 
-    const whereRest = restaurantId ? { restaurantId } : {};
-
     const [payments, orders] = await Promise.all([
       this.prisma.payment.findMany({
         where: {
           createdAt: { gte: startOfDay, lte: endOfDay },
-          ...(restaurantId ? { order: { restaurantId } } : {}),
+          order: { restaurantId },
         },
       }),
       this.prisma.order.findMany({
         where: {
           createdAt: { gte: startOfDay, lte: endOfDay },
-          ...whereRest,
+          restaurantId,
         },
         include: { table: true, items: true },
       }),
@@ -66,21 +78,28 @@ export class AiAnalyticsService {
   }
 
   /**
-   * Obtiene el ranking de platos y bebidas más y menos vendidos
+   * Obtiene el ranking de platos y bebidas más y menos vendidos del restaurante
    */
   async getTopProducts(restaurantId: string | null, days: number = 30): Promise<TopProductsReport> {
+    if (!restaurantId) {
+      return {
+        periodDays: days,
+        totalDistinctProductsSold: 0,
+        topSelling: [],
+        leastSelling: [],
+      };
+    }
+
     const fromDate = new Date();
     fromDate.setDate(fromDate.getDate() - days);
     fromDate.setHours(0, 0, 0, 0);
-
-    const whereRest = restaurantId ? { restaurantId } : {};
 
     const orderItems = await this.prisma.orderItem.findMany({
       where: {
         order: {
           createdAt: { gte: fromDate },
           status: 'CLOSED',
-          ...whereRest,
+          restaurantId,
         },
         parentItemId: null,
       },
@@ -117,15 +136,24 @@ export class AiAnalyticsService {
   }
 
   /**
-   * Consulta alertas de inventario y productos por debajo del stock mínimo
+   * Consulta alertas de inventario y productos por debajo del stock mínimo del restaurante
    */
   async getStockAlerts(restaurantId: string | null): Promise<StockAlertsReport> {
-    const whereRest = restaurantId ? { restaurantId } : {};
+    if (!restaurantId) {
+      return {
+        totalProducts: 0,
+        outOfStockCount: 0,
+        lowStockCount: 0,
+        healthyStockCount: 0,
+        outOfStockItems: [],
+        lowStockItems: [],
+      };
+    }
 
     const products = await this.prisma.product.findMany({
       where: {
         isActive: true,
-        ...whereRest,
+        restaurantId,
       },
       include: { category: true },
       orderBy: { stock: 'asc' },
@@ -158,18 +186,26 @@ export class AiAnalyticsService {
   }
 
   /**
-   * Consulta el estado de ocupación de las mesas del salón
+   * Consulta el estado de ocupación de las mesas del salón del restaurante
    */
   async getTablesSummary(restaurantId: string | null): Promise<TablesSummaryReport> {
-    const whereRest = restaurantId ? { restaurantId } : {};
+    if (!restaurantId) {
+      return {
+        totalTables: 0,
+        occupiedTables: 0,
+        freeTables: 0,
+        occupancyRate: '0%',
+        zones: [],
+      };
+    }
 
     const zones = await this.prisma.zone.findMany({
-      where: whereRest,
+      where: { restaurantId },
       include: {
         tables: {
           include: {
             orders: {
-              where: { status: 'OPEN' },
+              where: { status: 'OPEN', restaurantId },
               take: 1,
             },
           },

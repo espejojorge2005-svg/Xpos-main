@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { usePathname } from 'next/navigation';
 import { getApiUrl } from '@/utils/api';
 import { getRestaurantId } from '@/utils/storage';
 import { toast } from 'sonner';
@@ -20,6 +21,7 @@ const INITIAL_MESSAGE: ChatMessage = {
 };
 
 export function useAiChat() {
+  const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const [canAccess, setCanAccess] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
@@ -27,20 +29,31 @@ export function useAiChat() {
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Verificación de permisos y escucha de eventos de apertura
+  // Verificación estricta de sesión, ruta y rol de Administrador
   useEffect(() => {
     const checkPermission = () => {
       try {
-        const userStr = localStorage.getItem('pos_user');
-        const token = localStorage.getItem('pos_token');
-        if (!token || !userStr) {
+        // En páginas públicas de login o registro, ChefAI NUNCA debe mostrarse
+        if (!pathname || pathname === '/login' || pathname === '/register') {
           setCanAccess(false);
+          setIsOpen(false);
           return;
         }
+
+        const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
+        const userStr = typeof window !== 'undefined' ? localStorage.getItem('pos_user') : null;
+
+        if (!token || !userStr) {
+          setCanAccess(false);
+          setIsOpen(false);
+          return;
+        }
+
         const user = JSON.parse(userStr);
         const role = user.role || '';
         const allowedViews = user.allowedViews || [];
 
+        // Solo visible para ADMIN / SUPER_ADMIN o si tiene permiso expreso
         const hasAccess =
           role === 'ADMIN' ||
           role === 'SUPER_ADMIN' ||
@@ -50,20 +63,24 @@ export function useAiChat() {
         setCanAccess(hasAccess);
       } catch {
         setCanAccess(false);
+        setIsOpen(false);
       }
     };
 
     checkPermission();
     window.addEventListener('storage', checkPermission);
 
-    const handleOpenAi = () => setIsOpen(true);
+    const handleOpenAi = () => {
+      checkPermission();
+      setIsOpen(true);
+    };
     window.addEventListener('pos:open_ai_assistant', handleOpenAi);
 
     return () => {
       window.removeEventListener('storage', checkPermission);
       window.removeEventListener('pos:open_ai_assistant', handleOpenAi);
     };
-  }, []);
+  }, [pathname]);
 
   // Auto-scroll al recibir o enviar mensajes
   useEffect(() => {

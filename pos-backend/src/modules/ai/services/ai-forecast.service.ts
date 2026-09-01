@@ -10,17 +10,17 @@ export class AiForecastService {
    * Proyecta ventas y demanda de platos para los próximos N días analizando las últimas 4 semanas
    */
   async getSalesForecast(restaurantId: string | null, daysAhead: number = 7): Promise<DailyForecast[]> {
+    if (!restaurantId) return [];
+
     const fourWeeksAgo = new Date();
     fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
     fourWeeksAgo.setHours(0, 0, 0, 0);
-
-    const whereRest = restaurantId ? { restaurantId } : {};
 
     const closedOrders = await this.prisma.order.findMany({
       where: {
         createdAt: { gte: fourWeeksAgo },
         status: 'CLOSED',
-        ...whereRest,
+        restaurantId,
       },
       include: {
         items: {
