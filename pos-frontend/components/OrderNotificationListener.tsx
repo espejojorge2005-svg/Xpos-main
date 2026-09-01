@@ -43,7 +43,7 @@ export default function OrderNotificationListener() {
 
       orders.forEach((order) => {
         const prevStatus = knownOrderStatusRef.current.get(order.id);
-        knownOrderStatusRef.current.set(order.id, order.status);
+        knownOrderStatusRef.current.set(order.id, order.status || 'OPEN');
 
         if (order.status !== 'SERVED') return;
 
