@@ -33,6 +33,7 @@ export class RestaurantConfigService {
           subscriptionEndDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
           isActive: true,
         },
+        include: { plan: true }
       });
     }
 
@@ -44,6 +45,7 @@ export class RestaurantConfigService {
     return this.prisma.restaurant.update({
       where: { id: res.id },
       data: dto as any,
+      include: { plan: true }
     });
   }
 }
