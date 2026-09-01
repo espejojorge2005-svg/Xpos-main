@@ -67,11 +67,18 @@ export class UsersService {
 
 
     // Verificar estado, vigencia de suscripción y límite estricto de usuarios según el plan
-    const restaurant = await this.prisma.restaurant.findUnique({ 
-      where: { id: restaurantId },
+    const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+    const validRestId = (restaurantId && isUuid(restaurantId)) ? restaurantId : null;
+    let restaurant = validRestId ? await this.prisma.restaurant.findUnique({ 
+      where: { id: validRestId },
       include: { plan: true } 
-    });
+    }) : null;
+    if (!restaurant) {
+      restaurant = await this.prisma.restaurant.findFirst({ orderBy: { createdAt: 'asc' }, include: { plan: true } });
+    }
+
     if (restaurant) {
+      restaurantId = restaurant.id;
       if (restaurant.isActive === false) {
         throw new ForbiddenException('El restaurante se encuentra suspendido. No es posible registrar nuevos usuarios.');
       }
@@ -80,9 +87,9 @@ export class UsersService {
       }
       if (restaurant.plan) {
         const activeUsers = await this.prisma.user.count({ 
-          where: { restaurantId, isActive: true } 
+          where: { restaurantId: restaurant.id, isActive: true } 
         });
-        const limit = restaurant.plan.maxUsers;
+        const limit = Number(restaurant.plan.maxUsers) || 3;
         if (activeUsers >= limit) {
           throw new ForbiddenException(`Límite estricto de usuarios (${limit}) alcanzado para el plan ${restaurant.plan.name}. Mejore su plan en SuperAdmin para añadir más personal.`);
         }
