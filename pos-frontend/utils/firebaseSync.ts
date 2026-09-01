@@ -7,6 +7,7 @@ export interface FirebaseOrder {
   tableName?: string;
   status: 'OPEN' | 'CLOSED' | 'CANCELLED' | 'SERVED';
   customerName?: string;
+  waiterName?: string;
   totalAmount?: number;
   items?: Array<{
     id: string;

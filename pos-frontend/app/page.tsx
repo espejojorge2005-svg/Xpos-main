@@ -273,6 +273,8 @@ export default function Home() {
     // Merge with active table orders (Tracked until waiter/cashier frees the table)
     try {
       const activeTableOrders = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
+      const twelveHoursMs = 12 * 60 * 60 * 1000;
+      const now = Date.now();
 
       loadedZones = loadedZones.map(zone => ({
         ...zone,
@@ -294,7 +296,11 @@ export default function Home() {
               )
             );
 
-          const isOrderActive = orderInfo && (orderInfo.status === 'OCCUPIED' || (Array.isArray(orderInfo.items) && orderInfo.items.length > 0));
+          // Verificar si la orden local es reciente (menos de 12 horas)
+          const orderAge = orderInfo?.createdAt ? (now - new Date(orderInfo.createdAt).getTime()) : 0;
+          const isOrderRecent = orderAge < twelveHoursMs;
+
+          const isOrderActive = isOrderRecent && orderInfo && (orderInfo.status === 'OCCUPIED' || (Array.isArray(orderInfo.items) && orderInfo.items.length > 0));
           const hasServerOrder = table.orders && table.orders.length > 0 && table.status === 'OCCUPIED';
 
           if (isOrderActive || hasServerOrder) {
@@ -430,9 +436,7 @@ export default function Home() {
           }
         });
 
-        const currentActive = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
-        const merged = { ...currentActive, ...activeMap };
-        setScopedStorage('pos_active_table_orders', merged);
+        setScopedStorage('pos_active_table_orders', activeMap);
 
         setZones(prevZones => prevZones.map(zone => ({
           ...zone,
@@ -455,6 +459,7 @@ export default function Home() {
               return {
                 ...table,
                 status: 'OCCUPIED' as const,
+                billRequested: !!matchedOrder.billRequested,
                 orders: [{
                   id: matchedOrder.id,
                   createdAt: matchedOrder.createdAt || new Date().toISOString(),
@@ -463,28 +468,10 @@ export default function Home() {
               };
             }
 
-            const localOrder = merged[table.id] || 
-              (cleanTableNum ? merged[`t-${cleanTableNum}`] || merged[cleanTableNum] : null);
-
-            if (localOrder && localOrder.status === 'OCCUPIED') {
-              return {
-                ...table,
-                status: 'OCCUPIED' as const,
-                orders: [{
-                  id: localOrder.orderId || `ord-${table.id}`,
-                  createdAt: localOrder.createdAt || new Date().toISOString(),
-                  totalAmount: localOrder.total || 0
-                }]
-              };
-            }
-
-            if (table.orders && table.orders.length > 0 && table.status === 'OCCUPIED') {
-              return table;
-            }
-
             return {
               ...table,
               status: 'FREE' as const,
+              billRequested: false,
               orders: []
             };
           })

@@ -34,8 +34,9 @@ interface KitchenItem {
 interface KitchenOrder {
   id: string;
   createdAt: string;
-  // Asumimos que agregaste status a la orden también en tu DB, ej: 'OPEN', 'CANCELLED'
-  status: string; // <-- NUEVO: Status de la orden completa
+  status: string; // 'OPEN', 'CANCELLED', 'SERVED'
+  waiterName?: string;
+  customerName?: string;
   previousTableName?: string | null;
   table: {
     name: string;
@@ -71,10 +72,10 @@ const OrderTimer = ({ createdAt }: { createdAt: string }) => {
       ${isVeryDelayed ? 'bg-rose-100 text-rose-700 border border-rose-200 animate-pulse' : 
         isDelayed ? 'bg-orange-100 text-orange-700 border border-orange-200' : 
         'bg-emerald-100 text-emerald-700 border border-emerald-200'}`}
-    >
-      <Clock className="w-4 h-4" />
-      {timeText}
-    </div>
+  >
+    <Clock className="w-4 h-4" />
+    {timeText}
+  </div>
   );
 };
 
@@ -85,6 +86,10 @@ export default function CocinaPage() {
   const [loading, setLoading] = useState(true);
   const [ackedOrders, setAckedOrders] = useState<string[]>([]);
   const isUpdatingRef = useRef(false);
+
+  // Registro de órdenes e ítems despachados para prevenir que reaparezcan por polling
+  const servedOrderIdsRef = useRef<Set<string>>(new Set());
+  const servedItemIdsRef = useRef<Set<string>>(new Set());
 
   // NUEVO: Estados para filtrar estaciones
   const [stations, setStations] = useState<{id: string, name: string, colorHex: string}[]>([]);
@@ -152,8 +157,9 @@ export default function CocinaPage() {
         const activeLocalOrders = localOrders.filter(lo => 
           lo.status !== 'SERVED' && 
           lo.status !== 'CANCELLED' && 
+          !servedOrderIdsRef.current.has(lo.id) &&
           Array.isArray(lo.items) && 
-          lo.items.some(it => it.status === 'ACTIVE')
+          lo.items.some(it => it.status === 'ACTIVE' && !servedItemIdsRef.current.has(it.id))
         );
         const map = new Map<string, KitchenOrder>();
         serverOrders.forEach(o => map.set(o.id, o));
@@ -166,6 +172,15 @@ export default function CocinaPage() {
       }
     } catch {}
 
+    // Filtrar aquellas que ya fueron despachadas en esta pantalla
+    serverOrders = serverOrders
+      .filter(o => !servedOrderIdsRef.current.has(o.id))
+      .map(o => ({
+        ...o,
+        items: o.items.map(it => servedItemIdsRef.current.has(it.id) ? { ...it, status: 'SERVED' as const } : it)
+      }))
+      .filter(o => o.status === 'CANCELLED' || o.items.some(it => it.status === 'ACTIVE'));
+
     prevOrdersRef.current = serverOrders;
     setOrders(serverOrders);
     setLoading(false);
@@ -173,6 +188,7 @@ export default function CocinaPage() {
 
   const markItemAsServed = async (orderId: string, itemId: string) => {
     isUpdatingRef.current = true;
+    servedItemIdsRef.current.add(itemId);
     
     // Update local kitchen cache
     try {
@@ -214,14 +230,15 @@ export default function CocinaPage() {
         method: 'PATCH',
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      setTimeout(() => { isUpdatingRef.current = false; }, 400);
+      setTimeout(() => { isUpdatingRef.current = false; }, 800);
     } catch (error) {
-      setTimeout(() => { isUpdatingRef.current = false; }, 400);
+      setTimeout(() => { isUpdatingRef.current = false; }, 800);
     }
   };
 
   const unmarkItemAsServed = async (orderId: string, itemId: string) => {
     isUpdatingRef.current = true;
+    servedItemIdsRef.current.delete(itemId);
     setOrders(current => current.map(o => {
       if (o.id === orderId) {
         return {
@@ -238,14 +255,18 @@ export default function CocinaPage() {
         method: 'PATCH',
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      setTimeout(() => { isUpdatingRef.current = false; }, 400);
+      setTimeout(() => { isUpdatingRef.current = false; }, 800);
     } catch (error) {
-      setTimeout(() => { isUpdatingRef.current = false; }, 400);
+      setTimeout(() => { isUpdatingRef.current = false; }, 800);
     }
   };
 
   const markOrderAsServed = async (orderId: string, itemIds: string[]) => {
     isUpdatingRef.current = true;
+    servedOrderIdsRef.current.add(orderId);
+    if (Array.isArray(itemIds)) {
+      itemIds.forEach(id => servedItemIdsRef.current.add(id));
+    }
 
     // Update local kitchen cache - completely remove the finished order
     try {
@@ -274,9 +295,9 @@ export default function CocinaPage() {
         },
         body: JSON.stringify({ itemIds })
       });
-      setTimeout(() => { isUpdatingRef.current = false; }, 400);
+      setTimeout(() => { isUpdatingRef.current = false; }, 800);
     } catch (error) {
-      setTimeout(() => { isUpdatingRef.current = false; }, 400);
+      setTimeout(() => { isUpdatingRef.current = false; }, 800);
     }
   };
 
@@ -385,41 +406,45 @@ export default function CocinaPage() {
         const prevMap = new Map(prev.map(o => [o.id, o]));
         const updatedList: KitchenOrder[] = [];
 
-        firebaseOrders.forEach(fo => {
-          const prevOrder = prevMap.get(fo.id);
-          const itemsList: KitchenItem[] = (fo.items || []).map((it: any) => {
-            const prevItem = prevOrder?.items.find(pi => pi.id === it.id);
-            const status = (it.status === 'CANCELLED' || it.status === 'CANCELED') 
-              ? 'CANCELLED' 
-              : (it.status === 'SERVED' ? 'SERVED' : 'ACTIVE');
+        firebaseOrders
+          .filter(fo => !servedOrderIdsRef.current.has(fo.id))
+          .forEach(fo => {
+            const prevOrder = prevMap.get(fo.id);
+            const itemsList: KitchenItem[] = (fo.items || []).map((it: any) => {
+              const prevItem = prevOrder?.items.find(pi => pi.id === it.id);
+              const isServedLocal = servedItemIdsRef.current.has(it.id);
+              const status = (it.status === 'CANCELLED' || it.status === 'CANCELED') 
+                ? 'CANCELLED' 
+                : ((it.status === 'SERVED' || isServedLocal) ? 'SERVED' : 'ACTIVE');
 
-            return {
-              id: it.id,
-              quantity: it.quantity,
-              notes: it.notes || prevItem?.notes || '',
-              parentItemId: prevItem?.parentItemId || null,
-              status,
-              product: {
-                name: it.productName || prevItem?.product?.name || 'Producto',
-                category: prevItem?.product?.category || { name: 'Cocina' },
-                stations: prevItem?.product?.stations || []
-              }
-            };
-          });
-
-          // Solo incluir tickets que tengan al menos 1 plato activo (o cancelado para visualización)
-          const hasActiveItems = itemsList.some(i => i.status === 'ACTIVE');
-          if (hasActiveItems || fo.status === 'CANCELLED') {
-            updatedList.push({
-              id: fo.id,
-              createdAt: fo.createdAt || prevOrder?.createdAt || new Date().toISOString(),
-              status: fo.status || 'OPEN',
-              previousTableName: prevOrder?.previousTableName || null,
-              table: fo.tableName ? { name: fo.tableName, number: parseInt(fo.tableName.replace(/\D/g, '')) || 1 } : (prevOrder?.table || null),
-              items: itemsList
+              return {
+                id: it.id,
+                quantity: it.quantity,
+                notes: it.notes || prevItem?.notes || '',
+                parentItemId: prevItem?.parentItemId || null,
+                status,
+                product: {
+                  name: it.productName || prevItem?.product?.name || 'Producto',
+                  category: prevItem?.product?.category || { name: 'Cocina' },
+                  stations: prevItem?.product?.stations || []
+                }
+              };
             });
-          }
-        });
+
+            // Solo incluir tickets que tengan al menos 1 plato activo (o cancelado para visualización)
+            const hasActiveItems = itemsList.some(i => i.status === 'ACTIVE');
+            if (hasActiveItems || fo.status === 'CANCELLED') {
+              updatedList.push({
+                id: fo.id,
+                createdAt: fo.createdAt || prevOrder?.createdAt || new Date().toISOString(),
+                status: fo.status || 'OPEN',
+                waiterName: fo.waiterName || (fo as any).customerName?.replace(/^Mesero:\s*/i, '') || prevOrder?.waiterName || 'Mesero',
+                previousTableName: prevOrder?.previousTableName || null,
+                table: fo.tableName ? { name: fo.tableName, number: parseInt(fo.tableName.replace(/\D/g, '')) || 1 } : (prevOrder?.table || null),
+                items: itemsList
+              });
+            }
+          });
 
         return updatedList;
       });
@@ -549,7 +574,7 @@ export default function CocinaPage() {
 
                 {/* Cabecera Ticket */}
                 <div className={`p-5 border-b-2 border-dashed mt-1 ${isOrderCanceled ? 'bg-rose-100 border-rose-400' : 'bg-white border-slate-300'}`}>
-                  <div className="flex justify-between items-start mb-4">
+                  <div className="flex justify-between items-start mb-2">
                     <h3 className={`text-3xl font-black uppercase tracking-tighter flex flex-col ${isOrderCanceled ? 'text-rose-900 line-through decoration-rose-400' : 'text-slate-800'}`}>
                       {order.previousTableName && (
                         <span className="text-xl text-slate-400 line-through decoration-slate-400 mb-1 leading-none">{order.previousTableName}</span>
@@ -563,6 +588,15 @@ export default function CocinaPage() {
                        </div>
                     )}
                   </div>
+
+                  {/* Badge de Mozo / Mesero */}
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 text-slate-700 font-bold text-xs rounded-lg border border-slate-200">
+                      <span className="text-slate-400">👤 Mozo:</span>
+                      <span className="text-slate-900 font-black uppercase">{order.waiterName || (order as any).customerName?.replace(/^Mesero:\s*/i, '') || 'Mesero'}</span>
+                    </div>
+                  </div>
+
                   {!isOrderCanceled ? (
                     <OrderTimer createdAt={order.createdAt} />
                   ) : (

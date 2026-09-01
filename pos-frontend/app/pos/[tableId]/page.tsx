@@ -526,6 +526,16 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
     const effectiveOrderId = activeOrderId || `ord-${Date.now()}`;
 
+    // Obtener nombre del mesero/a en sesión
+    let currentWaiterName = '';
+    try {
+      const userStr = localStorage.getItem('pos_user');
+      if (userStr) {
+        const u = JSON.parse(userStr);
+        currentWaiterName = u.name || u.username || (u.email ? u.email.split('@')[0] : '') || '';
+      }
+    } catch {}
+
     // 1. SINCRONIZACIÓN LOCAL GARANTIZADA PARA COCINA (KDS)
     const newKitchenItems = cart.map((cartItem, idx) => {
       const prod = products.find(p => p.id === cartItem.productId);
@@ -573,11 +583,15 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
           ...newKitchenItems
         ];
         kitchenOrders[existingOrderIdx].status = 'OPEN';
+        if (currentWaiterName) {
+          kitchenOrders[existingOrderIdx].waiterName = currentWaiterName;
+        }
       } else {
         kitchenOrders.unshift({
           id: effectiveOrderId,
           createdAt: new Date().toISOString(),
           status: 'OPEN',
+          waiterName: currentWaiterName || 'Mesero',
           table: { 
             id: tableId,
             name: effectiveTableName, 
@@ -754,6 +768,8 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         tableId: tableId === 'takeout' ? undefined : tableId,
         tableName: effectiveTableName,
         status: 'OPEN',
+        waiterName: currentWaiterName || 'Mesero',
+        customerName: currentWaiterName ? `Mesero: ${currentWaiterName}` : effectiveTableName,
         totalAmount: newTotal,
         items: combinedExistingItems.map(item => ({
           id: item.id || `item-${Date.now()}-${Math.random()}`,
