@@ -1,7 +1,7 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
 import { getScopedStorage, setScopedStorage, removeScopedStorage, getRestaurantId } from '@/utils/storage';
-import { syncShiftToFirebase, syncShiftExpenseToFirebase, syncPastClosureToFirebase, subscribeToPastClosures, subscribeToCashShift } from '@/utils/firebaseSync';
+import { syncShiftToFirebase, syncShiftExpenseToFirebase, syncPastClosureToFirebase, subscribeToPastClosures, subscribeToCashShift, subscribeToActiveTableOrders, subscribeToOrders } from '@/utils/firebaseSync';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -88,13 +88,26 @@ export default function CashRegisterPage() {
 
   const fetchPendingTables = () => {
     try {
-      const activeObj = getScopedStorage('pos_active_table_orders', {});
+      const activeObj = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
       if (activeObj && typeof activeObj === 'object') {
-        const list = Object.entries(activeObj).map(([key, val]: [string, any]) => ({
-          tableId: key,
-          ...val
-        })).filter(t => t.status === 'OCCUPIED');
-        setPendingTables(list);
+        const uniqueMap = new Map<string, any>();
+        
+        Object.entries(activeObj).forEach(([key, val]: [string, any]) => {
+          if (!val || val.status !== 'OCCUPIED') return;
+          // Normalizar identificador único de la mesa para evitar duplicación
+          const tName = val.tableName || `Mesa ${key.replace(/\D/g, '') || key}`;
+          const cleanKey = val.orderId || tName.toLowerCase().replace(/\s+/g, '');
+          
+          if (!uniqueMap.has(cleanKey)) {
+            uniqueMap.set(cleanKey, {
+              tableId: val.tableId || key,
+              ...val,
+              tableName: tName
+            });
+          }
+        });
+
+        setPendingTables(Array.from(uniqueMap.values()));
       } else {
         setPendingTables([]);
       }
@@ -255,6 +268,19 @@ export default function CashRegisterPage() {
     const restId = getRestaurantId() || 'main';
     let unsubShift: (() => void) | undefined;
     let unsubClosures: (() => void) | undefined;
+    let unsubActiveOrders: (() => void) | undefined;
+
+    const handleStorageEvent = () => {
+      fetchPendingTables();
+    };
+    window.addEventListener('storage', handleStorageEvent);
+
+    unsubActiveOrders = subscribeToActiveTableOrders(restId, (cloudActive) => {
+      if (cloudActive && typeof cloudActive === 'object') {
+        setScopedStorage('pos_active_table_orders', cloudActive);
+        fetchPendingTables();
+      }
+    });
 
     unsubShift = subscribeToCashShift(restId, (cloudShift) => {
       if (cloudShift) {
@@ -280,6 +306,8 @@ export default function CashRegisterPage() {
     });
 
     return () => {
+      window.removeEventListener('storage', handleStorageEvent);
+      if (typeof unsubActiveOrders === 'function') unsubActiveOrders();
       if (typeof unsubShift === 'function') unsubShift();
       if (typeof unsubClosures === 'function') unsubClosures();
     };

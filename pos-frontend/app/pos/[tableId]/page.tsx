@@ -890,15 +890,69 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
   const clearLocalTableOccupancy = () => {
     try {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tableId);
+      const cleanNum = (!isUuid && tableId.startsWith('t-') ? tableId.replace('t-', '') : '') || 
+                       (!isUuid && !isNaN(parseInt(tableId)) ? String(parseInt(tableId)) : '');
+      const tNameLower = (tableName || '').toLowerCase().trim();
+
       const activeTableOrders = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
+      
+      // Eliminar todas las posibles claves que apunten a esta mesa
       delete activeTableOrders[tableId];
+      if (cleanNum) {
+        delete activeTableOrders[`t-${cleanNum}`];
+        delete activeTableOrders[cleanNum];
+      }
+      Object.keys(activeTableOrders).forEach(k => {
+        const order = activeTableOrders[k];
+        if (
+          order && (
+            (activeOrderId && order.orderId === activeOrderId) ||
+            order.tableId === tableId ||
+            (cleanNum && (order.tableId === `t-${cleanNum}` || order.tableId === cleanNum)) ||
+            (tNameLower && order.tableName && order.tableName.toLowerCase().trim() === tNameLower)
+          )
+        ) {
+          delete activeTableOrders[k];
+        }
+      });
       setScopedStorage('pos_active_table_orders', activeTableOrders);
 
+      // Limpiar también comandas de cocina locales
       let localKitchen = getScopedStorage<any[]>('pos_local_kitchen_orders', []);
-      localKitchen = localKitchen.filter((o: any) => o.id !== activeOrderId && o.table?.name !== (tableName || `Mesa ${tableId}`));
+      localKitchen = localKitchen.filter((o: any) => 
+        (activeOrderId ? o.id !== activeOrderId : true) && 
+        o.table?.name !== (tableName || `Mesa ${tableId}`) &&
+        (!cleanNum || o.table?.name !== `Mesa ${cleanNum}`)
+      );
       setScopedStorage('pos_local_kitchen_orders', localKitchen);
+
+      // Notificar a Firebase para cerrar la orden y desocupar la mesa
+      const restId = getRestaurantId() || 'main';
+      if (activeOrderId) {
+        syncOrderToFirebase({
+          id: activeOrderId,
+          status: 'CLOSED',
+          totalAmount: existingSubtotal,
+          items: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          restaurantId: restId
+        }).catch(() => {});
+      }
+      if (tableId !== 'takeout') {
+        syncTableToFirebase(tableId, 'FREE', restId).catch(() => {});
+        if (cleanNum) {
+          syncTableToFirebase(`t-${cleanNum}`, 'FREE', restId).catch(() => {});
+          syncTableToFirebase(cleanNum, 'FREE', restId).catch(() => {});
+        }
+      }
+      syncActiveTableOrdersToFirebase(restId, activeTableOrders).catch(() => {});
+
       window.dispatchEvent(new Event('storage'));
-    } catch {}
+    } catch (err) {
+      console.warn('Error clearing table occupancy:', err);
+    }
   };
 
   const handleFreeTable = async () => {

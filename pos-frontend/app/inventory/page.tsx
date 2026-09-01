@@ -107,7 +107,7 @@ export default function InventoryPage() {
 
     // 2. Suscripción EN TIEMPO REAL a Productos en Firebase Firestore
     const unsubProducts = subscribeToProducts(currentRestId, (firestoreProds) => {
-      if (Array.isArray(firestoreProds)) {
+      if (Array.isArray(firestoreProds) && firestoreProds.length > 0) {
         const mappedProds: Product[] = firestoreProds
           .filter((fp: any) => !currentRestId || !fp.restaurantId || fp.restaurantId === currentRestId)
           .map((fp: any) => ({
@@ -121,15 +121,25 @@ export default function InventoryPage() {
             minStock: fp.minStock || 0,
             restaurantId: fp.restaurantId
           }));
-        setProducts(mappedProds);
-        setScopedStorage('pos_registered_products', mappedProds);
+        
+        setProducts(prev => {
+          const incomingMap = new Map(mappedProds.map(p => [p.id, p]));
+          const merged = [...mappedProds];
+          prev.forEach(p => {
+            if (!incomingMap.has(p.id) && !mappedProds.some(m => m.name.toLowerCase() === p.name.toLowerCase())) {
+              merged.push(p);
+            }
+          });
+          setScopedStorage('pos_registered_products', merged);
+          return merged;
+        });
       }
       setLoading(false);
     });
 
     // Suscripción EN TIEMPO REAL a Categorías
     const unsubCats = subscribeToCategories(currentRestId, (firestoreCats) => {
-      if (Array.isArray(firestoreCats)) {
+      if (Array.isArray(firestoreCats) && firestoreCats.length > 0) {
         const mappedCats: Category[] = firestoreCats
           .filter((fc: any) => !currentRestId || !fc.restaurantId || fc.restaurantId === currentRestId)
           .map((fc: any) => ({
@@ -138,14 +148,24 @@ export default function InventoryPage() {
             restaurantId: fc.restaurantId,
             products: []
           }));
-        setCategories(mappedCats);
-        setScopedStorage('pos_registered_categories', mappedCats);
+        
+        setCategories(prev => {
+          const incomingMap = new Map(mappedCats.map(c => [c.id, c]));
+          const merged = [...mappedCats];
+          prev.forEach(c => {
+            if (!incomingMap.has(c.id) && !mappedCats.some(m => m.name.toLowerCase() === c.name.toLowerCase())) {
+              merged.push(c);
+            }
+          });
+          setScopedStorage('pos_registered_categories', merged);
+          return merged;
+        });
       }
     });
 
     // Suscripción EN TIEMPO REAL a Áreas de Preparación
     const unsubStations = subscribeToKitchenStations(currentRestId, (firestoreStations) => {
-      if (Array.isArray(firestoreStations)) {
+      if (Array.isArray(firestoreStations) && firestoreStations.length > 0) {
         const mappedStations: KitchenStation[] = firestoreStations
           .filter((fs: any) => !currentRestId || !fs.restaurantId || fs.restaurantId === currentRestId)
           .map((fs: any) => ({
@@ -176,10 +196,19 @@ export default function InventoryPage() {
         clearTimeout(timer);
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data)) {
+          if (Array.isArray(data) && data.length > 0) {
             const filtered = data.filter((p: any) => !p.restaurantId || !currentRestId || p.restaurantId === currentRestId);
-            setProducts(filtered);
-            setScopedStorage('pos_registered_products', filtered);
+            setProducts(prev => {
+              const incomingMap = new Map(filtered.map((p: any) => [p.id, p]));
+              const merged = [...filtered];
+              prev.forEach(p => {
+                if (!incomingMap.has(p.id) && !filtered.some((f: any) => f.name.toLowerCase() === p.name.toLowerCase())) {
+                  merged.push(p);
+                }
+              });
+              setScopedStorage('pos_registered_products', merged);
+              return merged;
+            });
             setLoading(false);
           }
         }

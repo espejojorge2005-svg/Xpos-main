@@ -59,7 +59,7 @@ export default function CategoriesPage() {
 
     // 1. Suscripción EN TIEMPO REAL a Categorías en Firebase Firestore
     const unsubCategories = subscribeToCategories(currentRestId, (firestoreCats) => {
-      if (Array.isArray(firestoreCats)) {
+      if (Array.isArray(firestoreCats) && firestoreCats.length > 0) {
         const mapped: Category[] = firestoreCats
           .filter((fc: any) => !currentRestId || !fc.restaurantId || fc.restaurantId === currentRestId)
           .map((fc: any) => ({
@@ -68,15 +68,25 @@ export default function CategoriesPage() {
             restaurantId: fc.restaurantId,
             products: []
           }));
-        setCategories(mapped);
-        setScopedStorage('pos_registered_categories', mapped);
+        
+        setCategories(prev => {
+          const incomingMap = new Map(mapped.map(c => [c.id, c]));
+          const merged = [...mapped];
+          prev.forEach(c => {
+            if (!incomingMap.has(c.id) && !mapped.some(m => m.name.toLowerCase() === c.name.toLowerCase())) {
+              merged.push(c);
+            }
+          });
+          setScopedStorage('pos_registered_categories', merged);
+          return merged;
+        });
       }
       setLoading(false);
     });
 
     // 2. Suscripción EN TIEMPO REAL a Productos en Firebase Firestore (para cálculo reactivo)
     const unsubProducts = subscribeToProducts(currentRestId, (firestoreProds) => {
-      if (Array.isArray(firestoreProds)) {
+      if (Array.isArray(firestoreProds) && firestoreProds.length > 0) {
         const mappedProds = firestoreProds
           .filter((fp: any) => !currentRestId || !fp.restaurantId || fp.restaurantId === currentRestId);
         setProducts(mappedProds);
@@ -100,10 +110,19 @@ export default function CategoriesPage() {
         clearTimeout(timer);
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data)) {
+          if (Array.isArray(data) && data.length > 0) {
             const filtered = data.filter((c: any) => !c.restaurantId || !currentRestId || c.restaurantId === currentRestId);
-            setCategories(filtered);
-            setScopedStorage('pos_registered_categories', filtered);
+            setCategories(prev => {
+              const incomingMap = new Map(filtered.map((c: any) => [c.id, c]));
+              const merged = [...filtered];
+              prev.forEach(c => {
+                if (!incomingMap.has(c.id) && !filtered.some((f: any) => f.name.toLowerCase() === c.name.toLowerCase())) {
+                  merged.push(c);
+                }
+              });
+              setScopedStorage('pos_registered_categories', merged);
+              return merged;
+            });
             setLoading(false);
           }
         }
