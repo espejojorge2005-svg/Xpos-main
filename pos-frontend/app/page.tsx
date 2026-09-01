@@ -36,8 +36,10 @@ interface Zone {
 }
 
 const formatWaitTime = (orderDate: Date, now: Date) => {
-  const diffMs = now.getTime() - orderDate.getTime();
-  if (diffMs < 0) return '0s'; // Por si hay desajuste de hora
+  const time = orderDate?.getTime ? orderDate.getTime() : new Date(orderDate).getTime();
+  if (!time || isNaN(time)) return '0s';
+  const diffMs = now.getTime() - time;
+  if (diffMs < 0) return '0s';
   
   const diffSecs = Math.floor(diffMs / 1000);
   const hours = Math.floor(diffSecs / 3600);
