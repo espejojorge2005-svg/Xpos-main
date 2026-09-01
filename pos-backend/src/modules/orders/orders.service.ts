@@ -23,6 +23,66 @@ export class OrdersService {
     return defaultRest ? defaultRest.id : null;
   }
 
+  private async deductProductStock(tx: any, productId: string, quantity: number, orderId: string, customerOrTable: string) {
+    if (!productId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(productId)) {
+      return;
+    }
+    try {
+      const prod = await tx.product.findUnique({ where: { id: productId } });
+      if (!prod) return;
+      const stockBefore = prod.stock ?? 0;
+      const stockAfter = Math.max(0, stockBefore - quantity);
+
+      await tx.product.update({
+        where: { id: productId },
+        data: { stock: stockAfter }
+      });
+
+      await tx.stockMovement.create({
+        data: {
+          productId,
+          type: 'SALE',
+          delta: -quantity,
+          stockBefore,
+          stockAfter,
+          reason: `Venta comandada - Orden #${orderId.slice(0, 8)} (${customerOrTable})`
+        }
+      });
+    } catch (err) {
+      console.warn(`Error descontando stock para producto ${productId}:`, err);
+    }
+  }
+
+  private async restoreProductStock(tx: any, productId: string, quantity: number, orderId: string, reason: string) {
+    if (!productId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(productId)) {
+      return;
+    }
+    try {
+      const prod = await tx.product.findUnique({ where: { id: productId } });
+      if (!prod) return;
+      const stockBefore = prod.stock ?? 0;
+      const stockAfter = stockBefore + quantity;
+
+      await tx.product.update({
+        where: { id: productId },
+        data: { stock: stockAfter }
+      });
+
+      await tx.stockMovement.create({
+        data: {
+          productId,
+          type: 'ADJUSTMENT',
+          delta: quantity,
+          stockBefore,
+          stockAfter,
+          reason: `${reason} - Orden #${orderId.slice(0, 8)}`
+        }
+      });
+    } catch (err) {
+      console.warn(`Error restaurando stock para producto ${productId}:`, err);
+    }
+  }
+
   async createOrder(data: CreateOrderDto, reqUser?: any, restaurantIdParam?: string | null) {
     const totalAmount = data.items.reduce((total, item) => {
       const subItemsTotal = item.subItems ? item.subItems.reduce((sTotal: number, sub: any) => sTotal + (sub.quantity * sub.unitPrice), 0) : 0;
@@ -55,7 +115,7 @@ export class OrdersService {
       }
     }
 
-    // Usamos una transacción para crear la orden explicitamente con subItems
+    // Usamos una transacción para crear la orden explicitamente con subItems y descontar inventario
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.create({
         data: {
@@ -80,6 +140,9 @@ export class OrdersService {
           }
         });
 
+        // Descontar inventario del ítem principal
+        await this.deductProductStock(tx, item.productId, item.quantity, order.id, effectiveCustomerName);
+
         if ((item as any).subItems && (item as any).subItems.length > 0) {
           await tx.orderItem.createMany({
             data: (item as any).subItems.map((sub: any) => ({
@@ -93,6 +156,13 @@ export class OrdersService {
               status: 'ACTIVE'
             }))
           });
+
+          // Descontar inventario de cada sub-ítem
+          for (const sub of (item as any).subItems) {
+            if (sub.productId) {
+              await this.deductProductStock(tx, sub.productId, sub.quantity, order.id, effectiveCustomerName);
+            }
+          }
         }
       }
 
@@ -176,7 +246,7 @@ export class OrdersService {
     const newTotalAmount = Number(order.totalAmount) + newItemsTotal;
 
     return this.prisma.$transaction(async (tx) => {
-      // 1. Agregar los nuevos items jerárquicos
+      // 1. Agregar los nuevos items jerárquicos y descontar stock
       for (const item of data.items) {
         const parent = await tx.orderItem.create({
           data: {
@@ -189,6 +259,9 @@ export class OrdersService {
             status: 'ACTIVE', // Los nuevos ítems nacen activos
           }
         });
+
+        // Descontar inventario del ítem nuevo
+        await this.deductProductStock(tx, item.productId, item.quantity, orderId, order.customerName || 'Mesa');
 
         if (item.subItems && item.subItems.length > 0) {
           await tx.orderItem.createMany({
@@ -203,6 +276,13 @@ export class OrdersService {
               status: 'ACTIVE'
             }))
           });
+
+          // Descontar inventario de cada sub-ítem
+          for (const sub of item.subItems) {
+            if (sub.productId) {
+              await this.deductProductStock(tx, sub.productId, sub.quantity, orderId, order.customerName || 'Mesa');
+            }
+          }
         }
       }
 
@@ -226,7 +306,8 @@ export class OrdersService {
 
   async cancelOrder(orderId: string) {
     const order = await this.prisma.order.findUnique({
-      where: { id: orderId }
+      where: { id: orderId },
+      include: { items: { include: { subItems: true } } }
     });
 
     if (!order) {
@@ -239,6 +320,20 @@ export class OrdersService {
         // Estado 'CANCELLED' para que el KDS lo reconozca y muestre la alerta roja
         data: { status: 'CANCELLED' } 
       });
+
+      // Restaurar inventario de los ítems cancelados
+      for (const item of order.items) {
+        if (item.status === 'ACTIVE') {
+          await this.restoreProductStock(tx, item.productId, item.quantity, orderId, 'Cancelación de pedido');
+          if (item.subItems) {
+            for (const sub of item.subItems) {
+              if (sub.status === 'ACTIVE') {
+                await this.restoreProductStock(tx, sub.productId, sub.quantity, orderId, 'Cancelación de sub-ítem');
+              }
+            }
+          }
+        }
+      }
 
       if (order.tableId) {
         await tx.table.update({
@@ -316,7 +411,7 @@ export class OrdersService {
   async removeOrderItem(orderId: string, itemId: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      include: { items: true }
+      include: { items: { include: { subItems: true } } }
     });
 
     if (!order) throw new NotFoundException(`Order ${orderId} not found`);
@@ -332,6 +427,14 @@ export class OrdersService {
         where: { id: itemId },
         data: { status: 'CANCELED' }
       });
+
+      // Restaurar stock del ítem cancelado
+      await this.restoreProductStock(tx, itemToRemove.productId, itemToRemove.quantity, orderId, 'Cancelación de ítem');
+      if (itemToRemove.subItems) {
+        for (const sub of itemToRemove.subItems) {
+          await this.restoreProductStock(tx, sub.productId, sub.quantity, orderId, 'Cancelación de sub-ítem');
+        }
+      }
 
       // Recalcular el nuevo monto total
       const newTotalAmount = Number(order.totalAmount) - Number(itemToRemove.subtotal);

@@ -146,6 +146,19 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         return;
       }
 
+      // Carga inmediata de productos y categorías desde caché local
+      const cachedProds = getScopedStorage<Product[]>('pos_registered_products', []);
+      if (Array.isArray(cachedProds) && cachedProds.length > 0) {
+        setProducts(cachedProds.filter((p: any) => p.isActive !== false));
+      }
+      const cachedCats = getScopedStorage<Category[]>('pos_registered_categories', []);
+      if (Array.isArray(cachedCats) && cachedCats.length > 0) {
+        setCategories(cachedCats);
+        if (!selectedCategoryId && cachedCats[0]?.id) {
+          setSelectedCategoryId(cachedCats[0].id);
+        }
+      }
+
       let loadedCats: Category[] = [];
       let loadedProds: Product[] = [];
 
@@ -169,6 +182,8 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
               loadedCats = currentRestId
                 ? catsData.filter((c: any) => c.restaurantId === currentRestId)
                 : catsData;
+              setCategories(loadedCats);
+              setScopedStorage('pos_registered_categories', loadedCats);
             }
           } catch {}
         }
@@ -176,7 +191,11 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         if (productsRes && productsRes.ok) {
           try {
             const prodsData = await productsRes.json();
-            if (Array.isArray(prodsData) && prodsData.length > 0) loadedProds = prodsData.filter((p: any) => p.isActive !== false);
+            if (Array.isArray(prodsData) && prodsData.length > 0) {
+              loadedProds = prodsData.filter((p: any) => p.isActive !== false);
+              setProducts(loadedProds);
+              setScopedStorage('pos_registered_products', loadedProds);
+            }
           } catch {}
         }
 
@@ -573,38 +592,43 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
       console.warn('Error guardando en pos_local_kitchen_orders:', e);
     }
 
-    // 1.1 DESCONTAR INVENTARIO / STOCK LOCALMENTE Y REGISTRAR EN KARDEX
+    // 1.1 DESCONTAR INVENTARIO / STOCK LOCALMENTE Y REGISTRAR EN KARDEX Y FIREBASE
     try {
-      const restId = getRestaurantId();
+      const restId = getRestaurantId() || 'main';
       let storedProducts = getScopedStorage<Product[]>('pos_registered_products', []);
+      let baseProducts = (Array.isArray(storedProducts) && storedProducts.length > 0) ? storedProducts : products;
       let stockMovements = getScopedStorage<any[]>('pos_stock_movements', []);
-      if (Array.isArray(storedProducts) && storedProducts.length > 0) {
-        storedProducts = storedProducts.map(p => {
+
+      if (Array.isArray(baseProducts) && baseProducts.length > 0) {
+        const updatedProducts = baseProducts.map(p => {
           const cartItems = cart.filter(c => c.productId === p.id);
-          const totalDeduction = cartItems.reduce((sum, it) => sum + it.quantity, 0);
-          if (totalDeduction > 0 && typeof p.stock === 'number') {
-            const oldStock = p.stock;
+          const subItemsQty = cart.flatMap(c => c.subItems || []).filter(sub => sub.productId === p.id).reduce((sum, sub) => sum + sub.quantity, 0);
+          const totalDeduction = cartItems.reduce((sum, it) => sum + it.quantity, 0) + subItemsQty;
+
+          if (totalDeduction > 0) {
+            const oldStock = Number(p.stock ?? 0);
             const newStock = Math.max(0, oldStock - totalDeduction);
             const movement = {
               id: `mov-${Date.now()}-${p.id}`,
               productId: p.id,
               productName: p.name,
               delta: -totalDeduction,
-              reason: `Venta Mesa ${tableName || tableId}`,
+              reason: `Venta Mesa ${effectiveTableName || tableId}`,
               stockBefore: oldStock,
               stockAfter: newStock,
               type: 'SALE',
               createdAt: new Date().toISOString(),
             };
             stockMovements.unshift(movement);
-            if (restId) {
-              syncStockMovementToFirebase(restId, movement).catch(() => {});
-              syncProductToFirebase({
-                ...p,
-                stock: newStock,
-                restaurantId: restId
-              }).catch(() => {});
-            }
+            
+            // Sincronizar de inmediato a Firebase para que todos los demás dispositivos y mesas lo vean
+            syncStockMovementToFirebase(restId, movement).catch(() => {});
+            syncProductToFirebase({
+              ...p,
+              stock: newStock,
+              restaurantId: restId
+            }).catch(() => {});
+
             return {
               ...p,
               stock: newStock
@@ -612,9 +636,10 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
           }
           return p;
         });
+
         setScopedStorage('pos_stock_movements', stockMovements);
-        setScopedStorage('pos_registered_products', storedProducts);
-        setProducts(storedProducts);
+        setScopedStorage('pos_registered_products', updatedProducts);
+        setProducts(updatedProducts);
       }
     } catch (e) {
       console.warn('Error descontando inventario:', e);
