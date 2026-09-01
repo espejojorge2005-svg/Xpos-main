@@ -286,13 +286,27 @@ export default function SuperAdminPage() {
       } catch {}
     }
 
-    setRestaurants(prev => {
-      const finalRest = {
-        ...createdOnServer,
-        _count: createdOnServer?._count || { users: 1, orders: 0 }
-      };
-      return [finalRest, ...prev];
-    });
+    const finalRest = {
+      ...createdOnServer,
+      planId: selectedPlan.id,
+      plan: createdOnServer?.plan || {
+        name: selectedPlan.name,
+        code: selectedPlan.code,
+        maxUsers: Number(selectedPlan.maxUsers) || 3,
+        price: Number(selectedPlan.price) || 0
+      },
+      _count: createdOnServer?._count || { users: 1, orders: 0 }
+    };
+
+    try {
+      const cached = localStorage.getItem('pos_saas_tenants_cache');
+      const list: any[] = cached ? JSON.parse(cached) : [];
+      const updated = [finalRest, ...list.filter(r => r.id !== finalRest.id)];
+      localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(updated));
+      localStorage.setItem('pos_registered_restaurants', JSON.stringify(updated));
+    } catch {}
+
+    setRestaurants(prev => [finalRest, ...prev]);
 
     toast.success(`¡Inquilino "${tenantName}" y Administrador creados exitosamente!`);
     setIsOpen(false);
@@ -316,6 +330,8 @@ export default function SuperAdminPage() {
       const d = new Date(r.subscriptionEndDate);
       const formatted = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
       setEditSubEndDate(formatted);
+    } else {
+      setEditSubEndDate('');
     }
 
     setEditAdminEmail(''); setEditAdminPassword('');
@@ -346,17 +362,18 @@ export default function SuperAdminPage() {
     e.preventDefault();
     if (!editingId) return;
     setIsSubmitting(true);
+
     try {
       const formattedEndDate = editSubEndDate ? new Date(editSubEndDate).toISOString() : undefined;
       const res = await apiFetch(`/saas/restaurants/${editingId}`, {
         method: 'PATCH',
-        body: JSON.stringify({ 
-           name: editTenantName, 
-           slogan: editTenantSlogan, 
-           planId: editPlanId, 
-           ownerName: editOwnerName, 
-           ownerPhone: editOwnerPhone,
-           subscriptionEndDate: formattedEndDate
+        body: JSON.stringify({
+          name: editTenantName,
+          slogan: editTenantSlogan,
+          planId: editPlanId,
+          ownerName: editOwnerName,
+          ownerPhone: editOwnerPhone,
+          subscriptionEndDate: formattedEndDate,
         })
       });
 
@@ -364,28 +381,32 @@ export default function SuperAdminPage() {
 
       // Actualizar estado local (solo React)
       const updatedPlan = availablePlans.find(p => p.id === editPlanId);
-      setRestaurants(prev => {
-        return prev.map(r => {
-          if (r.id === editingId) {
-            return {
-              ...r,
-              name: editTenantName,
-              slogan: editTenantSlogan,
-              planId: editPlanId || r.planId,
-              plan: updatedPlan ? {
-                name: updatedPlan.name,
-                code: updatedPlan.code,
-                maxUsers: Number(updatedPlan.maxUsers) || 3,
-                price: Number(updatedPlan.price) || 0
-              } : r.plan,
-              ownerName: editOwnerName,
-              ownerPhone: editOwnerPhone,
-              subscriptionEndDate: formattedEndDate || r.subscriptionEndDate,
-            };
-          }
-          return r;
-        });
+      const updatedList = restaurants.map(r => {
+        if (r.id === editingId) {
+          return {
+            ...r,
+            name: editTenantName,
+            slogan: editTenantSlogan,
+            planId: editPlanId || r.planId,
+            plan: updatedPlan ? {
+              name: updatedPlan.name,
+              code: updatedPlan.code,
+              maxUsers: Number(updatedPlan.maxUsers) || 3,
+              price: Number(updatedPlan.price) || 0
+            } : r.plan,
+            ownerName: editOwnerName,
+            ownerPhone: editOwnerPhone,
+            subscriptionEndDate: formattedEndDate || r.subscriptionEndDate,
+          };
+        }
+        return r;
       });
+
+      setRestaurants(updatedList);
+      try {
+        localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(updatedList));
+        localStorage.setItem('pos_registered_restaurants', JSON.stringify(updatedList));
+      } catch {}
 
       toast.success('Datos y fecha de suscripción actualizados correctamente');
       setIsEditOpen(false);

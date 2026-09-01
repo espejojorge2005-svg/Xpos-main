@@ -80,6 +80,27 @@ export default function UsersPage() {
       }
     } catch { /* ignore network error */ }
 
+    // Sincronizar silenciosamente la configuración y plan del restaurante desde el servidor
+    if (typeof window !== 'undefined') {
+      try {
+        const token = localStorage.getItem('pos_token');
+        const currentRestId = getRestaurantId();
+        const configRes = await fetch(getApiUrl('/restaurant-config'), { 
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'x-restaurant-id': currentRestId || ''
+          } 
+        });
+        if (configRes.ok) {
+          const configData = await configRes.json();
+          if (configData) {
+            localStorage.setItem('pos_restaurant_config', JSON.stringify(configData));
+            setSubInfo(getSubscriptionInfo());
+          }
+        }
+      } catch {}
+    }
+
     // Merge with registered staff from localStorage for standalone/offline support
     if (typeof window !== 'undefined') {
       try {
@@ -137,7 +158,6 @@ export default function UsersPage() {
     }
   };
 
-
   // Obtener información estricta de la suscripción y límite de usuarios del plan de forma segura para SSR
   const getSubscriptionInfo = () => {
     if (typeof window === 'undefined') {
@@ -156,23 +176,80 @@ export default function UsersPage() {
         (localStorage.getItem('pos_user') ? JSON.parse(localStorage.getItem('pos_user') || '{}').restaurantId : null);
       
       let tenant: any = null;
-      const cachedTenantsStr = localStorage.getItem('pos_saas_tenants_cache');
-      if (cachedTenantsStr) {
-        const tenants: any[] = JSON.parse(cachedTenantsStr);
-        tenant = tenants.find(t => t.id === currentRestId) || tenants[0];
+      let plan: any = null;
+
+      // 1. Buscar en pos_restaurant_config
+      const configStr = localStorage.getItem('pos_restaurant_config');
+      if (configStr) {
+        try {
+          const cfg = JSON.parse(configStr);
+          if (cfg.plan) plan = cfg.plan;
+          tenant = cfg;
+        } catch {}
       }
 
-      let plan: any = tenant?.plan || null;
-      if (!plan?.maxUsers && tenant?.planId) {
-        const cachedPlansStr = localStorage.getItem('pos_saas_plans_cache');
-        if (cachedPlansStr) {
-          const plans: any[] = JSON.parse(cachedPlansStr);
-          plan = plans.find(p => p.id === tenant.planId);
+      // 2. Buscar en pos_user
+      const userStr = localStorage.getItem('pos_user');
+      if (userStr && (!plan || !plan.maxUsers)) {
+        try {
+          const u = JSON.parse(userStr);
+          if (u.plan) plan = u.plan;
+          if (u.restaurantPlan) plan = u.restaurantPlan;
+        } catch {}
+      }
+
+      // 3. Buscar en pos_saas_tenants_cache
+      const cachedTenantsStr = localStorage.getItem('pos_saas_tenants_cache');
+      if (cachedTenantsStr && (!tenant || !plan || !plan.maxUsers)) {
+        try {
+          const tenants: any[] = JSON.parse(cachedTenantsStr);
+          const found = (currentRestId ? tenants.find(t => t.id === currentRestId) : null) || tenants[0];
+          if (found) {
+            if (!tenant) tenant = found;
+            if (!plan && found.plan) plan = found.plan;
+            if (!plan && found.planId) {
+              const cachedPlansStr = localStorage.getItem('pos_saas_plans_cache');
+              if (cachedPlansStr) {
+                const plans: any[] = JSON.parse(cachedPlansStr);
+                plan = plans.find(p => p.id === found.planId || p.code === found.planId);
+              }
+            }
+          }
+        } catch {}
+      }
+
+      // 4. Buscar en pos_registered_restaurants
+      const regRestStr = localStorage.getItem('pos_registered_restaurants');
+      if (regRestStr && (!tenant || !plan || !plan.maxUsers)) {
+        try {
+          const rList: any[] = JSON.parse(regRestStr);
+          const found = (currentRestId ? rList.find(r => r.id === currentRestId) : null) || rList[0];
+          if (found) {
+            if (!tenant) tenant = found;
+            if (!plan && found.plan) plan = found.plan;
+          }
+        } catch {}
+      }
+
+      // Deducción inteligente del límite según nombre o código del plan
+      let planName = plan?.name || tenant?.planName || 'Plan Básico';
+      let maxUsers = Number(plan?.maxUsers);
+
+      if (!maxUsers || isNaN(maxUsers)) {
+        const pLower = (planName || '').toLowerCase();
+        const pCode = (plan?.code || '').toUpperCase();
+        if (pCode === 'PREMIUM' || pLower.includes('premium') || pLower.includes('ilimitado')) {
+          maxUsers = 99;
+          planName = 'Plan Premium';
+        } else if (pCode === 'PRO' || pLower.includes('profesional') || pLower.includes('pro')) {
+          maxUsers = 10;
+          planName = 'Plan Profesional';
+        } else {
+          maxUsers = 3;
+          planName = 'Plan Básico';
         }
       }
 
-      const planName = plan?.name || 'Plan Básico';
-      const maxUsers = Number(plan?.maxUsers) || 3;
       const isSuspended = tenant?.isActive === false;
       const isExpired = tenant?.subscriptionEndDate ? new Date(tenant.subscriptionEndDate) < new Date() : false;
       const subscriptionEndDate = tenant?.subscriptionEndDate || null;

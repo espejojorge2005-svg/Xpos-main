@@ -99,9 +99,11 @@ export class SaasService {
 
     let validPlanId: string | null = null;
     if (dto.planId) {
-      const planExists = await this.prisma.subscriptionPlan.findUnique({ where: { id: dto.planId } });
+      const planExists = await this.prisma.subscriptionPlan.findFirst({ 
+        where: { OR: [{ id: dto.planId }, { code: dto.planId.toUpperCase() }] } 
+      });
       if (planExists) {
-        validPlanId = dto.planId;
+        validPlanId = planExists.id;
       }
     }
 
@@ -123,6 +125,9 @@ export class SaasService {
           ownerPhone: dto.ownerPhone || null,
           subscriptionEndDate: endDate,
           isActive: true,
+        },
+        include: {
+          plan: true,
         }
       });
 
@@ -289,8 +294,10 @@ export class SaasService {
     
     if (dto.planId !== undefined) {
       if (dto.planId) {
-        const planExists = await this.prisma.subscriptionPlan.findUnique({ where: { id: dto.planId } });
-        updateData.planId = planExists ? dto.planId : null;
+        const planExists = await this.prisma.subscriptionPlan.findFirst({ 
+          where: { OR: [{ id: dto.planId }, { code: dto.planId.toUpperCase() }] } 
+        });
+        updateData.planId = planExists ? planExists.id : null;
       } else {
         updateData.planId = null;
       }
@@ -302,7 +309,10 @@ export class SaasService {
 
     return this.prisma.restaurant.update({
       where: { id },
-      data: updateData
+      data: updateData,
+      include: {
+        plan: true,
+      }
     });
   }
 

@@ -9,12 +9,16 @@ export class RestaurantConfigService {
 
   async getConfig(restaurantIdParam?: string | null) {
     const restaurantId = restaurantIdParam || this.cls.get('restaurantId');
-    let res = restaurantId ? await this.prisma.restaurant.findUnique({ where: { id: restaurantId } }) : null;
+    let res = restaurantId ? await this.prisma.restaurant.findUnique({ 
+      where: { id: restaurantId },
+      include: { plan: true }
+    }) : null;
 
     if (!res) {
       // Fallback: Si no tiene restaurantId o no se encuentra, obtener el primer restaurante activo
       res = await this.prisma.restaurant.findFirst({
         orderBy: { createdAt: 'asc' },
+        include: { plan: true }
       });
     }
 
