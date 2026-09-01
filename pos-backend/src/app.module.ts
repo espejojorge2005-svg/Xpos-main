@@ -16,6 +16,7 @@ import { RestaurantConfigModule } from './modules/restaurant-config/restaurant-c
 import { UsersModule } from './modules/users/users.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { SaasModule } from './modules/saas/saas.module';
+import { AiModule } from './modules/ai/ai.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { SaasModule } from './modules/saas/saas.module';
     UsersModule,
     AnalyticsModule,
     SaasModule,
+    AiModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -13,6 +13,7 @@ import { useGuardedRoute } from '@/hooks/useGuardedRoute';
 // All views available in the system
 const ALL_VIEWS = [
   { key: 'pos',           label: 'Plano de Sala',   icon: '🪑' },
+  { key: 'asistente_ia',  label: 'Asistente IA ✨', icon: '✨' },
   { key: 'cocina',        label: 'Monitor Cocina',   icon: '👨‍🍳' },
   { key: 'caja',          label: 'Cierre de Caja',   icon: '💰' },
   { key: 'inventario',    label: 'Inventario',        icon: '📦' },

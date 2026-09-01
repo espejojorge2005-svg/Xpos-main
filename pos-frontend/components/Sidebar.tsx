@@ -6,7 +6,7 @@ import { getApiUrl } from '@/utils/api';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Calculator, Package, Settings, UtensilsCrossed, LogOut, ChefHat, Users, Table2, BarChart3, Shield, Flame, ClipboardList, Menu, X, Layers, History } from 'lucide-react';
+import { LayoutDashboard, Calculator, Package, Settings, UtensilsCrossed, LogOut, ChefHat, Users, Table2, BarChart3, Shield, Flame, ClipboardList, Menu, X, Layers, History, Sparkles } from 'lucide-react';
 
 interface RestaurantConfig {
   name: string;
@@ -16,6 +16,7 @@ interface RestaurantConfig {
 
 const ALL_MENU_ITEMS = [
   { key: 'pos',           name: 'Plano de Sala',   icon: LayoutDashboard, path: '/' },
+  { key: 'asistente_ia',  name: 'Asistente IA ✨', icon: Sparkles,        path: '#ai' },
   { key: 'cocina',        name: 'Monitor Cocina',  icon: ChefHat,         path: '/cocina' },
   { key: 'caja',          name: 'Cierre de Caja',  icon: Calculator,      path: '/report' },
   { key: 'inventario',    name: 'Inventario',       icon: Package,         path: '/inventory' },
@@ -178,8 +179,27 @@ export default function Sidebar() {
         {/* Navigation */}
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {menuItems.map((item) => {
-            const isActive = pathname === item.path || (item.path !== '/' && pathname.startsWith(item.path));
+            const isAi = item.key === 'asistente_ia';
+            const isActive = !isAi && (pathname === item.path || (item.path !== '/' && pathname.startsWith(item.path)));
             const Icon = item.icon;
+
+            if (isAi) {
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false);
+                    window.dispatchEvent(new Event('pos:open_ai_assistant'));
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl font-bold transition-all active:scale-95 text-violet-700 bg-violet-50/70 hover:bg-violet-100/80 border border-violet-100 shadow-xs"
+                >
+                  <Icon className="w-5 h-5 text-violet-600 animate-pulse" />
+                  <span>{item.name}</span>
+                </button>
+              );
+            }
+
             return (
               <Link
                 key={item.path}

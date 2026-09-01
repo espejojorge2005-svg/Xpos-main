@@ -3,6 +3,7 @@ import './globals.css';
 import { Toaster } from 'sonner';
 import Sidebar from '@/components/Sidebar';
 import OrderNotificationListener from '@/components/OrderNotificationListener';
+import AiChatbotDrawer from '@/components/AiChatbotDrawer';
 
 export const metadata: Metadata = {
   title: 'Xpos - ',
@@ -24,6 +25,9 @@ export default function RootLayout({
         
         {/* Aquí está tu Menú Lateral restaurado */}
         <Sidebar />
+
+        {/* Asistente Inteligente ChefAI */}
+        <AiChatbotDrawer />
 
         {/* El lado derecho donde cargan tus mesas y configuraciones */}
         <main className="flex-1 h-screen overflow-y-auto">
