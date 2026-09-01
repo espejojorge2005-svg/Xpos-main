@@ -7,32 +7,96 @@ export class AiTemplateService {
    * Generador semántico para respuestas analíticas estructuradas
    */
   generateResponse(userMessage: string, ctx: AiDataContext): string {
-    const msg = userMessage.toLowerCase();
+    const raw = (userMessage || '').toLowerCase().trim();
+    // Normalizar texto quitando acentos para matching robusto
+    const msg = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
     const { salesToday, topProducts, stockAlerts, tablesSummary, forecast } = ctx;
 
-    // 1. Resumen de Ventas / Ingresos de Hoy
-    if (msg.includes('venta') || msg.includes('vendido') || msg.includes('ingreso') || msg.includes('caja') || msg.includes('hoy') || msg.includes('resumen')) {
-      return this.renderSalesSummary(salesToday);
-    }
+    // 1. INTENCIÓN: PREDICCIÓN / PROYECCIÓN DE DEMANDA / FUTURO (Prioridad Alta)
+    const isForecast =
+      msg.includes('predic') ||
+      msg.includes('proyecc') ||
+      msg.includes('futuro') ||
+      msg.includes('estim') ||
+      msg.includes('fin de semana') ||
+      msg.includes('demanda') ||
+      msg.includes('sabado') ||
+      msg.includes('domingo') ||
+      msg.includes('proximos') ||
+      msg.includes('proximo');
 
-    // 2. Ranking de Platos Más / Menos Vendidos
-    if (msg.includes('plato') || msg.includes('producto') || msg.includes('estrella') || msg.includes('top') || msg.includes('mas vendido') || msg.includes('más vendido') || msg.includes('popular')) {
-      return this.renderTopProducts(topProducts);
-    }
-
-    // 3. Alertas de Stock e Inventario
-    if (msg.includes('stock') || msg.includes('inventario') || msg.includes('alerta') || msg.includes('agota') || msg.includes('quedan') || msg.includes('insumo')) {
-      return this.renderStockAlerts(stockAlerts);
-    }
-
-    // 4. Predicción y Proyecciones de Demanda
-    if (msg.includes('predic') || msg.includes('proyecci') || msg.includes('futuro') || msg.includes('estim') || msg.includes('semana') || msg.includes('sabado') || msg.includes('sábado') || msg.includes('domingo') || msg.includes('mañana')) {
+    if (isForecast) {
       return this.renderForecast(forecast);
     }
 
-    // 5. Estado de Mesas y Salón
-    if (msg.includes('mesa') || msg.includes('salon') || msg.includes('salón') || msg.includes('terraza') || msg.includes('ocupad')) {
+    // 2. INTENCIÓN: RANKING DE PLATOS / PRODUCTOS / ROTACIÓN (Prioridad Alta)
+    const isTopProducts =
+      msg.includes('plato') ||
+      msg.includes('comida') ||
+      msg.includes('bebida') ||
+      msg.includes('producto') ||
+      msg.includes('estrella') ||
+      msg.includes('rotacion') ||
+      msg.includes('ranking') ||
+      msg.includes('popular') ||
+      msg.includes('mas vendido') ||
+      msg.includes('menos vendido') ||
+      msg.includes('menor rotacion') ||
+      msg.includes('mayor rotacion') ||
+      msg.includes('carta') ||
+      msg.includes('menu');
+
+    if (isTopProducts) {
+      return this.renderTopProducts(topProducts);
+    }
+
+    // 3. INTENCIÓN: ALERTAS DE STOCK / INVENTARIO / INSUMOS
+    const isStock =
+      msg.includes('stock') ||
+      msg.includes('inventario') ||
+      msg.includes('alerta') ||
+      msg.includes('agota') ||
+      msg.includes('quedan') ||
+      msg.includes('insumo') ||
+      msg.includes('reposicion') ||
+      msg.includes('critico') ||
+      msg.includes('falta');
+
+    if (isStock) {
+      return this.renderStockAlerts(stockAlerts);
+    }
+
+    // 4. INTENCIÓN: MESAS / SALÓN / OCUPACIÓN
+    const isTables =
+      msg.includes('mesa') ||
+      msg.includes('salon') ||
+      msg.includes('terraza') ||
+      msg.includes('ocupad') ||
+      msg.includes('libre') ||
+      msg.includes('ambiente') ||
+      msg.includes('capacidad');
+
+    if (isTables) {
       return this.renderTablesSummary(tablesSummary);
+    }
+
+    // 5. INTENCIÓN: VENTAS / FINANZAS / CAJA (HOY)
+    const isSales =
+      msg.includes('venta') ||
+      msg.includes('ingreso') ||
+      msg.includes('caja') ||
+      msg.includes('factura') ||
+      msg.includes('recaud') ||
+      msg.includes('ticket') ||
+      msg.includes('cobr') ||
+      msg.includes('hoy') ||
+      msg.includes('resumen') ||
+      msg.includes('dinero') ||
+      msg.includes('ganancia');
+
+    if (isSales) {
+      return this.renderSalesSummary(salesToday);
     }
 
     // 6. Menú Principal de Ayuda
