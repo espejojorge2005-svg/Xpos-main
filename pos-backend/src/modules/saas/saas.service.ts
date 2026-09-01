@@ -99,9 +99,10 @@ export class SaasService {
 
     let validPlanId: string | null = null;
     if (dto.planId) {
-      const planExists = await this.prisma.subscriptionPlan.findFirst({ 
-        where: { OR: [{ id: dto.planId }, { code: dto.planId.toUpperCase() }] } 
-      });
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dto.planId);
+      const planExists = isUuid
+        ? await this.prisma.subscriptionPlan.findUnique({ where: { id: dto.planId } })
+        : await this.prisma.subscriptionPlan.findUnique({ where: { code: dto.planId.toUpperCase() } });
       if (planExists) {
         validPlanId = planExists.id;
       }
@@ -294,9 +295,10 @@ export class SaasService {
     
     if (dto.planId !== undefined) {
       if (dto.planId) {
-        const planExists = await this.prisma.subscriptionPlan.findFirst({ 
-          where: { OR: [{ id: dto.planId }, { code: dto.planId.toUpperCase() }] } 
-        });
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dto.planId);
+        const planExists = isUuid
+          ? await this.prisma.subscriptionPlan.findUnique({ where: { id: dto.planId } })
+          : await this.prisma.subscriptionPlan.findUnique({ where: { code: dto.planId.toUpperCase() } });
         updateData.planId = planExists ? planExists.id : null;
       } else {
         updateData.planId = null;

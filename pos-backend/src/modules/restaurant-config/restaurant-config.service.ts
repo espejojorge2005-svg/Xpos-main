@@ -8,9 +8,12 @@ export class RestaurantConfigService {
   constructor(private prisma: PrismaService, private cls: ClsService) {}
 
   async getConfig(restaurantIdParam?: string | null) {
-    const restaurantId = restaurantIdParam || this.cls.get('restaurantId');
-    let res = restaurantId ? await this.prisma.restaurant.findUnique({ 
-      where: { id: restaurantId },
+    const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+    const rawId = restaurantIdParam || this.cls.get('restaurantId');
+    const validId = (rawId && isUuid(rawId)) ? rawId : null;
+
+    let res = validId ? await this.prisma.restaurant.findUnique({ 
+      where: { id: validId },
       include: { plan: true }
     }) : null;
 
