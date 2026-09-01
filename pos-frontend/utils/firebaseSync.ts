@@ -5,10 +5,10 @@ export interface FirebaseOrder {
   id: string;
   tableId?: string;
   tableName?: string;
-  status: 'OPEN' | 'CLOSED' | 'CANCELLED' | 'SERVED';
+  status?: 'OPEN' | 'CLOSED' | 'CANCELLED' | 'SERVED';
   customerName?: string;
-  totalAmount: number;
-  items: Array<{
+  totalAmount?: number;
+  items?: Array<{
     id: string;
     productName: string;
     quantity: number;
@@ -17,8 +17,8 @@ export interface FirebaseOrder {
     notes?: string;
     status: 'ACTIVE' | 'SERVED' | 'CANCELED' | 'CANCELLED';
   }>;
-  createdAt: string;
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
   dispatchedAt?: string;
   billRequested?: boolean;
   restaurantId?: string;
@@ -88,7 +88,7 @@ export const subscribeToTables = (restaurantId: string | null | undefined, onUpd
 /**
  * Guardar o actualizar una orden en Firebase
  */
-export const syncOrderToFirebase = async (order: FirebaseOrder) => {
+export const syncOrderToFirebase = async (order: Partial<FirebaseOrder> & { id: string }) => {
   try {
     const orderDocRef = doc(db, 'orders', order.id);
     await setDoc(orderDocRef, {

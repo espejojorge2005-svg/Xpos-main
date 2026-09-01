@@ -1894,6 +1894,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                           totalAmount: existingSubtotal,
                           items: existingItems as any,
                           billRequested: true,
+                          createdAt: new Date().toISOString(),
                           updatedAt: new Date().toISOString(),
                           restaurantId: restId
                         }).catch(() => {});
