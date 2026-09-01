@@ -101,8 +101,9 @@ export class AiAnalyticsService {
       if (!productSalesMap[key]) {
         productSalesMap[key] = { name: pName, category: catName, quantity: 0, revenue: 0 };
       }
+      const itemRevenue = item.subtotal ? Number(item.subtotal) : item.quantity * Number(item.unitPrice || 0);
       productSalesMap[key].quantity += item.quantity;
-      productSalesMap[key].revenue += Number(item.subtotal || item.quantity * item.unitPrice);
+      productSalesMap[key].revenue += itemRevenue;
     }
 
     const sortedList = Object.values(productSalesMap).sort((a, b) => b.quantity - a.quantity);
