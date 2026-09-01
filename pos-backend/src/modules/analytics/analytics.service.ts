@@ -2,6 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClsService } from 'nestjs-cls';
 
+function formatLocalDate(d: Date): string {
+  const date = new Date(d);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 @Injectable()
 export class AnalyticsService {
   constructor(
@@ -15,9 +23,9 @@ export class AnalyticsService {
     let to: Date;
 
     if (fromString) {
-      const parts = fromString.split('-');
+      const parts = fromString.split('-').map(Number);
       if (parts.length === 3) {
-        from = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 0, 0, 0, 0);
+        from = new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0);
       } else {
         from = new Date(fromString);
         from.setHours(0, 0, 0, 0);
@@ -28,9 +36,9 @@ export class AnalyticsService {
     }
 
     if (toString) {
-      const parts = toString.split('-');
+      const parts = toString.split('-').map(Number);
       if (parts.length === 3) {
-        to = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 23, 59, 59, 999);
+        to = new Date(parts[0], parts[1] - 1, parts[2], 23, 59, 59, 999);
       } else {
         to = new Date(toString);
         to.setHours(23, 59, 59, 999);
@@ -82,15 +90,15 @@ export class AnalyticsService {
     }
     const topPaymentMethod = Object.entries(methodTotals).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'N/A';
 
-    // ── Revenue by day ────────────────────────────────────────────────────────
+    // ── Revenue by day (Zona Horaria Local) ──────────────────────────────────
     const byDay: Record<string, { date: string; revenue: number; orders: number }> = {};
     for (const p of payments) {
-      const day = p.createdAt ? p.createdAt.toISOString().slice(0, 10) : from.toISOString().slice(0, 10);
+      const day = p.createdAt ? formatLocalDate(p.createdAt) : formatLocalDate(from);
       if (!byDay[day]) byDay[day] = { date: day, revenue: 0, orders: 0 };
       byDay[day].revenue += Number(p.amount || 0);
     }
     for (const o of orders) {
-      const day = o.updatedAt ? o.updatedAt.toISOString().slice(0, 10) : from.toISOString().slice(0, 10);
+      const day = o.createdAt ? formatLocalDate(o.createdAt) : (o.updatedAt ? formatLocalDate(o.updatedAt) : formatLocalDate(from));
       if (byDay[day]) byDay[day].orders += 1;
       else byDay[day] = { date: day, revenue: 0, orders: 1 };
     }
@@ -152,4 +160,3 @@ export class AnalyticsService {
     };
   }
 }
-

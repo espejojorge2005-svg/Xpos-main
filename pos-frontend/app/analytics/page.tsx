@@ -209,6 +209,14 @@ function computeLocalAnalytics(fromStr: string, toStr: string): AnalyticsData {
   };
 }
 
+function formatLocalDate(d: Date): string {
+  const date = new Date(d);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export default function AnalyticsPage() {
   const router = useRouter();
   useGuardedRoute('analytics');
@@ -216,9 +224,9 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState<'TODAY' | 'LAST_7_DAYS' | 'LAST_30_DAYS' | 'CUSTOM'>('TODAY');
   
-  // Custom date range state
-  const [fromDate, setFromDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [toDate, setToDate] = useState(() => new Date().toISOString().slice(0, 10));
+  // Custom date range state (Fecha Local Exacta)
+  const [fromDate, setFromDate] = useState(() => formatLocalDate(new Date()));
+  const [toDate, setToDate] = useState(() => formatLocalDate(new Date()));
 
   const fetchAnalytics = async (from: string, to: string) => {
     setLoading(true);
@@ -246,15 +254,17 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     const today = new Date();
-    let from = today.toISOString().slice(0, 10);
-    const to = today.toISOString().slice(0, 10);
+    let from = formatLocalDate(today);
+    const to = formatLocalDate(today);
 
     if (dateRange === 'LAST_7_DAYS') {
-      const d = new Date(); d.setDate(d.getDate() - 6);
-      from = d.toISOString().slice(0, 10);
+      const d = new Date();
+      d.setDate(d.getDate() - 6);
+      from = formatLocalDate(d);
     } else if (dateRange === 'LAST_30_DAYS') {
-      const d = new Date(); d.setDate(d.getDate() - 29);
-      from = d.toISOString().slice(0, 10);
+      const d = new Date();
+      d.setDate(d.getDate() - 29);
+      from = formatLocalDate(d);
     }
 
     if (dateRange !== 'CUSTOM') {

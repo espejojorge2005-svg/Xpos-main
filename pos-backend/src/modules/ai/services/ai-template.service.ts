@@ -13,7 +13,25 @@ export class AiTemplateService {
 
     const { salesToday, topProducts, stockAlerts, tablesSummary, forecast } = ctx;
 
-    // 1. INTENCIÓN: PREDICCIÓN / PROYECCIÓN DE DEMANDA / FUTURO (Prioridad Alta)
+    // 1. INTENCIÓN: ALERTAS DE STOCK / INVENTARIO / INSUMOS (Máxima Especificidad)
+    const isStock =
+      msg.includes('stock') ||
+      msg.includes('inventario') ||
+      msg.includes('alerta') ||
+      msg.includes('agota') ||
+      msg.includes('quedan') ||
+      msg.includes('insumo') ||
+      msg.includes('reposicion') ||
+      msg.includes('critico') ||
+      msg.includes('falta') ||
+      msg.includes('bajo stock') ||
+      msg.includes('sin stock');
+
+    if (isStock) {
+      return this.renderStockAlerts(stockAlerts);
+    }
+
+    // 2. INTENCIÓN: PREDICCIÓN / PROYECCIÓN DE DEMANDA / FUTURO
     const isForecast =
       msg.includes('predic') ||
       msg.includes('proyecc') ||
@@ -30,12 +48,11 @@ export class AiTemplateService {
       return this.renderForecast(forecast);
     }
 
-    // 2. INTENCIÓN: RANKING DE PLATOS / PRODUCTOS / ROTACIÓN (Prioridad Alta)
+    // 3. INTENCIÓN: RANKING DE PLATOS / PRODUCTOS / ROTACIÓN
     const isTopProducts =
       msg.includes('plato') ||
       msg.includes('comida') ||
       msg.includes('bebida') ||
-      msg.includes('producto') ||
       msg.includes('estrella') ||
       msg.includes('rotacion') ||
       msg.includes('ranking') ||
@@ -45,26 +62,11 @@ export class AiTemplateService {
       msg.includes('menor rotacion') ||
       msg.includes('mayor rotacion') ||
       msg.includes('carta') ||
-      msg.includes('menu');
+      msg.includes('menu') ||
+      msg.includes('producto');
 
     if (isTopProducts) {
       return this.renderTopProducts(topProducts);
-    }
-
-    // 3. INTENCIÓN: ALERTAS DE STOCK / INVENTARIO / INSUMOS
-    const isStock =
-      msg.includes('stock') ||
-      msg.includes('inventario') ||
-      msg.includes('alerta') ||
-      msg.includes('agota') ||
-      msg.includes('quedan') ||
-      msg.includes('insumo') ||
-      msg.includes('reposicion') ||
-      msg.includes('critico') ||
-      msg.includes('falta');
-
-    if (isStock) {
-      return this.renderStockAlerts(stockAlerts);
     }
 
     // 4. INTENCIÓN: MESAS / SALÓN / OCUPACIÓN
