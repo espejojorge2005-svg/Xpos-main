@@ -13,3 +13,5 @@ services:
         sync: false
       - key: DIRECT_URL
         sync: false
+      - key: TZ
+        value: America/Lima

@@ -9,6 +9,8 @@ import { ChefHat, Clock, AlertTriangle, ArrowLeft, UtensilsCrossed, XCircle, Und
 import { toast } from 'sonner';
 import { useGuardedRoute } from '@/hooks/useGuardedRoute';
 
+import { formatWaitTime } from '@/utils/date';
+
 // Interfaces actualizadas para incluir status
 interface KitchenItem {
   id: string;
@@ -42,7 +44,7 @@ interface KitchenOrder {
   items: KitchenItem[];
 }
 
-// Componente inteligente para el Cronómetro (Sin cambios, se mantiene igual)
+// Componente inteligente para el Cronómetro sincronizado con horario de Perú
 const OrderTimer = ({ createdAt }: { createdAt: string }) => {
   const [timeText, setTimeText] = useState('');
   const [isDelayed, setIsDelayed] = useState(false);
@@ -50,16 +52,14 @@ const OrderTimer = ({ createdAt }: { createdAt: string }) => {
 
   useEffect(() => {
     const updateTimer = () => {
+      const formatted = formatWaitTime(createdAt);
+      setTimeText(formatted);
+
       const orderDate = new Date(createdAt).getTime();
-      const now = new Date().getTime();
-      const diffMs = now - orderDate;
-      if (diffMs < 0) return setTimeText('0s');
-      const diffSecs = Math.floor(diffMs / 1000);
-      const minutes = Math.floor(diffSecs / 60);
-      const seconds = diffSecs % 60;
+      const diffMs = Date.now() - (isNaN(orderDate) ? Date.now() : orderDate);
+      const minutes = Math.floor(diffMs / 60000);
       if (minutes >= 20) setIsVeryDelayed(true);
       else if (minutes >= 10) setIsDelayed(true);
-      setTimeText(`${minutes}m ${seconds.toString().padStart(2, '0')}s`);
     };
     updateTimer();
     const interval = setInterval(updateTimer, 1000);

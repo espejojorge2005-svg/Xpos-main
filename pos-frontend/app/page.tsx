@@ -1,8 +1,8 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
 import { getScopedStorage, getRestaurantId, setScopedStorage, removeScopedStorage } from '@/utils/storage';
-
 import { subscribeToCashShift, subscribeToZones, subscribeToOrders } from '@/utils/firebaseSync';
+import { formatWaitTime } from '@/utils/date';
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -21,7 +21,7 @@ interface Table {
   name: string; 
   number: number; 
   capacity: number; 
-  status: string;
+  status: string; 
   posX: number;
   posY: number;
   zoneId: string;
@@ -34,26 +34,6 @@ interface Zone {
   name: string; 
   tables: Table[]; 
 }
-
-const formatWaitTime = (orderDate: Date, now: Date) => {
-  const time = orderDate?.getTime ? orderDate.getTime() : new Date(orderDate).getTime();
-  if (!time || isNaN(time)) return '0s';
-  const diffMs = now.getTime() - time;
-  if (diffMs < 0) return '0s';
-  
-  const diffSecs = Math.floor(diffMs / 1000);
-  const hours = Math.floor(diffSecs / 3600);
-  const minutes = Math.floor((diffSecs % 3600) / 60);
-  const seconds = diffSecs % 60;
-
-  if (hours > 0) {
-    return `${hours}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s`;
-  }
-  if (minutes > 0) {
-    return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
-  }
-  return `${seconds}s`;
-};
 
 // Subcomponente obligatorio para React-Draggable en StrictMode
 const DraggableTable = ({ 
