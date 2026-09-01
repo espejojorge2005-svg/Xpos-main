@@ -20,6 +20,7 @@ export interface FirebaseOrder {
   createdAt: string;
   updatedAt: string;
   dispatchedAt?: string;
+  billRequested?: boolean;
   restaurantId?: string;
 }
 
