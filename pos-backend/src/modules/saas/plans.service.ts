@@ -73,8 +73,14 @@ export class PlansService {
     return plans;
   }
 
+  private isUuid(val: string) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+  }
+
   async findOne(id: string) {
-    const plan = await this.prisma.subscriptionPlan.findUnique({ where: { id } });
+    const plan = this.isUuid(id)
+      ? await this.prisma.subscriptionPlan.findUnique({ where: { id } })
+      : await this.prisma.subscriptionPlan.findUnique({ where: { code: id.toUpperCase() } });
     if (!plan) throw new NotFoundException('Plan no encontrado');
     return plan;
   }
@@ -96,8 +102,7 @@ export class PlansService {
   }
 
   async update(id: string, dto: UpdatePlanDto) {
-    const plan = await this.prisma.subscriptionPlan.findUnique({ where: { id } });
-    if (!plan) throw new NotFoundException('Plan no encontrado');
+    const plan = await this.findOne(id);
 
     if (dto.code && dto.code !== plan.code) {
         const exists = await this.prisma.subscriptionPlan.findUnique({ where: { code: dto.code } });
@@ -105,7 +110,7 @@ export class PlansService {
     }
 
     return this.prisma.subscriptionPlan.update({
-      where: { id },
+      where: { id: plan.id },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.code !== undefined && { code: dto.code }),
@@ -118,10 +123,9 @@ export class PlansService {
   }
 
   async toggleStatus(id: string, isActive: boolean) {
-    const plan = await this.prisma.subscriptionPlan.findUnique({ where: { id } });
-    if (!plan) throw new NotFoundException('Plan no encontrado');
+    const plan = await this.findOne(id);
     return this.prisma.subscriptionPlan.update({
-      where: { id },
+      where: { id: plan.id },
       data: { isActive }
     });
   }
