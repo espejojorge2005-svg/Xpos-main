@@ -162,11 +162,15 @@ export class AuthService {
     }
     
     // 4. Verificar suscripción y estado del restaurante
-    if (user.restaurantId && user.restaurant) {
-      if (!user.restaurant.isActive) {
+    if (user.restaurantId) {
+      const restaurant = await this.prisma.restaurant.findUnique({ where: { id: user.restaurantId } });
+      if (!restaurant) {
+        throw new UnauthorizedException('El restaurante asignado a este usuario no existe o fue eliminado.');
+      }
+      if (!restaurant.isActive) {
         throw new UnauthorizedException('El restaurante se encuentra suspendido. Contacte al Administrador SaaS.');
       }
-      if (user.restaurant.subscriptionEndDate && new Date(user.restaurant.subscriptionEndDate) < new Date()) {
+      if (restaurant.subscriptionEndDate && new Date(restaurant.subscriptionEndDate) < new Date()) {
         throw new UnauthorizedException('La suscripción del restaurante ha expirado. Contacte al Administrador SaaS para renovar.');
       }
     }
@@ -206,11 +210,15 @@ export class AuthService {
 
     if (!user.isActive) throw new UnauthorizedException('Usuario desactivado.');
     
-    if (user.restaurantId && user.restaurant) {
-      if (!user.restaurant.isActive) {
-        throw new UnauthorizedException('El restaurante se encuentra suspendido.');
+    if (user.restaurantId) {
+      const restaurant = await this.prisma.restaurant.findUnique({ where: { id: user.restaurantId } });
+      if (!restaurant) {
+        throw new UnauthorizedException('El restaurante asignado no existe.');
       }
-      if (user.restaurant.subscriptionEndDate && new Date(user.restaurant.subscriptionEndDate) < new Date()) {
+      if (!restaurant.isActive) {
+        throw new UnauthorizedException('El restaurante se encuentra suspendido. No se permite el acceso al personal.');
+      }
+      if (restaurant.subscriptionEndDate && new Date(restaurant.subscriptionEndDate) < new Date()) {
         throw new UnauthorizedException('La suscripción del restaurante ha expirado.');
       }
     }

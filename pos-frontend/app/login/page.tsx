@@ -303,14 +303,11 @@ export default function LoginPage() {
       }
 
 
-      // Si el backend notificó explícitamente que el restaurante está suspendido o expirado
-      if (response && !response.ok && data.message) {
-        const msgLower = String(data.message).toLowerCase();
-        if (msgLower.includes('suspendido') || msgLower.includes('expirado') || msgLower.includes('expirada') || msgLower.includes('suscripción') || msgLower.includes('desactivado')) {
-          toast.error(data.message);
-          setLoading(false);
-          return;
-        }
+      // Si el backend respondió con error (contraseña incorrecta, restaurante suspendido, etc.)
+      if (response && !response.ok) {
+        toast.error(data?.message || 'Credenciales inválidas o acceso denegado.');
+        setLoading(false);
+        return;
       }
 
       // Fallback A: SuperAdmin SaaS Master
@@ -468,15 +465,11 @@ export default function LoginPage() {
           window.location.href = dest;
           return;
         } else {
-          try {
-            const errData = await response.json();
-            if (errData.message && (errData.message.includes('suspendido') || errData.message.includes('expirado'))) {
-              toast.error(errData.message);
-              setLoading(false);
-              setPin('');
-              return;
-            }
-          } catch {}
+          const errData = await response.json().catch(() => ({}));
+          toast.error(errData.message || 'PIN incorrecto o acceso denegado.');
+          setLoading(false);
+          setPin('');
+          return;
         }
       }
     } catch (error) {

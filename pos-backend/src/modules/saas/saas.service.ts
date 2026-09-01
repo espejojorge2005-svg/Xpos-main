@@ -211,10 +211,18 @@ export class SaasService {
     const restaurant = await this.prisma.restaurant.findUnique({ where: { id } });
     if (!restaurant) throw new NotFoundException('Restaurante no encontrado');
 
-    return this.prisma.restaurant.update({
+    const updated = await this.prisma.restaurant.update({
       where: { id },
       data: { isActive }
     });
+
+    // Actualizar también a todos los usuarios del restaurante para suspender/activar acceso
+    await this.prisma.user.updateMany({
+      where: { restaurantId: id, role: { not: 'SUPER_ADMIN' } },
+      data: { isActive }
+    });
+
+    return updated;
   }
 
   async renewSubscription(id: string, days: number) {
@@ -228,13 +236,21 @@ export class SaasService {
 
     baseDate.setDate(baseDate.getDate() + Number(days));
 
-    return this.prisma.restaurant.update({
+    const updated = await this.prisma.restaurant.update({
       where: { id },
       data: {
         subscriptionEndDate: baseDate,
         isActive: true,
       }
     });
+
+    // Reactivar usuarios al renovar la suscripción
+    await this.prisma.user.updateMany({
+      where: { restaurantId: id, role: { not: 'SUPER_ADMIN' } },
+      data: { isActive: true }
+    });
+
+    return updated;
   }
 
   async getRestaurantAdmin(restaurantId: string) {
@@ -319,13 +335,105 @@ export class SaasService {
   }
 
   async deleteRestaurant(id: string) {
-    try {
-      await this.prisma.user.deleteMany({ where: { restaurantId: id } });
-      await this.prisma.restaurant.delete({ where: { id } });
-    } catch {
-      // Soft delete if cascade delete has foreign keys
-      await this.prisma.restaurant.update({ where: { id }, data: { isActive: false } }).catch(() => {});
-    }
-    return { message: 'Restaurante eliminado correctamente' };
+    const restaurant = await this.prisma.restaurant.findUnique({ where: { id } });
+    if (!restaurant) throw new NotFoundException('Restaurante no encontrado');
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Pagos asociados a órdenes del restaurante
+      await tx.payment.deleteMany({
+        where: { order: { restaurantId: id } },
+      });
+
+      // 2. Items de órdenes asociadas al restaurante
+      await tx.orderItem.deleteMany({
+        where: { order: { restaurantId: id } },
+      });
+
+      // 3. Órdenes del restaurante
+      await tx.order.deleteMany({
+        where: { restaurantId: id },
+      });
+
+      // 4. Gastos de caja y turnos de caja
+      await tx.cashExpense.deleteMany({
+        where: { shift: { restaurantId: id } },
+      });
+      await tx.cashShift.deleteMany({
+        where: { restaurantId: id },
+      });
+
+      // 5. Movimientos de stock
+      await tx.stockMovement.deleteMany({
+        where: { product: { restaurantId: id } },
+      });
+
+      // 6. Opciones y grupos de modificadores
+      const products = await tx.product.findMany({ where: { restaurantId: id }, select: { id: true } });
+      const productIds = products.map((p) => p.id);
+
+      if (productIds.length > 0) {
+        await tx.modifierOption.deleteMany({
+          where: { group: { productId: { in: productIds } } },
+        });
+        await tx.modifierGroup.deleteMany({
+          where: { productId: { in: productIds } },
+        });
+      }
+
+      // 7. Recetas asociadas a productos o insumos del restaurante
+      const inventoryItems = await tx.inventoryItem.findMany({ where: { restaurantId: id }, select: { id: true } });
+      const invItemIds = inventoryItems.map((i) => i.id);
+
+      await tx.recipeItem.deleteMany({
+        where: {
+          OR: [
+            ...(productIds.length > 0 ? [{ productId: { in: productIds } }] : []),
+            ...(invItemIds.length > 0 ? [{ inventoryItemId: { in: invItemIds } }] : []),
+          ],
+        },
+      });
+
+      // 8. Productos
+      await tx.product.deleteMany({
+        where: { restaurantId: id },
+      });
+
+      // 9. Categorías
+      await tx.category.deleteMany({
+        where: { restaurantId: id },
+      });
+
+      // 10. Insumos de inventario
+      await tx.inventoryItem.deleteMany({
+        where: { restaurantId: id },
+      });
+
+      // 11. Estaciones de cocina
+      await tx.kitchenStation.deleteMany({
+        where: { restaurantId: id },
+      });
+
+      // 12. Mesas de zonas del restaurante
+      await tx.table.deleteMany({
+        where: { zone: { restaurantId: id } },
+      });
+
+      // 13. Zonas
+      await tx.zone.deleteMany({
+        where: { restaurantId: id },
+      });
+
+      // 14. Usuarios del restaurante
+      await tx.user.deleteMany({
+        where: { restaurantId: id },
+      });
+
+      // 15. Restaurante
+      await tx.restaurant.delete({
+        where: { id },
+      });
+
+      return { message: 'Restaurante y todos sus datos asociados eliminados permanentemente' };
+    });
   }
 }
