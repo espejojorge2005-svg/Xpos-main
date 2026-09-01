@@ -4,7 +4,18 @@ import { getRestaurantId, getScopedStorage, setScopedStorage } from '@/utils/sto
 
 import { useEffect, useState, use } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { syncOrderToFirebase, syncTableToFirebase, syncStockMovementToFirebase, syncProductToFirebase, syncActiveTableOrdersToFirebase, syncShiftPaymentToFirebase, subscribeToProducts, subscribeToCategories, getActiveTableOrderFromFirebase } from '@/utils/firebaseSync';
+import { 
+  syncOrderToFirebase, 
+  syncTableToFirebase, 
+  syncStockMovementToFirebase, 
+  syncProductToFirebase, 
+  syncActiveTableOrdersToFirebase, 
+  syncShiftPaymentToFirebase, 
+  subscribeToProducts, 
+  subscribeToCategories, 
+  getActiveTableOrderFromFirebase,
+  closeTableOrdersInFirebase
+} from '@/utils/firebaseSync';
 import { ArrowLeft, Search, Plus, Minus, Trash2, ShoppingCart, UtensilsCrossed, ReceiptText, ChefHat, CheckCircle2, AlertTriangle, X, Printer, CreditCard, Banknote, Smartphone, Edit2, Heart, ArrowRightLeft, Scissors } from 'lucide-react';
 import { toast } from 'sonner';
 import ComboModal from '@/components/ComboModal';
@@ -945,6 +956,8 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
       // Notificar a Firebase para cerrar la orden y desocupar la mesa
       const restId = getRestaurantId() || 'main';
+      closeTableOrdersInFirebase(restId, tableId, tableName, activeOrderId).catch(() => {});
+
       if (activeOrderId) {
         syncOrderToFirebase({
           id: activeOrderId,

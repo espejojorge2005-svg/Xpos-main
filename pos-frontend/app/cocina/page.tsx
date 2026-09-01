@@ -79,6 +79,24 @@ const OrderTimer = ({ createdAt }: { createdAt: string }) => {
   );
 };
 
+const getCleanWaiterName = (order: KitchenOrder) => {
+  const w = (order.waiterName || '').trim();
+  const c = ((order as any).customerName || '').trim();
+  const tName = (order.table?.name || '').trim().toLowerCase();
+  
+  if (w && !w.toLowerCase().startsWith('mesa') && w.toLowerCase() !== tName && w !== 'Mostrador') {
+    return w;
+  }
+  if (c && c.toLowerCase().startsWith('mesero:')) {
+    const extracted = c.replace(/^mesero:\s*/i, '').trim();
+    if (extracted && !extracted.toLowerCase().startsWith('mesa') && extracted.toLowerCase() !== tName) return extracted;
+  }
+  if (c && !c.toLowerCase().startsWith('mesa') && c.toLowerCase() !== tName && c !== 'Mostrador') {
+    return c;
+  }
+  return 'Mesero';
+};
+
 export default function CocinaPage() {
   const router = useRouter();
   useGuardedRoute('cocina');
@@ -593,7 +611,7 @@ export default function CocinaPage() {
                   <div className="flex items-center justify-between gap-2 mb-3">
                     <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 text-slate-700 font-bold text-xs rounded-lg border border-slate-200">
                       <span className="text-slate-400">👤 Mozo:</span>
-                      <span className="text-slate-900 font-black uppercase">{order.waiterName || (order as any).customerName?.replace(/^Mesero:\s*/i, '') || 'Mesero'}</span>
+                      <span className="text-slate-900 font-black uppercase">{getCleanWaiterName(order)}</span>
                     </div>
                   </div>
 

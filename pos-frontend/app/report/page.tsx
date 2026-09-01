@@ -294,11 +294,52 @@ export default function CashRegisterPage() {
       fetchPendingTables();
     };
     window.addEventListener('storage', handleStorageEvent);
+    unsubActiveOrders = subscribeToOrders(restId, (allOrders) => {
+      if (Array.isArray(allOrders)) {
+        const openOrders = allOrders.filter(o => o.status === 'OPEN');
+        const uniqueByTable = new Map<string, any>();
+        const activeMap: Record<string, any> = {};
 
-    unsubActiveOrders = subscribeToActiveTableOrders(restId, (cloudActive) => {
-      if (cloudActive && typeof cloudActive === 'object') {
-        setScopedStorage('pos_active_table_orders', cloudActive);
-        fetchPendingTables();
+        openOrders.forEach(o => {
+          const rawName = o.tableName || (o.tableId ? (o.tableId.startsWith('t-') ? `Mesa ${o.tableId.replace('t-', '')}` : `Mesa ${o.tableId}`) : 'Mesa');
+          const tableKey = rawName.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '') || (o.tableId || o.id);
+          const tableId = o.tableId || (o.tableName ? (o.tableName.toLowerCase().replace(/\s+/g, '')) : o.id);
+
+          const entry = {
+            tableId,
+            orderId: o.id,
+            tableName: o.tableName || rawName,
+            status: 'OCCUPIED',
+            billRequested: Boolean(o.billRequested),
+            total: Number(o.totalAmount || 0),
+            waiterName: o.waiterName,
+            items: o.items || [],
+            createdAt: o.createdAt || new Date().toISOString()
+          };
+
+          activeMap[tableId] = entry;
+          if (tableId.startsWith('t-')) activeMap[tableId.replace('t-', '')] = entry;
+
+          if (uniqueByTable.has(tableKey)) {
+            const existing = uniqueByTable.get(tableKey);
+            uniqueByTable.set(tableKey, {
+              ...existing,
+              ...entry,
+              total: Math.max(Number(existing.total || 0), Number(entry.total || 0)),
+              billRequested: Boolean(existing.billRequested || entry.billRequested)
+            });
+          } else {
+            uniqueByTable.set(tableKey, entry);
+          }
+        });
+
+        setScopedStorage('pos_active_table_orders', activeMap);
+
+        const sortedList = Array.from(uniqueByTable.values()).sort((a, b) => 
+          String(a.tableName || '').localeCompare(String(b.tableName || ''), undefined, { numeric: true })
+        );
+
+        setPendingTables(sortedList);
       }
     });
 

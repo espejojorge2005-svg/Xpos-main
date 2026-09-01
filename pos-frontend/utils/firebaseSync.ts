@@ -533,6 +533,59 @@ export const fetchOpenOrdersFromFirebase = async (restaurantId?: string | null):
 };
 
 /**
+ * Cerrar y liberar definitivamente todas las órdenes abiertas de una mesa en Firebase Firestore
+ */
+export const closeTableOrdersInFirebase = async (
+  restaurantId: string, 
+  tableId: string, 
+  tableName?: string, 
+  orderId?: string
+) => {
+  try {
+    const ordersRef = collection(db, 'orders');
+    const snap = await getDocs(ordersRef);
+    const nowIso = new Date().toISOString();
+    const cleanNum = tableId.replace(/\D/g, '');
+    const tNameLower = (tableName || '').toLowerCase().trim();
+
+    const batchPromises = snap.docs.map(async (d) => {
+      const o = d.data() as FirebaseOrder;
+      if (!isMatchingTenant(o.restaurantId, restaurantId)) return;
+      if (o.status !== 'OPEN') return;
+
+      const matches = 
+        (orderId && (d.id === orderId || o.id === orderId)) ||
+        (o.tableId && o.tableId === tableId) ||
+        (cleanNum && (o.tableId === `t-${cleanNum}` || o.tableId === cleanNum)) ||
+        (tNameLower && o.tableName && o.tableName.toLowerCase().trim() === tNameLower) ||
+        (cleanNum && o.tableName && o.tableName.toLowerCase().includes(`mesa ${cleanNum}`)) ||
+        (cleanNum && o.tableName && o.tableName.replace(/\D/g, '') === cleanNum);
+
+      if (matches) {
+        await updateDoc(doc(db, 'orders', d.id), {
+          status: 'CLOSED',
+          updatedAt: nowIso
+        });
+      }
+    });
+
+    await Promise.all(batchPromises);
+
+    // Si había un orderId explícito, asegurar su cierre directo
+    if (orderId) {
+      await setDoc(doc(db, 'orders', orderId), {
+        id: orderId,
+        status: 'CLOSED',
+        updatedAt: nowIso,
+        restaurantId
+      }, { merge: true });
+    }
+  } catch (err) {
+    console.warn("Error closing table orders in Firebase:", err);
+  }
+};
+
+/**
  * ACCIONES DE COCINA EN TIEMPO REAL (Despacho de platos y comandas)
  */
 export const updateKitchenOrderStatusInFirebase = async (orderId: string, status: 'OPEN' | 'SERVED' | 'CANCELLED') => {
