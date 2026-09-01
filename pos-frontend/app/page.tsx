@@ -213,6 +213,7 @@ const GridTable = ({
 export default function Home() {
   const router = useRouter();
   useGuardedRoute('pos');
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [zones, setZones] = useState<Zone[]>([]);
   const [loading, setLoading] = useState(true);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -353,9 +354,10 @@ export default function Home() {
   useEffect(() => {
     const token = localStorage.getItem('pos_token');
     if (!token) {
-      router.push('/login');
+      router.replace('/login');
       return;
     }
+    setIsAuthenticated(true);
     
     // Carga de nombre de restaurante dinámico
     const cachedConfig = localStorage.getItem('pos_restaurant_config');
@@ -582,9 +584,9 @@ export default function Home() {
     }
   };
 
-  // NUEVO: Mostrar el estado de carga solo si ambos (datos de caja y zonas) están cargando
-  if (loading || isShiftOpen === null) return (
-    <div className="flex h-screen w-full items-center justify-center bg-slate-50">
+  // Mostrar pantalla de carga limpia mientras se verifica autenticación y estado de sala
+  if (!isAuthenticated || loading || isShiftOpen === null) return (
+    <div className="flex h-screen w-full items-center justify-center bg-white">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
     </div>
   );

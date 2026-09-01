@@ -92,6 +92,9 @@ export default function Sidebar() {
     return () => window.removeEventListener('storage', onStorage);
   }, [pathname]);
 
+  if (!isMounted) return null;
+  const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
+  if (!token) return null;
   if (pathname === '/login' || pathname === '/register' || pathname.startsWith('/superadmin')) return null;
 
   // Filter menu: ADMIN ('*') sees everything, others see only their allowed views (CASHIER has caja by default)
