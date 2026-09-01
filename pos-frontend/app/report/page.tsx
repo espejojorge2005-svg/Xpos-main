@@ -90,24 +90,44 @@ export default function CashRegisterPage() {
     try {
       const activeObj = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
       if (activeObj && typeof activeObj === 'object') {
-        const uniqueMap = new Map<string, any>();
+        const uniqueByTable = new Map<string, any>();
         
         Object.entries(activeObj).forEach(([key, val]: [string, any]) => {
           if (!val || val.status !== 'OCCUPIED') return;
-          // Normalizar identificador único de la mesa para evitar duplicación
-          const tName = val.tableName || `Mesa ${key.replace(/\D/g, '') || key}`;
-          const cleanKey = val.orderId || tName.toLowerCase().replace(/\s+/g, '');
           
-          if (!uniqueMap.has(cleanKey)) {
-            uniqueMap.set(cleanKey, {
+          // Extraer nombre y clave canónica de la mesa (ej. "mesa1", "mesa2", "mostrador")
+          const rawName = String(val.tableName || (key.startsWith('t-') ? `Mesa ${key.replace('t-', '')}` : (key.match(/^\d+$/) ? `Mesa ${key}` : key)));
+          const tableKey = rawName.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '') || key;
+          
+          // Si ya existe la mesa en el mapa, fusionar inteligentemente sin duplicar
+          if (uniqueByTable.has(tableKey)) {
+            const existing = uniqueByTable.get(tableKey);
+            uniqueByTable.set(tableKey, {
+              ...existing,
+              ...val,
+              tableId: val.tableId || existing.tableId || key,
+              tableName: val.tableName || existing.tableName || rawName,
+              orderId: (val.orderId && !val.orderId.startsWith('ord-')) ? val.orderId : existing.orderId,
+              billRequested: Boolean(existing.billRequested || val.billRequested),
+              total: Math.max(Number(existing.total || 0), Number(val.total || 0)),
+              items: (Array.isArray(val.items) && val.items.length > 0) ? val.items : existing.items
+            });
+          } else {
+            uniqueByTable.set(tableKey, {
               tableId: val.tableId || key,
               ...val,
-              tableName: tName
+              tableName: val.tableName || rawName,
+              billRequested: Boolean(val.billRequested)
             });
           }
         });
 
-        setPendingTables(Array.from(uniqueMap.values()));
+        // Ordenar alfabéticamente por número de mesa
+        const sortedList = Array.from(uniqueByTable.values()).sort((a, b) => 
+          String(a.tableName || '').localeCompare(String(b.tableName || ''), undefined, { numeric: true })
+        );
+
+        setPendingTables(sortedList);
       } else {
         setPendingTables([]);
       }

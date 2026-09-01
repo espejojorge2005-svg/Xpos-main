@@ -675,11 +675,11 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         payments: payments || []
       };
 
-      activeTableOrders[tableId] = orderEntry;
       if (cleanNum) {
-        activeTableOrders[`t-${cleanNum}`] = orderEntry;
-        activeTableOrders[cleanNum] = orderEntry;
+        delete activeTableOrders[`t-${cleanNum}`];
+        delete activeTableOrders[cleanNum];
       }
+      activeTableOrders[tableId] = orderEntry;
       setScopedStorage('pos_active_table_orders', activeTableOrders);
     } catch (e) {
       console.warn('Error guardando en pos_active_table_orders:', e);
@@ -1871,12 +1871,34 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                   onClick={() => {
                     window.print();
                     try {
+                      const restId = getRestaurantId() || 'main';
                       const activeTableOrders = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
-                      if (activeTableOrders[tableId]) {
-                        activeTableOrders[tableId].billRequested = true;
-                        setScopedStorage('pos_active_table_orders', activeTableOrders);
-                        window.dispatchEvent(new Event('storage'));
+                      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tableId);
+                      const cleanNum = (!isUuid && tableId.startsWith('t-') ? tableId.replace('t-', '') : '') || 
+                                       (!isUuid && !isNaN(parseInt(tableId)) ? String(parseInt(tableId)) : '');
+                      
+                      [tableId, cleanNum ? `t-${cleanNum}` : null, cleanNum].filter(Boolean).forEach((k: any) => {
+                        if (activeTableOrders[k]) {
+                          activeTableOrders[k].billRequested = true;
+                        }
+                      });
+                      
+                      setScopedStorage('pos_active_table_orders', activeTableOrders);
+                      syncActiveTableOrdersToFirebase(restId, activeTableOrders).catch(() => {});
+                      if (activeOrderId) {
+                        syncOrderToFirebase({
+                          id: activeOrderId,
+                          tableId: tableId === 'takeout' ? undefined : tableId,
+                          tableName: tableName || `Mesa ${cleanNum || tableId}`,
+                          status: 'OPEN',
+                          totalAmount: existingSubtotal,
+                          items: existingItems as any,
+                          billRequested: true,
+                          updatedAt: new Date().toISOString(),
+                          restaurantId: restId
+                        }).catch(() => {});
                       }
+                      window.dispatchEvent(new Event('storage'));
                     } catch {}
                     toast.success('Pre-cuenta impresa y enviada a Caja para cobro oficial ✅');
                     router.push('/');
