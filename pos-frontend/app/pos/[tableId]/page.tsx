@@ -175,6 +175,9 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
       let loadedProds: Product[] = [];
 
       const currentRestId = getRestaurantId();
+      const queryTableName = searchParams.get('name') || searchParams.get('tableName') || '';
+      const queryTableNumber = searchParams.get('number') || '';
+
       try {
         const headers: Record<string, string> = { 
           'Authorization': `Bearer ${token}`,
@@ -264,10 +267,8 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         // Sincronización remota desde Firebase Firestore si no se obtuvo por backend (multidispositivo garantizado)
         if (!foundActiveOrder) {
           try {
-            const queryTableName = searchParams.get('name') || searchParams.get('tableName') || '';
-            const queryTableNumber = searchParams.get('number') || '';
             const fbOrder = await getActiveTableOrderFromFirebase(currentRestId || 'main', tableId, queryTableName || tableName, queryTableNumber);
-            if (fbOrder && fbOrder.status === 'OPEN') {
+            if (fbOrder && (fbOrder.status === 'OPEN' || fbOrder.status === 'SERVED')) {
               foundActiveOrder = true;
               setActiveOrderId(fbOrder.id);
               if (fbOrder.tableName) setTableName(fbOrder.tableName);
@@ -310,7 +311,6 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
       // Local fallback for active table order (dishes already ordered)
       try {
         const activeTableOrders = getScopedStorage<any>('pos_active_table_orders', {});
-        const queryTableNumber = searchParams.get('number') || '';
         const tableObj = { id: tableId, name: queryTableName || tableName, number: queryTableNumber };
 
         const tableOrder = activeTableOrders[tableId] || 
