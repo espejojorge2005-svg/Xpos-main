@@ -10,11 +10,18 @@
     overflow: visible !important;
     background-color: white !important;
     margin: 0 !important;
-    padding: 20px !important;
+    padding: 0 !important;
+  }
+
+  /* Ocultar cualquier encabezado, menú o barra UI al imprimir */
+  header, nav, aside, [role="navigation"], .print\:hidden, .md\:hidden {
+    display: none !important;
   }
 
   main {
     height: auto !important;
     overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
 }

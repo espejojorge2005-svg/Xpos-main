@@ -121,7 +121,7 @@ export default function Sidebar() {
   return (
     <>
       {/* Mobile Header Bar */}
-      <div className="md:hidden flex items-center justify-between p-4 bg-white border-b border-slate-200 z-[60] shrink-0 shadow-sm relative">
+      <div className="md:hidden flex items-center justify-between p-4 bg-white border-b border-slate-200 z-[60] shrink-0 shadow-sm relative print:hidden">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center overflow-hidden shrink-0">
             {config.logoUrl ? (

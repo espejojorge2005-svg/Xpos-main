@@ -1407,7 +1407,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
         {/* ===== TICKET INFO ===== */}
         <div className="text-center mb-2">
-          <p className="font-bold text-sm uppercase">PRE-CUENTA — MESA {tableName || tableId.slice(0,4)}</p>
+          <p className="font-bold text-sm uppercase">PRE-CUENTA — MESA {(tableName || tableId.slice(0,4)).replace(/^mesa\s*/i, '')}</p>
           {showSplitBillModal && <p className="text-[10px] font-bold uppercase tracking-wide mt-0.5">(Cuenta Dividida)</p>}
           <p className="text-[10px] text-gray-600 mt-0.5">{new Date().toLocaleString('es-PE')}</p>
         </div>
