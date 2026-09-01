@@ -43,6 +43,51 @@ export const isMatchingTenant = (itemRestId?: string | null, currentRestId?: str
 };
 
 /**
+ * Comparador universal y estricto entre Mesa y Comanda
+ * Evita colisiones (ej. no confunde Mesa 1 con Mesa T1)
+ */
+export const isTableMatchingOrder = (
+  table: { id: string; name?: string; number?: string | number },
+  order: { id?: string; tableId?: string; tableName?: string }
+): boolean => {
+  if (!table || !order) return false;
+
+  // 1. Coincidencia directa por ID de mesa
+  if (order.tableId && (order.tableId === table.id)) return true;
+
+  const rawTableName = (table.name || (table.number !== undefined ? `Mesa ${table.number}` : '')).toLowerCase().trim();
+  const rawOrderName = (order.tableName || '').toLowerCase().trim();
+  const normTableName = rawTableName.replace(/\s+/g, '');
+  const normOrderName = rawOrderName.replace(/\s+/g, '');
+
+  // 2. Coincidencia exacta de nombre normalizado (ej: "mesa1" !== "mesat1")
+  if (normTableName && normOrderName && normTableName === normOrderName) return true;
+
+  const tableIdLower = String(table.id || '').toLowerCase().trim();
+  const orderTableIdLower = String(order.tableId || '').toLowerCase().trim();
+
+  // 3. Coincidencia directa de ID en minúsculas
+  if (orderTableIdLower && (orderTableIdLower === tableIdLower)) return true;
+
+  const tableNumStr = String(table.number !== undefined ? table.number : '').trim().toLowerCase();
+
+  // 4. Coincidencias estrictas de número/código sin colisiones
+  if (tableNumStr) {
+    if (orderTableIdLower && (orderTableIdLower === tableNumStr || orderTableIdLower === `t-${tableNumStr}`)) return true;
+    if (normOrderName && (normOrderName === `mesa${tableNumStr}` || normOrderName === tableNumStr)) return true;
+  }
+
+  // 5. Si table.id es "t-X"
+  if (tableIdLower.startsWith('t-')) {
+    const suffix = tableIdLower.replace(/^t-/, '');
+    if (orderTableIdLower && orderTableIdLower === suffix) return true;
+    if (normOrderName && (normOrderName === `mesa${suffix}` || normOrderName === suffix)) return true;
+  }
+
+  return false;
+};
+
+/**
  * Escuchar órdenes de cocina en tiempo real desde Firebase Firestore
  */
 export const subscribeToKitchenOrders = (restaurantId: string, onUpdate: (orders: FirebaseOrder[]) => void) => {
@@ -51,7 +96,11 @@ export const subscribeToKitchenOrders = (restaurantId: string, onUpdate: (orders
     return onSnapshot(ordersRef, (snapshot) => {
       const ordersData: FirebaseOrder[] = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as FirebaseOrder))
-        .filter(order => isMatchingTenant(order.restaurantId, restaurantId) && order.status === 'OPEN')
+        .filter(order => 
+          isMatchingTenant(order.restaurantId, restaurantId) && 
+          order.status !== 'CLOSED' &&
+          (order.status === 'CANCELLED' || (Array.isArray(order.items) && order.items.some(it => it.status === 'ACTIVE')))
+        )
         .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
       onUpdate(ordersData);
     }, (error) => {
@@ -130,36 +179,14 @@ export const getActiveTableOrderFromFirebase = async (
   try {
     const ordersRef = collection(db, 'orders');
     const snap = await getDocs(ordersRef);
-    
-    // Extraer número limpio de mesa evitando procesar UUIDs como números gigantes
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tableId);
-    const cleanNum = (!isUuid && tableId.startsWith('t-') ? tableId.replace('t-', '') : '') || 
-                     (!isUuid && !isNaN(parseInt(tableId)) ? String(parseInt(tableId)) : '') ||
-                     (tableNumber ? String(tableNumber) : '') ||
-                     (tableName ? tableName.replace(/\D/g, '') : '');
+    const tableObj = { id: tableId, name: tableName, number: tableNumber };
 
     const found = snap.docs
       .map(d => ({ id: d.id, ...d.data() } as FirebaseOrder))
       .find(o => {
-        if (o.status !== 'OPEN') return false;
+        if (o.status !== 'OPEN' && o.status !== 'SERVED') return false;
         if (!isMatchingTenant(o.restaurantId, restaurantId)) return false;
-        
-        // Coincidencia 1: ID de mesa exacto
-        if (o.tableId === tableId) return true;
-        
-        // Coincidencia 2: Nombre de mesa exacto (ej: "Mesa 1")
-        if (tableName && o.tableName && o.tableName.toLowerCase().trim() === tableName.toLowerCase().trim()) return true;
-        
-        // Coincidencia 3: Por número de mesa (ej: "Mesa 1" vs "t-1" vs "1")
-        if (cleanNum) {
-          if (o.tableName && o.tableName.toLowerCase().includes(`mesa ${cleanNum}`)) return true;
-          if (o.tableId === `t-${cleanNum}` || o.tableId === cleanNum) return true;
-        }
-
-        // Coincidencia 4: Comparación relajada de nombre sin espacios
-        if (o.tableName && o.tableName.toLowerCase().replace(/\s+/g, '') === tableId.toLowerCase().replace(/\s+/g, '')) return true;
-
-        return false;
+        return isTableMatchingOrder(tableObj, o);
       });
 
     return found || null;
@@ -545,21 +572,14 @@ export const closeTableOrdersInFirebase = async (
     const ordersRef = collection(db, 'orders');
     const snap = await getDocs(ordersRef);
     const nowIso = new Date().toISOString();
-    const cleanNum = tableId.replace(/\D/g, '');
-    const tNameLower = (tableName || '').toLowerCase().trim();
+    const tableObj = { id: tableId, name: tableName || undefined };
 
     const batchPromises = snap.docs.map(async (d) => {
       const o = d.data() as FirebaseOrder;
       if (!isMatchingTenant(o.restaurantId, restaurantId)) return;
-      if (o.status !== 'OPEN') return;
+      if (o.status !== 'OPEN' && o.status !== 'SERVED') return;
 
-      const matches = 
-        (orderId && (d.id === orderId || o.id === orderId)) ||
-        (o.tableId && o.tableId === tableId) ||
-        (cleanNum && (o.tableId === `t-${cleanNum}` || o.tableId === cleanNum)) ||
-        (tNameLower && o.tableName && o.tableName.toLowerCase().trim() === tNameLower) ||
-        (cleanNum && o.tableName && o.tableName.toLowerCase().includes(`mesa ${cleanNum}`)) ||
-        (cleanNum && o.tableName && o.tableName.replace(/\D/g, '') === cleanNum);
+      const matches = (orderId && (d.id === orderId || o.id === orderId)) || isTableMatchingOrder(tableObj, o);
 
       if (matches) {
         await updateDoc(doc(db, 'orders', d.id), {
@@ -587,6 +607,8 @@ export const closeTableOrdersInFirebase = async (
 
 /**
  * ACCIONES DE COCINA EN TIEMPO REAL (Despacho de platos y comandas)
+ * IMPORTANTE: Despachar comida marca los platos como SERVIDOS, pero NO cierra la comanda
+ * ni libera la mesa en el salón (la mesa sigue ocupada hasta cobrar en caja).
  */
 export const updateKitchenOrderStatusInFirebase = async (orderId: string, status: 'OPEN' | 'SERVED' | 'CANCELLED') => {
   try {
@@ -601,18 +623,11 @@ export const updateKitchenOrderStatusInFirebase = async (orderId: string, status
         status === 'SERVED' ? { ...it, status: 'SERVED' as const } : it
       );
       await updateDoc(orderDocRef, {
-        status,
         items: updatedItems,
+        kitchenStatus: status === 'SERVED' ? 'SERVED' : (status === 'CANCELLED' ? 'CANCELLED' : (order as any).kitchenStatus || 'OPEN'),
         ...(status === 'SERVED' ? { dispatchedAt: nowIso } : {}),
         updatedAt: nowIso
       });
-    } else {
-      await setDoc(orderDocRef, {
-        id: realOrderId,
-        status,
-        ...(status === 'SERVED' ? { dispatchedAt: nowIso } : {}),
-        updatedAt: nowIso
-      }, { merge: true });
     }
   } catch (err) {
     console.warn("Error updating order status in Firebase:", err);
@@ -640,7 +655,7 @@ export const serveKitchenItemInFirebase = async (orderId: string, itemId: string
 
       await updateDoc(orderDocRef, {
         items: updatedItems,
-        status: allServed ? 'SERVED' : order.status,
+        kitchenStatus: allServed ? 'SERVED' : (order as any).kitchenStatus || 'PREPARING',
         ...(allServed ? { dispatchedAt: nowIso } : {}),
         updatedAt: nowIso
       });

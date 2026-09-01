@@ -97,21 +97,60 @@ export class OrdersService {
 
     if (data.tableId) {
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.tableId);
-      const parsedNum = parseInt(data.tableId.replace(/\D/g, ''));
-      const numStr = !isNaN(parsedNum) ? String(parsedNum) : null;
+      const cleanTableId = data.tableId.replace(/^t-/i, '').trim();
+      const cleanTableName = data.tableName ? data.tableName.replace(/^mesa\s*/i, '').trim() : null;
       
-      const dbTable = await this.prisma.table.findFirst({
+      let dbTable = await this.prisma.table.findFirst({
         where: {
           ...(restaurantId ? { zone: { restaurantId } } : {}),
           OR: [
             ...(isUuid ? [{ id: data.tableId }] : []),
             { number: data.tableId },
-            ...(numStr ? [{ number: numStr }] : [])
+            { number: cleanTableId },
+            { number: `Mesa ${cleanTableId}` },
+            ...(cleanTableName ? [
+              { number: cleanTableName },
+              { number: `Mesa ${cleanTableName}` }
+            ] : [])
           ]
         }
       });
+
+      if (!dbTable) {
+        dbTable = await this.prisma.table.findFirst({
+          where: {
+            OR: [
+              ...(isUuid ? [{ id: data.tableId }] : []),
+              { number: data.tableId },
+              { number: cleanTableId },
+              { number: `Mesa ${cleanTableId}` },
+              ...(cleanTableName ? [
+                { number: cleanTableName },
+                { number: `Mesa ${cleanTableName}` }
+              ] : [])
+            ]
+          }
+        });
+      }
+
       if (dbTable) {
         validTableId = dbTable.id;
+      } else if (restaurantId && cleanTableId) {
+        let firstZone = await this.prisma.zone.findFirst({ where: { restaurantId } });
+        if (!firstZone) {
+          firstZone = await this.prisma.zone.create({
+            data: { name: 'SALA PRINCIPAL', restaurantId }
+          });
+        }
+        const createdTable = await this.prisma.table.create({
+          data: {
+            zoneId: firstZone.id,
+            number: cleanTableId,
+            capacity: 4,
+            status: 'OCCUPIED'
+          }
+        });
+        validTableId = createdTable.id;
       }
     }
 
@@ -187,8 +226,7 @@ export class OrdersService {
 
   async getOpenOrderForTable(tableId: string) {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tableId);
-    const parsedNum = parseInt(tableId.replace(/\D/g, ''));
-    const numStr = !isNaN(parsedNum) ? String(parsedNum) : null;
+    const cleanTableId = tableId.replace(/^t-/i, '').trim();
 
     const order = await this.prisma.order.findFirst({
       where: {
@@ -197,12 +235,9 @@ export class OrdersService {
           ...(isUuid ? [{ tableId: tableId }] : []),
           { table: { id: tableId } },
           { table: { number: tableId } },
-          { customerName: { contains: tableId, mode: 'insensitive' as const } },
-          ...(numStr ? [
-            { table: { number: numStr } },
-            { customerName: { contains: `Mesa ${numStr}`, mode: 'insensitive' as const } },
-            { customerName: { contains: `${numStr}`, mode: 'insensitive' as const } }
-          ] : [])
+          { table: { number: cleanTableId } },
+          { customerName: { equals: `Mesa ${cleanTableId}`, mode: 'insensitive' as const } },
+          { customerName: { equals: tableId, mode: 'insensitive' as const } }
         ],
       },
       include: {

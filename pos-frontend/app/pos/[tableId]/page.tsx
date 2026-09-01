@@ -14,7 +14,8 @@ import {
   subscribeToProducts, 
   subscribeToCategories, 
   getActiveTableOrderFromFirebase,
-  closeTableOrdersInFirebase
+  closeTableOrdersInFirebase,
+  isTableMatchingOrder
 } from '@/utils/firebaseSync';
 import { ArrowLeft, Search, Plus, Minus, Trash2, ShoppingCart, UtensilsCrossed, ReceiptText, ChefHat, CheckCircle2, AlertTriangle, X, Printer, CreditCard, Banknote, Smartphone, Edit2, Heart, ArrowRightLeft, Scissors } from 'lucide-react';
 import { toast } from 'sonner';
@@ -309,22 +310,13 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
       // Local fallback for active table order (dishes already ordered)
       try {
         const activeTableOrders = getScopedStorage<any>('pos_active_table_orders', {});
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tableId);
         const queryTableNumber = searchParams.get('number') || '';
-        const cleanNum = (!isUuid && tableId.startsWith('t-') ? tableId.replace('t-', '') : '') || 
-                         (!isUuid && !isNaN(parseInt(tableId)) ? String(parseInt(tableId)) : '') ||
-                         queryTableNumber;
+        const tableObj = { id: tableId, name: queryTableName || tableName, number: queryTableNumber };
 
         const tableOrder = activeTableOrders[tableId] || 
-          (cleanNum ? activeTableOrders[`t-${cleanNum}`] || activeTableOrders[cleanNum] : null) ||
           Object.values(activeTableOrders).find((o: any) => 
-            o && o.status === 'OCCUPIED' && (
-              o.tableId === tableId ||
-              (cleanNum && o.tableId === `t-${cleanNum}`) ||
-              (cleanNum && o.tableId === cleanNum) ||
-              (cleanNum && o.tableName && o.tableName.toLowerCase().includes(`mesa ${cleanNum}`)) ||
-              (cleanNum && o.tableName && o.tableName.replace(/\D/g, '') === cleanNum)
-            )
+            o && (o.status === 'OCCUPIED' || o.status === 'OPEN' || o.status === 'SERVED') &&
+            isTableMatchingOrder(tableObj, o)
           );
 
         if (tableOrder) {
@@ -700,11 +692,11 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         payments: payments || []
       };
 
-      if (cleanNum) {
-        delete activeTableOrders[`t-${cleanNum}`];
-        delete activeTableOrders[cleanNum];
-      }
       activeTableOrders[tableId] = orderEntry;
+      if (cleanNum) {
+        activeTableOrders[`t-${cleanNum}`] = orderEntry;
+        activeTableOrders[cleanNum] = orderEntry;
+      }
       setScopedStorage('pos_active_table_orders', activeTableOrders);
     } catch (e) {
       console.warn('Error guardando en pos_active_table_orders:', e);
@@ -758,13 +750,17 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
       if (response && response.ok) {
         backendOrder = await response.json().catch(() => null);
-        if (backendOrder?.id && backendOrder.id !== effectiveOrderId) {
+        if (backendOrder?.id) {
           try {
             const activeTableOrders = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
             if (activeTableOrders[tableId]) {
               activeTableOrders[tableId].orderId = backendOrder.id;
-              setScopedStorage('pos_active_table_orders', activeTableOrders);
             }
+            if (cleanNum) {
+              if (activeTableOrders[`t-${cleanNum}`]) activeTableOrders[`t-${cleanNum}`].orderId = backendOrder.id;
+              if (activeTableOrders[cleanNum]) activeTableOrders[cleanNum].orderId = backendOrder.id;
+            }
+            setScopedStorage('pos_active_table_orders', activeTableOrders);
           } catch {}
         }
       }
@@ -798,10 +794,6 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
       
       if (tableId !== 'takeout') {
         syncTableToFirebase(tableId, 'OCCUPIED', restaurantId).catch(() => {});
-        if (cleanNum) {
-          syncTableToFirebase(`t-${cleanNum}`, 'OCCUPIED', restaurantId).catch(() => {});
-          syncTableToFirebase(cleanNum, 'OCCUPIED', restaurantId).catch(() => {});
-        }
         try {
           const currentActive = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
           syncActiveTableOrdersToFirebase(restaurantId, currentActive).catch(() => {});

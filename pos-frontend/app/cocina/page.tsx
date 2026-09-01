@@ -458,7 +458,7 @@ export default function CocinaPage() {
                 status: fo.status || 'OPEN',
                 waiterName: fo.waiterName || (fo as any).customerName?.replace(/^Mesero:\s*/i, '') || prevOrder?.waiterName || 'Mesero',
                 previousTableName: prevOrder?.previousTableName || null,
-                table: fo.tableName ? { name: fo.tableName, number: parseInt(fo.tableName.replace(/\D/g, '')) || 1 } : (prevOrder?.table || null),
+                table: fo.tableName ? { name: fo.tableName, number: (fo.tableName.replace(/^mesa\s*/i, '').trim() || '1') as any } : (prevOrder?.table || null),
                 items: itemsList
               });
             }

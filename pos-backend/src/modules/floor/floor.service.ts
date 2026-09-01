@@ -34,7 +34,8 @@ export class FloorService {
       }
     }
 
-    return null;
+    const defaultRest = await this.prisma.restaurant.findFirst({ orderBy: { createdAt: 'asc' } });
+    return defaultRest ? defaultRest.id : null;
   }
 
   async createZone(data: CreateZoneDto, reqUser?: any, restaurantIdParam?: string | null) {
@@ -133,15 +134,14 @@ export class FloorService {
     const restaurantId = await this.resolveRestaurantId(reqUser, restaurantIdParam);
     if (!restaurantId) return [];
 
-    return this.prisma.zone.findMany({
+    let zones = await this.prisma.zone.findMany({
       where: { restaurantId },
-
       include: {
         tables: {
           include: {
             orders: {
               where: { status: 'OPEN' },
-              select: { createdAt: true },
+              select: { id: true, createdAt: true, totalAmount: true, customerName: true },
               orderBy: { createdAt: 'desc' },
               take: 1,
             }
@@ -150,6 +150,70 @@ export class FloorService {
       },
       orderBy: { createdAt: 'asc' },
     });
+
+    // Auto-crear zonas y mesas por defecto si el restaurante no tiene ninguna en BD
+    if (zones.length === 0 && restaurantId) {
+      try {
+        await this.prisma.zone.create({
+          data: {
+            name: 'SALA PRINCIPAL',
+            restaurantId,
+            tables: {
+              create: [
+                { number: '1', capacity: 4, status: 'FREE', posX: 40, posY: 40 },
+                { number: '2', capacity: 2, status: 'FREE', posX: 200, posY: 40 },
+                { number: '3', capacity: 6, status: 'FREE', posX: 360, posY: 40 },
+                { number: '4', capacity: 4, status: 'FREE', posX: 40, posY: 200 },
+              ]
+            }
+          }
+        });
+
+        await this.prisma.zone.create({
+          data: {
+            name: 'TERRAZA',
+            restaurantId,
+            tables: {
+              create: [
+                { number: 'T1', capacity: 4, status: 'FREE', posX: 40, posY: 40 },
+                { number: 'T2', capacity: 2, status: 'FREE', posX: 200, posY: 40 },
+              ]
+            }
+          }
+        });
+
+        zones = await this.prisma.zone.findMany({
+          where: { restaurantId },
+          include: {
+            tables: {
+              include: {
+                orders: {
+                  where: { status: 'OPEN' },
+                  select: { id: true, createdAt: true, totalAmount: true, customerName: true },
+                  orderBy: { createdAt: 'desc' },
+                  take: 1,
+                }
+              }
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        });
+      } catch (err) {
+        console.warn('Error auto-seeding default zones:', err);
+      }
+    }
+
+    // Asegurar que si una mesa tiene comanda abierta, su status retornado sea OCCUPIED
+    return zones.map(z => ({
+      ...z,
+      tables: (z.tables || []).map(t => {
+        const hasOpenOrder = t.orders && t.orders.length > 0;
+        return {
+          ...t,
+          status: hasOpenOrder ? 'OCCUPIED' : t.status
+        };
+      })
+    }));
   }
 }
 

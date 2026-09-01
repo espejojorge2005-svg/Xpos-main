@@ -1,7 +1,7 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
 import { getScopedStorage, getRestaurantId, setScopedStorage, removeScopedStorage } from '@/utils/storage';
-import { subscribeToCashShift, subscribeToZones, subscribeToOrders } from '@/utils/firebaseSync';
+import { subscribeToCashShift, subscribeToZones, subscribeToOrders, isTableMatchingOrder } from '@/utils/firebaseSync';
 import { formatWaitTime } from '@/utils/date';
 
 import { useEffect, useState, useRef } from 'react';
@@ -262,8 +262,8 @@ export default function Home() {
             id: 'zone-2',
             name: 'TERRAZA',
             tables: [
-              { id: 't-5', name: 'Mesa T1', number: 5, capacity: 4, status: 'FREE', posX: 40, posY: 40, zoneId: 'zone-2' },
-              { id: 't-6', name: 'Mesa T2', number: 6, capacity: 2, status: 'FREE', posX: 200, posY: 40, zoneId: 'zone-2' },
+              { id: 't-t1', name: 'Mesa T1', number: 'T1' as any, capacity: 4, status: 'FREE', posX: 40, posY: 40, zoneId: 'zone-2' },
+              { id: 't-t2', name: 'Mesa T2', number: 'T2' as any, capacity: 2, status: 'FREE', posX: 200, posY: 40, zoneId: 'zone-2' },
             ]
           }
         ];
@@ -279,21 +279,9 @@ export default function Home() {
       loadedZones = loadedZones.map(zone => ({
         ...zone,
         tables: zone.tables.map(table => {
-          const num = String(table.number || '');
-          const cleanNum = num.replace(/\D/g, '');
-          const tableNameLower = (table.name || '').toLowerCase().trim();
-
           const orderInfo = activeTableOrders[table.id] || 
-            (cleanNum ? activeTableOrders[`t-${cleanNum}`] || activeTableOrders[cleanNum] : null) ||
             Object.values(activeTableOrders).find((o: any) => 
-              o && o.status === 'OCCUPIED' && (
-                o.tableId === table.id ||
-                (cleanNum && o.tableId === `t-${cleanNum}`) ||
-                (cleanNum && o.tableId === cleanNum) ||
-                (o.tableName && tableNameLower && o.tableName.toLowerCase().trim() === tableNameLower) ||
-                (cleanNum && o.tableName && o.tableName.toLowerCase().includes(`mesa ${cleanNum}`)) ||
-                (cleanNum && o.tableName && o.tableName.replace(/\D/g, '') === cleanNum)
-              )
+              o && (o.status === 'OCCUPIED' || o.status === 'OPEN' || o.status === 'SERVED') && isTableMatchingOrder(table, o)
             );
 
           // Verificar si la orden local es reciente (menos de 12 horas)
@@ -301,14 +289,15 @@ export default function Home() {
           const isOrderRecent = orderAge < twelveHoursMs;
 
           const isOrderActive = isOrderRecent && orderInfo && (orderInfo.status === 'OCCUPIED' || (Array.isArray(orderInfo.items) && orderInfo.items.length > 0));
-          const hasServerOrder = table.orders && table.orders.length > 0 && table.status === 'OCCUPIED';
+          const hasServerOrder = (table.orders && table.orders.length > 0) || table.status === 'OCCUPIED' || table.status === 'WAITING_FOOD';
 
           if (isOrderActive || hasServerOrder) {
-            const activeData = isOrderActive ? orderInfo : (table.orders ? table.orders[0] : null);
+            const serverOrder = table.orders && table.orders.length > 0 ? table.orders[0] : null;
+            const activeData = isOrderActive ? orderInfo : serverOrder;
             return {
               ...table,
               status: 'OCCUPIED' as const,
-              billRequested: !!orderInfo?.billRequested,
+              billRequested: !!(orderInfo?.billRequested || table.billRequested),
               orders: [{
                 id: activeData?.orderId || activeData?.id || `ord-${table.id}`,
                 createdAt: activeData?.createdAt || new Date().toISOString(),
@@ -414,12 +403,11 @@ export default function Home() {
     // 1. Escucha en tiempo real de órdenes abiertas en Firebase (Sincronización Multidispositivo de Mesas Ocupadas)
     const unsubscribeOrders = subscribeToOrders(currentRestId, (allOrders) => {
       if (Array.isArray(allOrders)) {
-        const openOrders = allOrders.filter(o => o.status === 'OPEN');
+        const openOrders = allOrders.filter(o => o.status === 'OPEN' || o.status === 'SERVED');
         const activeMap: Record<string, any> = {};
         
         openOrders.forEach(o => {
           const tId = o.tableId || (o.tableName ? o.tableName.toLowerCase().replace(/\s+/g, '') : null);
-          const tNum = o.tableName ? o.tableName.replace(/\D/g, '') : '';
           const entry = {
             orderId: o.id,
             tableId: o.tableId,
@@ -427,43 +415,40 @@ export default function Home() {
             createdAt: o.createdAt || new Date().toISOString(),
             total: o.totalAmount || 0,
             status: 'OCCUPIED',
+            billRequested: !!o.billRequested,
             items: o.items || []
           };
           if (tId) activeMap[tId] = entry;
-          if (tNum) {
-            activeMap[`t-${tNum}`] = entry;
-            activeMap[tNum] = entry;
-          }
+          if (o.tableId) activeMap[o.tableId] = entry;
         });
 
-        setScopedStorage('pos_active_table_orders', activeMap);
+        // Combinar con órdenes activas locales existentes
+        const currentActive = getScopedStorage<Record<string, any>>('pos_active_table_orders', {}) || {};
+        const mergedActive = { ...currentActive, ...activeMap };
+        setScopedStorage('pos_active_table_orders', mergedActive);
 
         setZones(prevZones => prevZones.map(zone => ({
           ...zone,
           tables: zone.tables.map(table => {
-            const num = String(table.number || '');
-            const cleanTableNum = num.replace(/\D/g, '');
-            const tableNameLower = (table.name || '').toLowerCase().trim();
+            const matchedOrder = openOrders.find(o => isTableMatchingOrder(table, o));
 
-            const matchedOrder = openOrders.find(o => {
-              if (o.tableId === table.id) return true;
-              if (cleanTableNum && o.tableId === `t-${cleanTableNum}`) return true;
-              if (cleanTableNum && o.tableId === cleanTableNum) return true;
-              if (tableNameLower && o.tableName && o.tableName.toLowerCase().trim() === tableNameLower) return true;
-              if (cleanTableNum && o.tableName && o.tableName.toLowerCase().includes(`mesa ${cleanTableNum}`)) return true;
-              if (cleanTableNum && o.tableName && o.tableName.replace(/\D/g, '') === cleanTableNum) return true;
-              return false;
-            });
+            const localOrder = mergedActive[table.id] ||
+              Object.values(mergedActive).find((o: any) =>
+                o && (o.status === 'OCCUPIED' || o.status === 'OPEN' || o.status === 'SERVED') && isTableMatchingOrder(table, o)
+              );
 
-            if (matchedOrder) {
+            const hasActiveOrder = matchedOrder || (localOrder && localOrder.status === 'OCCUPIED') || (table.orders && table.orders.length > 0) || table.status === 'OCCUPIED';
+
+            if (hasActiveOrder) {
+              const activeSource = matchedOrder || localOrder || (table.orders ? table.orders[0] : null);
               return {
                 ...table,
                 status: 'OCCUPIED' as const,
-                billRequested: !!matchedOrder.billRequested,
+                billRequested: !!(matchedOrder?.billRequested || localOrder?.billRequested || table.billRequested),
                 orders: [{
-                  id: matchedOrder.id,
-                  createdAt: matchedOrder.createdAt || new Date().toISOString(),
-                  totalAmount: matchedOrder.totalAmount || 0
+                  id: activeSource?.id || activeSource?.orderId || `ord-${table.id}`,
+                  createdAt: activeSource?.createdAt || new Date().toISOString(),
+                  totalAmount: activeSource?.totalAmount || activeSource?.total || 0
                 }]
               };
             }
