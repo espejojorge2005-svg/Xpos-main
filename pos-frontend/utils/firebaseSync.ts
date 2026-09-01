@@ -538,8 +538,8 @@ export const fetchOpenOrdersFromFirebase = async (restaurantId?: string | null):
 export const closeTableOrdersInFirebase = async (
   restaurantId: string, 
   tableId: string, 
-  tableName?: string, 
-  orderId?: string
+  tableName?: string | null, 
+  orderId?: string | null
 ) => {
   try {
     const ordersRef = collection(db, 'orders');
