@@ -4,7 +4,7 @@ import Link from 'next/link';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { UtensilsCrossed, Lock, Mail, Loader2, KeyRound, User as UserIcon, LogOut, ArrowLeft, Shield } from 'lucide-react';
+import { UtensilsCrossed, Lock, Mail, Loader2, KeyRound, User as UserIcon, LogOut, ArrowLeft, Shield, Headphones } from 'lucide-react';
 import { toast } from 'sonner';
 import { getFirstAllowedPath } from '@/hooks/useGuardedRoute';
 
@@ -786,6 +786,23 @@ export default function LoginPage() {
           </div>
         </div>
       )}
+
+      {/* BOTÓN FLOTANTE DE SOPORTE WHATSAPP (ABAJO A LA IZQUIERDA) */}
+      <a
+        href="https://wa.me/51982383176?text=Hola,%20necesito%20soporte%20con%20Xpos"
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Contactar a Soporte por WhatsApp"
+        className="fixed bottom-4 left-4 sm:bottom-6 sm:left-6 z-40 flex items-center gap-2.5 px-3.5 sm:px-4 py-2 sm:py-2.5 bg-slate-900/90 hover:bg-emerald-600/90 border border-slate-700/80 hover:border-emerald-500 text-slate-300 hover:text-white rounded-full shadow-xl shadow-black/40 backdrop-blur-md transition-all duration-300 group active:scale-95 cursor-pointer"
+      >
+        <div className="w-7 h-7 rounded-full bg-emerald-500/20 group-hover:bg-white/20 flex items-center justify-center text-emerald-400 group-hover:text-white transition-colors">
+          <Headphones className="w-4 h-4 transition-transform group-hover:rotate-12" />
+        </div>
+        <div className="flex flex-col text-left pr-1">
+          <span className="text-[9px] uppercase font-bold tracking-widest text-slate-400 group-hover:text-emerald-100 leading-none">¿Ayuda?</span>
+          <span className="text-xs font-black tracking-wide leading-tight">Soporte</span>
+        </div>
+      </a>
     </div>
   );
 }
