@@ -827,15 +827,54 @@ export default function CashRegisterPage() {
       printHTML += `<div class="text-center text-xs" style="margin-top:15px;">--- Fin del Reporte ---</div>`;
     }
 
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(`<html><head><title>Ticket de Cierre</title></head><body>${printHTML}</body></html>`);
-      printWindow.document.close();
-      printWindow.focus();
-      setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
-    } else {
-      toast.error('Por favor permite ventanas emergentes en tu navegador.');
+    try {
+      // Método sin ventanas emergentes: Usar un iframe invisible para abrir el diálogo de impresión directamente
+      let printFrame = document.getElementById('print-ticket-iframe') as HTMLIFrameElement | null;
+      if (!printFrame) {
+        printFrame = document.createElement('iframe');
+        printFrame.id = 'print-ticket-iframe';
+        printFrame.style.position = 'fixed';
+        printFrame.style.right = '0';
+        printFrame.style.bottom = '0';
+        printFrame.style.width = '0';
+        printFrame.style.height = '0';
+        printFrame.style.border = '0';
+        printFrame.style.visibility = 'hidden';
+        document.body.appendChild(printFrame);
+      }
+
+      const frameDoc = printFrame.contentWindow?.document || printFrame.contentDocument;
+      if (frameDoc) {
+        frameDoc.open();
+        frameDoc.write(`<!DOCTYPE html><html><head><title>Ticket de Cierre</title></head><body>${printHTML}</body></html>`);
+        frameDoc.close();
+        setTimeout(() => {
+          try {
+            printFrame?.contentWindow?.focus();
+            printFrame?.contentWindow?.print();
+          } catch (e) {
+            console.error('Error invocando print en iframe:', e);
+            window.print();
+          }
+        }, 200);
+      } else {
+        // Fallback secundario si el navegador no permite acceder al iframe
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+          printWindow.document.write(`<html><head><title>Ticket de Cierre</title></head><body>${printHTML}</body></html>`);
+          printWindow.document.close();
+          printWindow.focus();
+          setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+        } else {
+          toast.error('Por favor permite ventanas emergentes en tu navegador para imprimir.');
+        }
+      }
+    } catch (err) {
+      console.error('Error en sistema de impresión:', err);
+      // Fallback nativo
+      window.print();
     }
+
     setShowPrintModal(false);
   };
 
