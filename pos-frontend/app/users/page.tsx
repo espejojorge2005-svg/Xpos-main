@@ -535,23 +535,23 @@ export default function UsersPage() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 p-8 font-sans">
+    <div className="min-h-screen bg-slate-50 p-4 sm:p-6 md:p-8 font-sans">
       {/* Header */}
-      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-slate-100">
         <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-            <Users className="text-violet-600 w-8 h-8" />
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2 sm:gap-3">
+            <Users className="text-violet-600 w-7 h-7 sm:w-8 sm:h-8" />
             Usuarios
           </h1>
-          <p className="text-slate-500 font-medium mt-1 uppercase text-sm tracking-widest">
+          <p className="text-slate-500 font-medium mt-1 uppercase text-xs sm:text-sm tracking-widest">
             Gestión de acceso al sistema
           </p>
         </div>
 
-        <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto justify-between sm:justify-end">
           {/* Badge informativo de Plan y Límite */}
-          <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-2xl">
-            <Crown className="w-4 h-4 text-amber-500" />
+          <div className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-slate-50 border border-slate-200 rounded-2xl">
+            <Crown className="w-4 h-4 text-amber-500 shrink-0" />
             <div className="text-left">
               <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 leading-none">Plan Activo</p>
               <p className="text-xs font-black text-slate-800 leading-tight">
@@ -564,13 +564,13 @@ export default function UsersPage() {
 
           <button
             onClick={openCreate}
-            className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold transition-all shadow-lg active:scale-95 ${
+            className={`flex-1 sm:flex-none justify-center flex items-center gap-2 px-5 sm:px-6 py-2.5 sm:py-3 rounded-2xl font-bold text-xs sm:text-sm transition-all shadow-lg active:scale-95 whitespace-nowrap ${
               isLimitReached || isSubscriptionBlocked
                 ? 'bg-slate-200 text-slate-500 hover:bg-slate-300 shadow-none'
                 : 'bg-violet-600 hover:bg-violet-700 text-white shadow-violet-200'
             }`}
           >
-            <Plus className="w-5 h-5" />
+            <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
             Nuevo Usuario
           </button>
         </div>

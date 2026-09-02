@@ -1473,41 +1473,53 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
       {/* LEFT PANE - MENU SECTION */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
         {/* Header */}
-        <header className="bg-white px-6 py-4 flex items-center justify-between border-b border-slate-200 shadow-sm z-10 shrink-0">
-          <div className="flex items-center gap-4">
-            <button 
-              onClick={() => router.push('/')}
-              className="p-2 hover:bg-slate-100 rounded-full transition-colors active:scale-95"
-            >
-              <ArrowLeft className="w-6 h-6 text-slate-600" />
-            </button>
-            <div>
-              <h1 className="text-xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
-                <ChefHat className="text-emerald-500 w-6 h-6" />
-                Nueva Orden
-              </h1>
-              <p className="text-sm text-slate-500 font-medium">Selecciona los productos para agregar al pedido</p>
+        <header className="bg-white px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 shadow-xs z-10 shrink-0 gap-3">
+          <div className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto">
+            <div className="flex items-center gap-3 min-w-0">
+              <button 
+                onClick={() => router.push('/')}
+                className="p-2 hover:bg-slate-100 rounded-xl transition-colors active:scale-95 text-slate-600 shrink-0"
+                title="Volver al Salón"
+              >
+                <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
+              </button>
+              <div className="min-w-0">
+                <h1 className="text-base sm:text-xl font-black text-slate-800 tracking-tight flex items-center gap-2 truncate">
+                  <ChefHat className="text-emerald-500 w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
+                  <span>Mesa {tableName || tableId.slice(0,4)}</span>
+                </h1>
+                <p className="text-xs sm:text-sm text-slate-500 font-medium truncate">Selecciona productos para agregar</p>
+              </div>
             </div>
           </div>
 
-          <div className="relative w-64 hidden md:block">
-            <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <div className="relative w-full sm:w-64 shrink-0">
+            <Search className="w-4 h-4 sm:w-5 sm:h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <input 
               type="text"
-              placeholder="Buscar producto..."
+              placeholder="Buscar plato o bebida..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all text-sm font-medium text-slate-700"
+              className="w-full pl-9 sm:pl-10 pr-8 py-2 sm:py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all text-xs sm:text-sm font-medium text-slate-700 placeholder:text-slate-400"
             />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full"
+                title="Limpiar búsqueda"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </header>
 
         {/* Categories Scroller */}
-        <div className="bg-white px-6 py-3 border-b border-slate-100 shrink-0">
-          <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar hide-scrollbar-arrows">
+        <div className="bg-white px-3 sm:px-6 py-2.5 sm:py-3 border-b border-slate-100 shrink-0">
+          <div className="flex gap-2 sm:gap-3 overflow-x-auto pb-1.5 custom-scrollbar hide-scrollbar-arrows">
             <button
               onClick={() => setSelectedCategoryId(null)}
-              className={`whitespace-nowrap px-5 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm
+              className={`whitespace-nowrap px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs
                 ${selectedCategoryId === null 
                   ? 'bg-slate-800 text-white hover:bg-slate-700' 
                   : 'bg-slate-50 text-slate-600 border border-slate-200 hover:border-slate-300 hover:bg-slate-100'}`}
@@ -1518,7 +1530,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
               <button
                 key={cat.id}
                 onClick={() => setSelectedCategoryId(cat.id)}
-                className={`flex items-center gap-2 whitespace-nowrap px-5 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm
+                className={`flex items-center gap-1.5 sm:gap-2 whitespace-nowrap px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all shadow-xs
                   ${selectedCategoryId === cat.id 
                     ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200' 
                     : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`}
@@ -1530,14 +1542,14 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         </div>
 
         {/* Products Grid */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 scroll-smooth pb-24 lg:pb-6">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 scroll-smooth pb-28 lg:pb-6">
           {filteredProducts.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-slate-400">
-              <UtensilsCrossed className="w-16 h-16 mb-4 text-slate-300" />
-              <p className="font-medium text-lg text-slate-500">No se encontraron productos</p>
+            <div className="h-full min-h-[250px] flex flex-col items-center justify-center text-slate-400">
+              <UtensilsCrossed className="w-12 h-12 sm:w-16 sm:h-16 mb-3 sm:mb-4 text-slate-300" />
+              <p className="font-medium text-base sm:text-lg text-slate-500">No se encontraron productos</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
               {filteredProducts.map(product => {
                 const available = getAvailableStock(product);
                 const isOutOfStock = typeof product.stock === 'number' && available <= 0;
@@ -1554,7 +1566,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                       addToCart(product);
                     }}
                     disabled={isOutOfStock}
-                    className={`border rounded-2xl p-4 flex flex-col items-center text-center transition-all group relative overflow-hidden ${
+                    className={`border rounded-2xl p-3 sm:p-4 flex flex-col items-center text-center transition-all group relative overflow-hidden ${
                       isOutOfStock 
                         ? 'bg-slate-50 border-slate-200 opacity-60 cursor-not-allowed' 
                         : 'bg-white border-slate-200 hover:border-emerald-400 hover:shadow-lg hover:-translate-y-1 active:scale-95'
@@ -1564,31 +1576,31 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                     {typeof product.stock === 'number' && (
                       <div className="absolute top-2 right-2 z-10">
                         {isOutOfStock ? (
-                          <span className="px-2 py-0.5 bg-rose-500 text-white font-black text-[10px] rounded-full shadow-sm">
+                          <span className="px-2 py-0.5 bg-rose-500 text-white font-black text-[9px] sm:text-[10px] rounded-full shadow-sm">
                             Agotado
                           </span>
                         ) : isLowStock ? (
-                          <span className="px-2 py-0.5 bg-amber-500 text-white font-black text-[10px] rounded-full shadow-sm">
+                          <span className="px-2 py-0.5 bg-amber-500 text-white font-black text-[9px] sm:text-[10px] rounded-full shadow-sm">
                             Quedan {available}
                           </span>
                         ) : (
-                          <span className="px-2 py-0.5 bg-slate-100 text-slate-600 font-bold text-[10px] rounded-full border border-slate-200">
+                          <span className="px-2 py-0.5 bg-slate-100 text-slate-600 font-bold text-[9px] sm:text-[10px] rounded-full border border-slate-200">
                             Stock: {available}
                           </span>
                         )}
                       </div>
                     )}
 
-                    <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-3 transition-colors ${
+                    <div className={`w-12 h-12 sm:w-16 sm:h-16 rounded-full flex items-center justify-center mb-2 sm:mb-3 transition-colors ${
                       isOutOfStock ? 'bg-slate-100 text-slate-400' : 'bg-slate-50 group-hover:bg-emerald-50'
                     }`}>
-                      <UtensilsCrossed className={`w-8 h-8 ${isOutOfStock ? 'text-slate-300' : 'text-slate-300 group-hover:text-emerald-500'}`} />
+                      <UtensilsCrossed className={`w-6 h-6 sm:w-8 sm:h-8 ${isOutOfStock ? 'text-slate-300' : 'text-slate-300 group-hover:text-emerald-500'}`} />
                     </div>
-                    <h3 className={`font-bold text-sm mb-1 line-clamp-2 min-h-[40px] ${isOutOfStock ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                    <h3 className={`font-bold text-xs sm:text-sm mb-1 line-clamp-2 min-h-[32px] sm:min-h-[40px] ${isOutOfStock ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
                       {product.name}
                     </h3>
                     <div className="mt-auto pt-2 flex items-center justify-between w-full">
-                      <span className={`font-black ${isOutOfStock ? 'text-slate-400' : 'text-emerald-600'}`}>
+                      <span className={`font-black text-xs sm:text-sm ${isOutOfStock ? 'text-slate-400' : 'text-emerald-600'}`}>
                         S/ {product.price.toFixed(2)}
                       </span>
                       <div className={`w-2 h-2 rounded-full ${available > 0 ? 'bg-emerald-400' : 'bg-rose-400'}`} 
@@ -1631,7 +1643,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
       {/* RIGHT PANE - TICKET (CART) */}
       <div className={`
-        fixed inset-y-0 right-0 z-50 w-[90%] sm:w-[400px] bg-white border-l border-slate-200 flex flex-col shadow-2xl 
+        fixed inset-y-0 right-0 z-50 w-full sm:w-[400px] max-w-[92vw] sm:max-w-none bg-white border-l border-slate-200 flex flex-col shadow-2xl 
         transform transition-transform duration-300 ease-in-out
         ${isCartOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
         lg:static lg:z-20 lg:shrink-0 lg:w-[380px] lg:shadow-none lg:border-l lg:border-slate-200
@@ -1842,48 +1854,47 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         </div>
 
         {/* Cart Footer / Totals */}
-        <div className="bg-white border-t border-slate-200 p-5 shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.03)] z-10">
-          <div className="flex justify-between items-center mb-4">
-            <span className="text-slate-500 font-bold text-base">Total Pedido:</span>
-            <div className="flex flex-col items-end w-full">
-              <span className="text-2xl font-black text-emerald-600 mb-2">
-                S/ {totalAmount.toFixed(2)}
-              </span>
-              {(activeOrderId || existingItems.length > 0) && (
-                <div className="flex items-center gap-2 w-full mt-1">
+        <div className="bg-white border-t border-slate-200 p-4 sm:p-5 shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.03)] z-10">
+          <div className="flex justify-between items-center mb-3">
+            <span className="text-slate-500 font-bold text-sm sm:text-base">Total Pedido:</span>
+            <span className="text-xl sm:text-2xl font-black text-emerald-600">
+              S/ {totalAmount.toFixed(2)}
+            </span>
+          </div>
+
+          {(activeOrderId || existingItems.length > 0) && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 w-full mb-3">
+              <button 
+                onClick={() => {
+                    fetchFreeTables();
+                    setShowChangeTableModal(true);
+                }}
+                className="py-2 px-1.5 bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 font-bold text-[11px] sm:text-xs rounded-lg transition-all flex justify-center items-center gap-1 outline-none shadow-xs"
+              >
+                <ArrowRightLeft className="w-3 h-3 shrink-0" />
+                <span className="truncate">Cambiar Mesa</span>
+              </button>
+              {isCashierMode && (
+                <>
                   <button 
-                    onClick={() => {
-                        fetchFreeTables();
-                        setShowChangeTableModal(true);
-                    }}
-                    className="flex-1 py-2 px-2 bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 font-bold text-xs rounded-lg transition-all flex justify-center items-center gap-1.5 outline-none shadow-sm"
+                    onClick={handleFreeTable}
+                    className="py-2 px-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 font-bold text-[11px] sm:text-xs rounded-lg transition-all flex justify-center items-center gap-1 outline-none shadow-xs"
+                    title="Desocupar mesa y marcar como libre"
                   >
-                    <ArrowRightLeft className="w-3 h-3" />
-                    Cambiar Mesa
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                    <span className="truncate">Liberar Mesa</span>
                   </button>
-                  {isCashierMode && (
-                    <>
-                      <button 
-                        onClick={handleFreeTable}
-                        className="flex-1 py-2 px-2 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 font-bold text-xs rounded-lg transition-all flex justify-center items-center gap-1.5 outline-none shadow-sm"
-                        title="Desocupar mesa y marcar como libre"
-                      >
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                        Liberar Mesa
-                      </button>
-                      <button 
-                        onClick={handleCancelOrderRequest}
-                        className="flex-1 py-2 px-2 bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 font-bold text-xs rounded-lg transition-all flex justify-center items-center gap-1.5 outline-none shadow-sm"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        Anular
-                      </button>
-                    </>
-                  )}
-                </div>
+                  <button 
+                    onClick={handleCancelOrderRequest}
+                    className="py-2 px-1.5 bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 font-bold text-[11px] sm:text-xs rounded-lg transition-all flex justify-center items-center gap-1 outline-none shadow-xs col-span-2 sm:col-span-1"
+                  >
+                    <Trash2 className="w-3 h-3 shrink-0" />
+                    <span className="truncate">Anular</span>
+                  </button>
+                </>
               )}
             </div>
-          </div>
+          )}
 
           {cart.length === 0 && (activeOrderId || existingItems.length > 0) ? (
             !isCashierMode ? (
@@ -1997,8 +2008,8 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
       {/* MODAL DE COBRO AVANZADO (Solo desde Caja) */}
       {showCheckout && isCashierMode && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200 print:hidden">
-          <div className="bg-white rounded-3xl overflow-hidden shadow-2xl w-[90%] max-w-lg flex flex-col animate-in zoom-in-95 duration-200 max-h-[90vh]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200 print:hidden p-3 sm:p-4">
+          <div className="bg-white rounded-3xl overflow-hidden shadow-2xl w-full max-w-lg flex flex-col animate-in zoom-in-95 duration-200 max-h-[92vh]">
             
             <div className="bg-blue-600 text-white p-5 flex justify-between items-center shrink-0">
               <div>
@@ -2229,8 +2240,8 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
       {/* CONFIRMATION MODAL OVERLAY */}
       {confirmAction && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl p-6 shadow-2xl w-[90%] max-w-md animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200 p-3 sm:p-4">
+          <div className="bg-white rounded-3xl p-5 sm:p-6 shadow-2xl w-full max-w-md animate-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto">
             <div className="flex justify-between items-start mb-4">
               <div className="flex items-center gap-3 text-rose-600">
                 <div className="bg-rose-100 p-2 rounded-full">
@@ -2283,8 +2294,8 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
       {/* MODAL DE CAMBIAR MESA */}
       {showChangeTableModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200 print:hidden">
-          <div className="bg-white rounded-3xl overflow-hidden shadow-2xl w-[90%] max-w-md flex flex-col animate-in zoom-in-95 duration-200 p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200 print:hidden p-3 sm:p-4">
+          <div className="bg-white rounded-3xl overflow-hidden shadow-2xl w-full max-w-md flex flex-col animate-in zoom-in-95 duration-200 p-5 sm:p-6 max-h-[92vh]">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xl font-black text-slate-800">Cambiar de Mesa</h3>
               <button 
@@ -2303,7 +2314,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
             ) : freeTables.length === 0 ? (
                <p className="text-slate-500 text-center py-6 font-medium">No hay mesas libres disponibles.</p>
             ) : (
-               <div className="grid grid-cols-3 gap-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3 max-h-[280px] overflow-y-auto pr-1 custom-scrollbar">
                  {freeTables.map(t => (
                    <button
                      key={t.id}
@@ -2341,8 +2352,8 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
       {/* MODAL DE SEPARAR CUENTA */}
       {showSplitBillModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200 print:hidden">
-          <div className="bg-white rounded-3xl overflow-hidden shadow-2xl w-[90%] max-w-lg flex flex-col animate-in zoom-in-95 duration-200 max-h-[90vh]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200 print:hidden p-3 sm:p-4">
+          <div className="bg-white rounded-3xl overflow-hidden shadow-2xl w-full max-w-lg flex flex-col animate-in zoom-in-95 duration-200 max-h-[92vh]">
             
             <div className="bg-slate-800 text-white p-5 flex justify-between items-center shrink-0">
               <div>

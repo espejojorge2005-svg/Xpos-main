@@ -163,14 +163,14 @@ export default function ComboModal({ product, onClose, onAddToCart, allProducts 
   const QUICK_NOTES = ['Sin sal', 'Poco picante', 'Término medio', 'Bien cocido', 'Para llevar'];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200 p-4">
-      <div className="bg-white rounded-3xl overflow-hidden shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] border border-slate-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200 p-3 sm:p-4">
+      <div className="bg-white rounded-3xl overflow-hidden shadow-2xl w-full max-w-lg flex flex-col max-h-[92vh] border border-slate-100">
         
         {/* Modal Header */}
-        <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-emerald-600 text-white">
+        <div className="p-4 sm:p-5 border-b border-slate-100 flex justify-between items-center bg-emerald-600 text-white">
           <div>
-            <h3 className="text-xl font-black">{product.name}</h3>
-            <p className="text-emerald-100 text-sm font-medium">Personalizar plato / combo</p>
+            <h3 className="text-lg sm:text-xl font-black">{product.name}</h3>
+            <p className="text-emerald-100 text-xs sm:text-sm font-medium">Personalizar plato / combo</p>
           </div>
           <button 
             type="button"
@@ -182,7 +182,7 @@ export default function ComboModal({ product, onClose, onAddToCart, allProducts 
         </div>
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
           {product.modifierGroups && product.modifierGroups.length > 0 && product.modifierGroups.map((group, index) => {
             const groupId = group.id || group.name;
             const currentSelected = selections[groupId] || [];

@@ -531,32 +531,32 @@ export default function InventoryPage() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 p-8 font-sans relative">
+    <div className="min-h-screen bg-slate-50 p-4 sm:p-6 md:p-8 font-sans relative">
       
       {/* Cabecera */}
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 sm:mb-8 bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-slate-100">
         <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-            <Package className="text-emerald-600 w-8 h-8" /> 
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2 sm:gap-3">
+            <Package className="text-emerald-600 w-7 h-7 sm:w-8 sm:h-8" /> 
             Inventario
           </h1>
-          <p className="text-slate-500 font-medium mt-1 uppercase text-sm tracking-widest">
+          <p className="text-slate-500 font-medium mt-1 uppercase text-xs sm:text-sm tracking-widest">
             Gestión de Productos y Stock
           </p>
         </div>
-        <div className="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+        <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
           <button
             onClick={() => router.push('/inventory/kardex')}
-            className="flex items-center gap-2 px-5 py-3 bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 rounded-2xl font-bold transition-all active:scale-95"
+            className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 rounded-2xl font-bold text-xs sm:text-sm transition-all active:scale-95 whitespace-nowrap"
           >
-            <LayoutGrid className="w-5 h-5" />
+            <LayoutGrid className="w-4 h-4 sm:w-5 sm:h-5" />
             Kardex
           </button>
           <button 
             onClick={() => openModal()}
-            className="flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold transition-all active:scale-95 shadow-lg shadow-emerald-200"
+            className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-5 sm:px-6 py-2.5 sm:py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold text-xs sm:text-sm transition-all active:scale-95 shadow-lg shadow-emerald-200 whitespace-nowrap"
           >
-            <Plus className="w-5 h-5" />
+            <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
             Nuevo Producto
           </button>
         </div>
@@ -564,7 +564,7 @@ export default function InventoryPage() {
 
       {/* Tabla e Interfaz (Mismo diseño que te gustó) */}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden w-full max-w-full">
-        <div className="p-4 md:p-6 border-b border-slate-100 flex flex-col sm:flex-row gap-4 items-start sm:items-center bg-slate-50/50">
+        <div className="p-4 sm:p-6 border-b border-slate-100 flex flex-col sm:flex-row gap-4 items-start sm:items-center bg-slate-50/50">
           <div className="relative w-full sm:w-96 shrink-0">
             <Search className="absolute left-4 top-3.5 w-5 h-5 text-slate-400" />
             <input
@@ -572,7 +572,7 @@ export default function InventoryPage() {
               placeholder="Buscar por nombre o categoría..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all text-slate-900"
+              className="w-full pl-12 pr-4 py-2.5 sm:py-3 bg-white border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all text-slate-900 text-sm"
             />
           </div>
         </div>

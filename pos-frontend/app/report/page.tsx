@@ -874,39 +874,39 @@ export default function CashRegisterPage() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 p-8 font-sans pb-24">
+    <div className="min-h-screen bg-slate-50 p-3 sm:p-6 md:p-8 font-sans pb-24">
 
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 bg-white p-6 rounded-3xl shadow-sm border border-slate-100 gap-4">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 sm:mb-8 bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-slate-100 gap-4">
         <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3"><Calculator className="text-emerald-600 w-8 h-8" /> Control y Cierre</h1>
-          <p className="text-slate-500 font-medium mt-1 uppercase text-sm tracking-widest flex items-center gap-2">
+          <h1 className="text-xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3"><Calculator className="text-emerald-600 w-6 h-6 sm:w-8 sm:h-8" /> Control y Cierre</h1>
+          <p className="text-slate-500 font-medium mt-1 uppercase text-xs sm:text-sm tracking-widest flex flex-wrap items-center gap-2">
             {new Date().toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long' })}
-            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${isShiftOpen ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+            <span className={`px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs font-bold ${isShiftOpen ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
               {isShiftOpen ? 'TURNO ABIERTO' : 'CAJA CERRADA'}
             </span>
           </p>
         </div>
-        <div className="flex gap-3">
-          <button onClick={() => setShowHistoryModal(true)} className="flex items-center gap-2 px-5 py-2.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-2xl font-bold transition-colors">
-            <History className="w-5 h-5" /> Historial
+        <div className="flex flex-wrap gap-2 sm:gap-3 w-full sm:w-auto">
+          <button onClick={() => setShowHistoryModal(true)} className="flex-1 sm:flex-none justify-center flex items-center gap-1.5 sm:gap-2 px-4 sm:px-5 py-2 sm:py-2.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-2xl font-bold text-xs sm:text-sm transition-colors">
+            <History className="w-4 h-4 sm:w-5 sm:h-5" /> Historial
           </button>
 
           {!isShiftOpen ? (
-            <button onClick={() => setShowOpenModal(true)} className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white hover:bg-emerald-700 rounded-2xl font-bold transition-colors shadow-lg shadow-emerald-200">
-              <Wallet className="w-5 h-5" /> Abrir Turno
+            <button onClick={() => setShowOpenModal(true)} className="flex-1 sm:flex-none justify-center flex items-center gap-1.5 sm:gap-2 px-4 sm:px-5 py-2 sm:py-2.5 bg-emerald-600 text-white hover:bg-emerald-700 rounded-2xl font-bold text-xs sm:text-sm transition-colors shadow-lg shadow-emerald-200">
+              <Wallet className="w-4 h-4 sm:w-5 sm:h-5" /> Abrir Turno
             </button>
           ) : (
-            <button onClick={() => setShowPrintModal(true)} className="flex items-center gap-2 px-5 py-2.5 bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200 rounded-2xl font-bold transition-colors">
-              <Printer className="w-5 h-5" /> Imprimir
+            <button onClick={() => setShowPrintModal(true)} className="flex-1 sm:flex-none justify-center flex items-center gap-1.5 sm:gap-2 px-4 sm:px-5 py-2 sm:py-2.5 bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200 rounded-2xl font-bold text-xs sm:text-sm transition-colors">
+              <Printer className="w-4 h-4 sm:w-5 sm:h-5" /> Imprimir
             </button>
           )}
         </div>
       </header>
 
       {/* SECCIÓN DE MESAS CON CUENTA PENDIENTE DE COBRO */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+      <div className="mb-6 sm:mb-8">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-3">
+          <h2 className="text-lg sm:text-xl font-bold text-slate-800 flex items-center gap-2">
             <ReceiptText className="w-5 h-5 text-indigo-600" />
             Mesas con Cuentas Pendientes de Cobro
           </h2>
@@ -919,9 +919,9 @@ export default function CashRegisterPage() {
             No hay mesas con cuentas pendientes de cobro en este momento.
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
             {pendingTables.map(t => (
-              <div key={t.tableId} className={`bg-white p-5 rounded-2xl border shadow-sm flex flex-col justify-between transition-all ${t.billRequested ? 'border-amber-400 ring-2 ring-amber-200 bg-amber-50/20' : 'border-slate-200 hover:border-indigo-300'}`}>
+              <div key={t.tableId} className={`bg-white p-4 sm:p-5 rounded-2xl border shadow-xs flex flex-col justify-between transition-all ${t.billRequested ? 'border-amber-400 ring-2 ring-amber-200 bg-amber-50/20' : 'border-slate-200 hover:border-indigo-300'}`}>
                 <div>
                   <div className="flex justify-between items-start mb-2">
                     <h3 className="font-black text-slate-800 text-base">{t.tableName}</h3>
@@ -936,7 +936,7 @@ export default function CashRegisterPage() {
                     )}
                   </div>
                   <p className="text-xs text-slate-500 font-medium mb-1">{t.items?.length || 0} productos pedidos</p>
-                  <p className="text-2xl font-black text-emerald-600 mb-3">S/ {Number(t.total || 0).toFixed(2)}</p>
+                  <p className="text-xl sm:text-2xl font-black text-emerald-600 mb-3">S/ {Number(t.total || 0).toFixed(2)}</p>
                 </div>
                 <button
                   onClick={() => router.push(`/pos/${t.tableId}?mode=caja`)}
@@ -950,98 +950,98 @@ export default function CashRegisterPage() {
         )}
       </div>
 
-      <div className="flex justify-between items-end mb-4">
-        <h2 className="text-xl font-bold text-slate-800">Flujo de Efectivo Físico</h2>
-        <div className="flex gap-2">
-          <button onClick={() => setShowExpensesList(true)} disabled={!isShiftOpen} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 rounded-xl font-bold transition-colors disabled:opacity-50"><List className="w-4 h-4" /> Ver Gastos</button>
-          <button onClick={openNewExpense} disabled={!isShiftOpen} className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 rounded-xl font-bold transition-colors disabled:opacity-50"><Plus className="w-4 h-4" /> Registrar Gasto</button>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+        <h2 className="text-lg sm:text-xl font-bold text-slate-800">Flujo de Efectivo Físico</h2>
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+          <button onClick={() => setShowExpensesList(true)} disabled={!isShiftOpen} className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-3.5 sm:px-4 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 rounded-xl font-bold text-xs sm:text-sm transition-colors disabled:opacity-50"><List className="w-4 h-4" /> Ver Gastos</button>
+          <button onClick={openNewExpense} disabled={!isShiftOpen} className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-3.5 sm:px-4 py-2 bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 rounded-xl font-bold text-xs sm:text-sm transition-colors disabled:opacity-50"><Plus className="w-4 h-4" /> Registrar Gasto</button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between group">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-8 sm:mb-10">
+        <div className="bg-white p-5 sm:p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between group">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Fondo Inicial</p>
               {isShiftOpen && <button onClick={openEditOpeningCash} className="text-slate-400 hover:text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity"><Edit2 className="w-3.5 h-3.5" /></button>}
             </div>
-            <h3 className="text-2xl font-black text-slate-800">S/ {report.openingCash.toFixed(2)}</h3>
+            <h3 className="text-xl sm:text-2xl font-black text-slate-800">S/ {report.openingCash.toFixed(2)}</h3>
           </div>
-          <div className="bg-amber-50 p-4 rounded-2xl"><PiggyBank className="w-8 h-8 text-amber-500" /></div>
+          <div className="bg-amber-50 p-3 sm:p-4 rounded-2xl"><PiggyBank className="w-6 h-6 sm:w-8 sm:h-8 text-amber-500" /></div>
         </div>
 
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between">
+        <div className="bg-white p-5 sm:p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between">
           <div>
             <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-1">Efectivo (+)</p>
-            <h3 className="text-2xl font-black text-slate-800">S/ {report.cash.toFixed(2)}</h3>
+            <h3 className="text-xl sm:text-2xl font-black text-slate-800">S/ {report.cash.toFixed(2)}</h3>
             {report.tipsBreakdown.CASH > 0 && (
               <p className="text-[11px] font-bold text-violet-500 mt-1 flex items-center gap-1">
                 <Heart className="w-3 h-3 fill-violet-200" /> Incluye S/ {report.tipsBreakdown.CASH.toFixed(2)} propina
               </p>
             )}
           </div>
-          <div className="bg-blue-50 p-4 rounded-2xl"><Wallet className="w-8 h-8 text-blue-600" /></div>
+          <div className="bg-blue-50 p-3 sm:p-4 rounded-2xl"><Wallet className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600" /></div>
         </div>
 
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between cursor-pointer hover:border-rose-200 transition-colors" onClick={() => setShowExpensesList(true)}>
-          <div><p className="text-xs text-rose-500 font-bold uppercase tracking-widest mb-1">Gastos del Día (-)</p><h3 className="text-2xl font-black text-rose-600">S/ {report.totalExpenses.toFixed(2)}</h3></div>
-          <div className="bg-rose-50 p-4 rounded-2xl"><TrendingDown className="w-8 h-8 text-rose-500" /></div>
+        <div className="bg-white p-5 sm:p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between cursor-pointer hover:border-rose-200 transition-colors sm:col-span-2 md:col-span-1" onClick={() => setShowExpensesList(true)}>
+          <div><p className="text-xs text-rose-500 font-bold uppercase tracking-widest mb-1">Gastos del Día (-)</p><h3 className="text-xl sm:text-2xl font-black text-rose-600">S/ {report.totalExpenses.toFixed(2)}</h3></div>
+          <div className="bg-rose-50 p-3 sm:p-4 rounded-2xl"><TrendingDown className="w-6 h-6 sm:w-8 sm:h-8 text-rose-500" /></div>
         </div>
       </div>
 
-      <h2 className="text-xl font-bold text-slate-800 mb-4 mt-8">Resumen de Ingresos</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <h2 className="text-lg sm:text-xl font-bold text-slate-800 mb-4 mt-6 sm:mt-8">Resumen de Ingresos</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
 
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between">
+        <div className="bg-white p-5 sm:p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between">
           <div>
             <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-1">Ingresos Totales</p>
-            <h3 className="text-2xl font-black text-slate-800">S/ {(report.totalSales + report.totalTips).toFixed(2)}</h3>
+            <h3 className="text-xl sm:text-2xl font-black text-slate-800">S/ {(report.totalSales + report.totalTips).toFixed(2)}</h3>
             {report.totalTips > 0 && (
               <p className="text-[11px] font-bold text-violet-500 mt-1 flex items-center gap-1">
                 <Heart className="w-3 h-3 fill-violet-200" /> Incluye S/ {report.totalTips.toFixed(2)} propina
               </p>
             )}
           </div>
-          <div className="bg-emerald-50 p-4 rounded-2xl"><DollarSign className="w-8 h-8 text-emerald-600" /></div>
+          <div className="bg-emerald-50 p-3 sm:p-4 rounded-2xl"><DollarSign className="w-6 h-6 sm:w-8 sm:h-8 text-emerald-600" /></div>
         </div>
 
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between">
+        <div className="bg-white p-5 sm:p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between">
           <div>
             <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-1">POS / Tarjeta</p>
-            <h3 className="text-2xl font-black text-slate-800">S/ {report.card.toFixed(2)}</h3>
+            <h3 className="text-xl sm:text-2xl font-black text-slate-800">S/ {report.card.toFixed(2)}</h3>
             {report.tipsBreakdown.CARD > 0 && (
               <p className="text-[11px] font-bold text-violet-500 mt-1 flex items-center gap-1">
                 <Heart className="w-3 h-3 fill-violet-200" /> Incluye S/ {report.tipsBreakdown.CARD.toFixed(2)}
               </p>
             )}
           </div>
-          <div className="bg-purple-50 p-4 rounded-2xl"><CreditCard className="w-8 h-8 text-purple-600" /></div>
+          <div className="bg-purple-50 p-3 sm:p-4 rounded-2xl"><CreditCard className="w-6 h-6 sm:w-8 sm:h-8 text-purple-600" /></div>
         </div>
 
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between">
+        <div className="bg-white p-5 sm:p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between">
           <div>
             <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-1">Yape / Plin</p>
-            <h3 className="text-2xl font-black text-slate-800">S/ {report.yapePlin.toFixed(2)}</h3>
+            <h3 className="text-xl sm:text-2xl font-black text-slate-800">S/ {report.yapePlin.toFixed(2)}</h3>
             {report.tipsBreakdown.TRANSFER > 0 && (
               <p className="text-[11px] font-bold text-violet-500 mt-1 flex items-center gap-1">
                 <Heart className="w-3 h-3 fill-violet-200" /> Incluye S/ {report.tipsBreakdown.TRANSFER.toFixed(2)}
               </p>
             )}
           </div>
-          <div className="bg-sky-50 p-4 rounded-2xl"><Smartphone className="w-8 h-8 text-sky-600" /></div>
+          <div className="bg-sky-50 p-3 sm:p-4 rounded-2xl"><Smartphone className="w-6 h-6 sm:w-8 sm:h-8 text-sky-600" /></div>
         </div>
 
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between cursor-pointer hover:border-violet-300 transition-all group" onClick={() => setShowTipsModal(true)}>
+        <div className="bg-white p-5 sm:p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between cursor-pointer hover:border-violet-300 transition-all group" onClick={() => setShowTipsModal(true)}>
           <div>
             <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-1 flex items-center gap-1">Propinas <List className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" /></p>
-            <h3 className="text-2xl font-black text-violet-600">S/ {report.totalTips.toFixed(2)}</h3>
+            <h3 className="text-xl sm:text-2xl font-black text-violet-600">S/ {report.totalTips.toFixed(2)}</h3>
           </div>
-          <div className="bg-violet-50 p-4 rounded-2xl"><Heart className="w-8 h-8 text-violet-500" /></div>
+          <div className="bg-violet-50 p-3 sm:p-4 rounded-2xl"><Heart className="w-6 h-6 sm:w-8 sm:h-8 text-violet-500" /></div>
         </div>
       </div>
 
-      <h2 className="text-xl font-bold text-slate-800 mb-4 mt-8">Resumen Operativo</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+      <h2 className="text-lg sm:text-xl font-bold text-slate-800 mb-4 mt-6 sm:mt-8">Resumen Operativo</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-10 sm:mb-12">
 
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between cursor-pointer hover:border-slate-300 transition-all group" onClick={() => setShowOrdersModal(true)}>
           <div>
@@ -1379,12 +1379,12 @@ export default function CashRegisterPage() {
       {/* Modal Propinas */}
       {showTipsModal && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl p-6 md:p-8">
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl p-5 sm:p-8 max-h-[92vh] flex flex-col">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2"><Heart className="text-violet-500" /> Resumen de Propinas</h2>
+              <h2 className="text-xl sm:text-2xl font-black text-slate-800 flex items-center gap-2"><Heart className="text-violet-500" /> Resumen de Propinas</h2>
               <button onClick={() => setShowTipsModal(false)} className="text-slate-400 hover:bg-slate-100 p-2 rounded-full"><X className="w-6 h-6" /></button>
             </div>
-            <div className="max-h-[50vh] overflow-y-auto pr-2">
+            <div className="max-h-[50vh] overflow-y-auto pr-2 custom-scrollbar">
               {report.tipsDetail.length === 0 ? <p className="text-center text-slate-400 py-4">No hay propinas.</p> : (
                 <ul className="space-y-3">
                   {report.tipsDetail.map((tip) => (
@@ -1403,23 +1403,23 @@ export default function CashRegisterPage() {
       {/* Modal Apertura */}
       {showOpenModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className={`${isEditingOpening ? 'bg-amber-500' : 'bg-slate-900'} p-6 text-white text-center relative`}>
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto">
+            <div className={`${isEditingOpening ? 'bg-amber-500' : 'bg-slate-900'} p-5 sm:p-6 text-white text-center relative`}>
               <button onClick={() => setShowOpenModal(false)} className="absolute top-4 right-4 text-white/70 hover:text-white bg-black/20 hover:bg-black/40 p-2 rounded-full transition-colors"><X className="w-5 h-5" /></button>
-              <div className="bg-white/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><Wallet className="w-8 h-8" /></div>
-              <h2 className="text-2xl font-black">{isEditingOpening ? 'Editar Fondo Inicial' : 'Apertura de Turno'}</h2>
+              <div className="bg-white/20 w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center mx-auto mb-3 sm:mb-4"><Wallet className="w-7 h-7 sm:w-8 sm:h-8" /></div>
+              <h2 className="text-xl sm:text-2xl font-black">{isEditingOpening ? 'Editar Fondo Inicial' : 'Apertura de Turno'}</h2>
             </div>
-            <form onSubmit={handleSaveOpeningCash} className="p-8">
+            <form onSubmit={handleSaveOpeningCash} className="p-5 sm:p-8">
               <div className="mb-6">
                 <label className="block text-sm font-bold text-slate-700 mb-2">Monto en Efectivo Físico (S/)</label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none"><span className="text-slate-400 font-bold text-lg">S/</span></div>
-                  <input type="number" step="0.10" autoFocus required value={openingAmount} onChange={(e) => setOpeningAmount(e.target.value)} className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-2xl font-black text-slate-800 focus:ring-4 focus:ring-emerald-500/20" />
+                  <input type="number" step="0.10" autoFocus required value={openingAmount} onChange={(e) => setOpeningAmount(e.target.value)} className="w-full pl-12 pr-4 py-3.5 sm:py-4 bg-slate-50 border border-slate-200 rounded-2xl text-xl sm:text-2xl font-black text-slate-800 focus:ring-4 focus:ring-emerald-500/20" />
                 </div>
               </div>
               <div className="flex gap-3">
-                <button type="button" onClick={() => router.push('/')} className="flex-1 py-4 font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-2xl transition-colors">Volver al Inicio</button>
-                <button type="submit" className={`flex-1 py-4 font-black text-white rounded-2xl ${isEditingOpening ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-600 hover:bg-emerald-700'} transition-colors`}>{isEditingOpening ? 'Actualizar' : 'Abrir Caja'}</button>
+                <button type="button" onClick={() => router.push('/')} className="flex-1 py-3.5 sm:py-4 font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-2xl transition-colors text-xs sm:text-sm">Volver al Inicio</button>
+                <button type="submit" className={`flex-1 py-3.5 sm:py-4 font-black text-white rounded-2xl ${isEditingOpening ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-600 hover:bg-emerald-700'} transition-colors text-xs sm:text-sm`}>{isEditingOpening ? 'Actualizar' : 'Abrir Caja'}</button>
               </div>
             </form>
           </div>
@@ -1429,7 +1429,7 @@ export default function CashRegisterPage() {
       {/* Modal Gastos */}
       {showExpenseModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl p-6 md:p-8">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl p-5 sm:p-8 max-h-[92vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-black text-slate-800">{expenseForm.id ? 'Editar Gasto' : 'Nuevo Gasto'}</h2>
               <button onClick={() => setShowExpenseModal(false)} className="text-slate-400 hover:bg-slate-100 p-2 rounded-full"><X className="w-6 h-6" /></button>

@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { usePathname } from 'next/navigation';
 import { Sparkles, X, Send, Bot, User } from 'lucide-react';
 import { useAiChat, ChatMessage } from '@/hooks/useAiChat';
 
@@ -13,6 +14,7 @@ const QUICK_ACTIONS = [
 ];
 
 export default function AiChatbotDrawer() {
+  const pathname = usePathname();
   const {
     isOpen,
     setIsOpen,
@@ -30,7 +32,7 @@ export default function AiChatbotDrawer() {
   return (
     <>
       {/* Botón Flotante (FAB) */}
-      <FloatingTriggerButton isOpen={isOpen} onOpen={() => setIsOpen(true)} />
+      <FloatingTriggerButton isOpen={isOpen} onOpen={() => setIsOpen(true)} isPosPage={pathname?.startsWith('/pos/') ?? false} />
 
       {/* Backdrop */}
       {isOpen && (
@@ -42,7 +44,7 @@ export default function AiChatbotDrawer() {
 
       {/* Drawer Panel Lateral */}
       <aside
-        className={`fixed inset-y-0 right-0 z-50 w-full max-w-md bg-slate-900 text-white shadow-2xl flex flex-col transform transition-transform duration-300 ease-in-out border-l border-slate-800 print:hidden ${
+        className={`fixed inset-y-0 right-0 z-50 w-full sm:max-w-md bg-slate-900 text-white shadow-2xl flex flex-col transform transition-transform duration-300 ease-in-out border-l border-slate-800 print:hidden ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
@@ -63,20 +65,20 @@ export default function AiChatbotDrawer() {
   );
 }
 
-function FloatingTriggerButton({ isOpen, onOpen }: { isOpen: boolean; onOpen: () => void }) {
+function FloatingTriggerButton({ isOpen, onOpen, isPosPage }: { isOpen: boolean; onOpen: () => void; isPosPage: boolean }) {
   return (
     <button
       onClick={onOpen}
-      className={`fixed bottom-6 right-6 z-40 flex items-center gap-2.5 px-4 py-3.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white rounded-2xl shadow-xl hover:shadow-2xl shadow-violet-500/25 transition-all duration-300 transform active:scale-95 group print:hidden ${
+      className={`fixed ${isPosPage ? 'bottom-24 lg:bottom-6 right-4 sm:right-6' : 'bottom-6 right-4 sm:right-6'} z-40 flex items-center gap-2.5 px-3.5 sm:px-4 py-3 sm:py-3.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white rounded-2xl shadow-xl hover:shadow-2xl shadow-violet-500/25 transition-all duration-300 transform active:scale-95 group print:hidden ${
         isOpen ? 'scale-0 pointer-events-none' : 'scale-100'
       }`}
       title="ChefAI - Asistente y Analítica"
     >
       <div className="relative">
-        <Sparkles className="w-5 h-5 text-amber-300 animate-pulse" />
+        <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300 animate-pulse" />
         <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-400 rounded-full border-2 border-white animate-ping" />
       </div>
-      <span className="font-black text-sm tracking-wide">ChefAI</span>
+      <span className="font-black text-xs sm:text-sm tracking-wide">ChefAI</span>
     </button>
   );
 }

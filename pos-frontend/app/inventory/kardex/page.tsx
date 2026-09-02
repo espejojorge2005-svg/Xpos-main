@@ -205,33 +205,33 @@ export default function KardexPage() {
   ) ?? [];
 
   return (
-    <div className="min-h-screen bg-slate-50 p-8 font-sans">
+    <div className="min-h-screen bg-slate-50 p-4 sm:p-6 md:p-8 font-sans">
       {/* Header */}
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-        <div className="flex items-center gap-4">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 sm:mb-8 bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-slate-100">
+        <div className="flex items-center gap-3 sm:gap-4">
           <button
             onClick={() => router.push('/inventory')}
-            className="p-3 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-2xl transition-colors border border-slate-200"
+            className="p-2.5 sm:p-3 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-2xl transition-colors border border-slate-200 shrink-0"
             title="Volver al Inventario"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-              <LayoutGrid className="text-violet-600 w-8 h-8" />
+            <h1 className="text-xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2 sm:gap-3">
+              <LayoutGrid className="text-violet-600 w-6 h-6 sm:w-8 sm:h-8" />
               Kardex de Inventario
             </h1>
-            <p className="text-slate-500 font-medium mt-1 uppercase text-sm tracking-widest">
+            <p className="text-slate-500 font-medium mt-1 uppercase text-xs sm:text-sm tracking-widest">
               Stock de cierre por día — últimos 7 días
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
           <button
             onClick={handleManualRefresh}
             disabled={isRefreshing}
-            className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-sm transition-all active:scale-95 disabled:opacity-60"
+            className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs sm:text-sm transition-all active:scale-95 disabled:opacity-60"
             title="Actualizar datos"
           >
             <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-violet-600' : ''}`} />
@@ -239,7 +239,7 @@ export default function KardexPage() {
           </button>
           <button
             onClick={() => router.push('/inventory')}
-            className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm transition-all active:scale-95 shadow-md shadow-emerald-200"
+            className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs sm:text-sm transition-all active:scale-95 shadow-md shadow-emerald-200"
           >
             <Plus className="w-4 h-4" />
             Gestionar Stock

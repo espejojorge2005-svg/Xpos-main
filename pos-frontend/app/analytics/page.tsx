@@ -292,25 +292,25 @@ export default function AnalyticsPage() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 p-8 font-sans pb-24">
+    <div className="min-h-screen bg-slate-50 p-4 sm:p-6 md:p-8 font-sans pb-24">
       {/* Header & Date Selector */}
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 sm:mb-8 bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-slate-100">
         <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-            <BarChart3 className="text-violet-600 w-8 h-8" />
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2 sm:gap-3">
+            <BarChart3 className="text-violet-600 w-7 h-7 sm:w-8 sm:h-8" />
             Reporte
           </h1>
-          <p className="text-slate-500 font-medium mt-1 uppercase text-sm tracking-widest">
+          <p className="text-slate-500 font-medium mt-1 uppercase text-xs sm:text-sm tracking-widest">
             Métricas de Negocio y Rendimiento
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
           {['TODAY', 'LAST_7_DAYS', 'LAST_30_DAYS', 'CUSTOM'].map(r => (
             <button
               key={r}
               onClick={() => setDateRange(r as any)}
-              className={`px-4 py-2.5 rounded-xl font-bold text-sm transition-all ${
+              className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all text-center ${
                 dateRange === r 
                   ? 'bg-violet-100 text-violet-700 border-2 border-violet-200 shadow-inner' 
                   : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-900'
@@ -324,18 +324,18 @@ export default function AnalyticsPage() {
 
       {/* Custom Date Form (Only visible if CUSTOM) */}
       {dateRange === 'CUSTOM' && (
-        <form onSubmit={handleCustomSearch} className="flex flex-col sm:flex-row sm:items-end gap-4 mb-8 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm w-full sm:w-fit">
+        <form onSubmit={handleCustomSearch} className="flex flex-col sm:flex-row sm:items-end gap-4 mb-6 sm:mb-8 bg-white p-4 sm:p-5 rounded-2xl border border-slate-100 shadow-sm w-full sm:w-fit">
           <div className="w-full sm:w-auto">
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Desde</label>
             <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} 
-              className="w-full sm:w-auto px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium outline-none focus:ring-2 ring-violet-500 text-slate-700" required />
+              className="w-full sm:w-auto px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium outline-none focus:ring-2 ring-violet-500 text-slate-700 text-sm" required />
           </div>
           <div className="w-full sm:w-auto">
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Hasta</label>
             <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} 
-               className="w-full sm:w-auto px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium outline-none focus:ring-2 ring-violet-500 text-slate-700" required />
+               className="w-full sm:w-auto px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium outline-none focus:ring-2 ring-violet-500 text-slate-700 text-sm" required />
           </div>
-          <button type="submit" disabled={loading} className="w-full sm:w-auto px-6 py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl flex items-center gap-2 min-w-[120px] justify-center mt-2 sm:mt-0">
+          <button type="submit" disabled={loading} className="w-full sm:w-auto px-6 py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl flex items-center gap-2 min-w-[120px] justify-center mt-2 sm:mt-0 text-sm">
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Aplicar Rango'}
           </button>
         </form>
@@ -343,52 +343,52 @@ export default function AnalyticsPage() {
 
       {/* No Data State */}
       {data?.kpis.totalOrders === 0 ? (
-        <div className="bg-white p-12 rounded-3xl border border-slate-100 shadow-sm text-center">
-          <AlertTriangle className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-slate-800 mb-2">Sin datos de ventas</h2>
-          <p className="text-slate-500">No hay ventas registradas en el rango de fechas seleccionado.</p>
+        <div className="bg-white p-8 sm:p-12 rounded-3xl border border-slate-100 shadow-sm text-center">
+          <AlertTriangle className="w-12 h-12 sm:w-16 sm:h-16 text-slate-300 mx-auto mb-4" />
+          <h2 className="text-lg sm:text-xl font-bold text-slate-800 mb-2">Sin datos de ventas</h2>
+          <p className="text-slate-500 text-sm">No hay ventas registradas en el rango de fechas seleccionado.</p>
         </div>
       ) : data ? (
         <div className="space-y-6">
           
           {/* ── KPI CARDS ── */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
-              <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center shrink-0">
-                <DollarSign className="w-7 h-7" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div className="bg-white p-4 sm:p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center shrink-0">
+                <DollarSign className="w-6 h-6 sm:w-7 sm:h-7" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-bold text-slate-400 uppercase tracking-widest truncate">Ingresos</p>
-                <p className="text-2xl font-black text-slate-800 truncate">S/ {data.kpis.totalRevenue.toFixed(2)}</p>
+                <p className="text-xs sm:text-sm font-bold text-slate-400 uppercase tracking-widest truncate">Ingresos</p>
+                <p className="text-xl sm:text-2xl font-black text-slate-800 truncate">S/ {data.kpis.totalRevenue.toFixed(2)}</p>
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
-              <div className="w-14 h-14 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center shrink-0">
-                <Receipt className="w-7 h-7" />
+            <div className="bg-white p-4 sm:p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center shrink-0">
+                <Receipt className="w-6 h-6 sm:w-7 sm:h-7" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-bold text-slate-400 uppercase tracking-widest truncate">Órdenes</p>
-                <p className="text-2xl font-black text-slate-800 truncate">{data.kpis.totalOrders}</p>
+                <p className="text-xs sm:text-sm font-bold text-slate-400 uppercase tracking-widest truncate">Órdenes</p>
+                <p className="text-xl sm:text-2xl font-black text-slate-800 truncate">{data.kpis.totalOrders}</p>
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
-              <div className="w-14 h-14 bg-violet-100 text-violet-600 rounded-2xl flex items-center justify-center shrink-0">
-                <TrendingUp className="w-7 h-7" />
+            <div className="bg-white p-4 sm:p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 bg-violet-100 text-violet-600 rounded-2xl flex items-center justify-center shrink-0">
+                <TrendingUp className="w-6 h-6 sm:w-7 sm:h-7" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-bold text-slate-400 uppercase tracking-widest truncate">Ticket Promedio</p>
-                <p className="text-2xl font-black text-slate-800 truncate">S/ {data.kpis.avgTicket.toFixed(2)}</p>
+                <p className="text-xs sm:text-sm font-bold text-slate-400 uppercase tracking-widest truncate">Ticket Promedio</p>
+                <p className="text-xl sm:text-2xl font-black text-slate-800 truncate">S/ {data.kpis.avgTicket.toFixed(2)}</p>
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
-              <div className="w-14 h-14 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center shrink-0">
-                <CreditCard className="w-7 h-7" />
+            <div className="bg-white p-4 sm:p-6 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
+              <div className="w-12 h-12 sm:w-14 sm:h-14 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center shrink-0">
+                <CreditCard className="w-6 h-6 sm:w-7 sm:h-7" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-bold text-slate-400 uppercase tracking-widest truncate">Método Top</p>
+                <p className="text-xs sm:text-sm font-bold text-slate-400 uppercase tracking-widest truncate">Método Top</p>
                 <p className="text-xl font-black text-slate-800 truncate">{data.kpis.topPaymentMethod}</p>
               </div>
             </div>

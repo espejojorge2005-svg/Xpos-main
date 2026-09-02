@@ -122,21 +122,22 @@ export default function Sidebar() {
   return (
     <>
       {/* Mobile Header Bar */}
-      <div className="md:hidden flex items-center justify-between p-4 bg-white border-b border-slate-200 z-[60] shrink-0 shadow-sm relative print:hidden">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center overflow-hidden shrink-0">
+      <div className="md:hidden flex items-center justify-between px-4 py-2.5 bg-white border-b border-slate-200 z-30 shrink-0 shadow-xs relative print:hidden h-14">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-xl bg-emerald-50 flex items-center justify-center overflow-hidden shrink-0 border border-emerald-100">
             {config.logoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={config.logoUrl} alt="Logo" className="w-full h-full object-contain p-1" />
+              <img src={config.logoUrl} alt="Logo" className="w-full h-full object-contain p-0.5" />
             ) : (
-              <UtensilsCrossed className="w-5 h-5 text-emerald-600" />
+              <UtensilsCrossed className="w-4 h-4 text-emerald-600" />
             )}
           </div>
-          <h2 className="text-lg font-black text-slate-900 tracking-tight truncate">{config.name || 'Xpos'}</h2>
+          <h2 className="text-base font-black text-slate-900 tracking-tight truncate">{config.name || 'Xpos'}</h2>
         </div>
         <button 
           onClick={() => setIsOpen(!isOpen)} 
-          className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+          className="p-2 rounded-xl text-slate-600 hover:bg-slate-100 active:scale-95 transition-all"
+          aria-label="Toggle menu"
         >
           {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
         </button>
@@ -145,7 +146,7 @@ export default function Sidebar() {
       {/* Mobile Backdrop overlay */}
       {isOpen && (
         <div 
-          className="fixed inset-0 bg-slate-900/40 z-40 backdrop-blur-sm md:hidden transition-opacity" 
+          className="fixed inset-0 bg-slate-900/50 z-40 backdrop-blur-xs md:hidden transition-opacity" 
           onClick={() => setIsOpen(false)}
         />
       )}
@@ -153,27 +154,36 @@ export default function Sidebar() {
       {/* Sidebar (drawer on mobile, static side column on desktop) */}
       <aside className={`
         fixed inset-y-0 left-0 z-50 md:static md:z-auto
-        w-64 bg-white border-r border-slate-200 flex flex-col h-full shadow-[4px_0_24px_rgba(0,0,0,0.05)] md:shadow-[4px_0_24px_rgba(0,0,0,0.02)]
+        w-72 max-w-[85vw] md:w-64 bg-white border-r border-slate-200 flex flex-col h-full shadow-2xl md:shadow-none
         transform transition-transform duration-300 ease-in-out
         ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
         print:hidden
       `}>
-        {/* Logo / Restaurant name */}
-        <div className="p-6 border-b border-slate-100 hidden md:flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-emerald-50 flex items-center justify-center overflow-hidden shrink-0">
-            {config.logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={config.logoUrl} alt="Logo" className="w-full h-full object-contain p-1" />
-            ) : (
-              <UtensilsCrossed className="w-6 h-6 text-emerald-600" />
-            )}
+        {/* Logo / Restaurant name (Header in drawer) */}
+        <div className="p-4 md:p-6 border-b border-slate-100 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 md:w-11 md:h-11 rounded-2xl bg-emerald-50 flex items-center justify-center overflow-hidden shrink-0 border border-emerald-100">
+              {config.logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={config.logoUrl} alt="Logo" className="w-full h-full object-contain p-1" />
+              ) : (
+                <UtensilsCrossed className="w-5 h-5 md:w-6 md:h-6 text-emerald-600" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-lg md:text-xl font-black text-slate-900 tracking-tight truncate">{config.name || 'Xpos'}</h2>
+              {config.slogan && (
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest truncate">{config.slogan}</p>
+              )}
+            </div>
           </div>
-          <div className="min-w-0">
-            <h2 className="text-xl font-black text-slate-900 tracking-tight truncate">{config.name || 'Xpos'}</h2>
-            {config.slogan && (
-              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest truncate">{config.slogan}</p>
-            )}
-          </div>
+          {/* Mobile close button inside drawer */}
+          <button 
+            onClick={() => setIsOpen(false)}
+            className="md:hidden p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Navigation */}

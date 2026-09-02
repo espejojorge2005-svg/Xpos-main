@@ -155,34 +155,34 @@ const GridTable = ({
   return (
     <button
       onClick={() => handleTableClick(table, false)}
-      className={`relative p-4 rounded-3xl border-2 flex flex-col items-center justify-center text-center transition-all active:scale-95 min-h-[130px] w-full
+      className={`relative p-3 sm:p-4 rounded-2xl sm:rounded-3xl border-2 flex flex-col items-center justify-center text-center transition-all active:scale-95 min-h-[115px] sm:min-h-[130px] w-full
         ${isFree 
           ? 'bg-white border-emerald-100 hover:border-emerald-300 shadow-sm hover:shadow-emerald-100' 
           : table.billRequested
             ? 'bg-amber-50 border-amber-300 hover:border-amber-400 shadow-sm hover:shadow-amber-100'
             : 'bg-rose-50 border-rose-200 hover:border-rose-300 shadow-sm hover:shadow-rose-100'}`}
     >
-      <Square className={`w-8 h-8 mb-2 opacity-50 ${isFree ? 'text-emerald-600' : table.billRequested ? 'text-amber-600' : 'text-rose-600'}`} />
-      <span className={`text-base font-black mb-1.5 truncate w-full ${isFree ? 'text-slate-700' : table.billRequested ? 'text-amber-900' : 'text-rose-800'}`}>
+      <Square className={`w-6 h-6 sm:w-8 sm:h-8 mb-1 sm:mb-2 opacity-50 ${isFree ? 'text-emerald-600' : table.billRequested ? 'text-amber-600' : 'text-rose-600'}`} />
+      <span className={`text-sm sm:text-base font-black mb-1 truncate w-full ${isFree ? 'text-slate-700' : table.billRequested ? 'text-amber-900' : 'text-rose-800'}`}>
         {table.name || table.number || '-'}
       </span>
-      <div className={`mt-auto flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-lg
+      <div className={`mt-auto flex items-center gap-1 text-[11px] sm:text-xs font-bold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg
         ${isFree ? 'bg-emerald-50 text-emerald-600' : table.billRequested ? 'bg-amber-100 text-amber-800' : 'bg-rose-200/50 text-rose-800'}`}>
-        <Users className="w-3.5 h-3.5" />
+        <Users className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
         {table.capacity}
       </div>
 
-      <span className={`absolute top-4 right-4 w-3 h-3 rounded-full shadow-sm
+      <span className={`absolute top-2.5 right-2.5 sm:top-4 sm:right-4 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full shadow-sm
         ${isFree ? 'bg-emerald-400' : table.billRequested ? 'bg-amber-500 animate-pulse' : 'bg-rose-500 animate-pulse'}`}>
       </span>
 
       {!isFree && activeOrder && (
-        <div className={`absolute -bottom-3 left-1/2 -translate-x-1/2 text-white text-[11px] font-black px-3 py-1 rounded-full whitespace-nowrap shadow-md flex items-center gap-1.5 z-10 border-2 border-white ${table.billRequested ? 'bg-amber-500 animate-pulse' : 'bg-rose-600'}`}>
+        <div className={`absolute -bottom-2.5 sm:-bottom-3 left-1/2 -translate-x-1/2 text-white text-[10px] sm:text-[11px] font-black px-2 sm:px-3 py-0.5 sm:py-1 rounded-full whitespace-nowrap shadow-md flex items-center gap-1 z-10 border-2 border-white ${table.billRequested ? 'bg-amber-500 animate-pulse' : 'bg-rose-600'}`}>
           {table.billRequested ? (
             <span>🔔 Cuenta Pedida</span>
           ) : (
             <>
-              <Clock className="w-3.5 h-3.5" />
+              <Clock className="w-3 h-3" />
               {formatWaitTime(new Date(activeOrder.createdAt), now)}
             </>
           )}
@@ -577,30 +577,30 @@ export default function Home() {
   // ========================================================
   return (
     <div className="min-h-screen bg-slate-50 p-3 md:p-8 font-sans pb-24 md:pb-8">
-      <header className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center mb-6 md:mb-8 bg-white p-4 md:p-5 rounded-3xl shadow-sm border border-slate-100">
+      <header className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center mb-6 md:mb-8 bg-white p-4 sm:p-5 rounded-3xl shadow-sm border border-slate-100">
         <div>
-          <h1 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-            <Utensils className="text-emerald-600 w-6 h-6 md:w-7 md:h-7" /> 
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3">
+            <Utensils className="text-emerald-600 w-6 h-6 sm:w-7 sm:h-7" /> 
             Plano de Sala
           </h1>
-          <p className="text-slate-500 font-medium mt-0.5 text-xs md:text-sm">
+          <p className="text-slate-500 font-medium mt-0.5 text-xs sm:text-sm">
             {restaurantName ? `Xpos Cloud - ${restaurantName}` : 'Xpos Cloud'}
           </p>
         </div>
-        <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto mt-4 md:mt-0">
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
           {!isEditMode && (
-            <div className="flex bg-slate-100 p-1.5 rounded-2xl w-full md:w-auto">
+            <div className="flex bg-slate-100 p-1.5 rounded-2xl w-full sm:w-auto">
               <button 
                 onClick={() => setViewMode('grid')}
-                className={`flex-1 md:flex-none px-4 py-2 rounded-xl flex items-center justify-center gap-2 transition-all font-bold text-sm ${viewMode === 'grid' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}
+                className={`flex-1 sm:flex-none px-3.5 sm:px-4 py-2 rounded-xl flex items-center justify-center gap-2 transition-all font-bold text-xs sm:text-sm ${viewMode === 'grid' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}
               >
-                <Grid2X2 className="w-5 h-5" /> Cuadrícula
+                <Grid2X2 className="w-4 h-4 sm:w-5 sm:h-5" /> Cuadrícula
               </button>
               <button 
                 onClick={() => setViewMode('map')}
-                className={`flex-1 md:flex-none px-4 py-2 rounded-xl flex items-center justify-center gap-2 transition-all font-bold text-sm ${viewMode === 'map' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                className={`flex-1 sm:flex-none px-3.5 sm:px-4 py-2 rounded-xl flex items-center justify-center gap-2 transition-all font-bold text-xs sm:text-sm ${viewMode === 'map' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
               >
-                <MapIcon className="w-5 h-5" /> Plano
+                <MapIcon className="w-4 h-4 sm:w-5 sm:h-5" /> Plano
               </button>
             </div>
           )}
@@ -609,12 +609,12 @@ export default function Home() {
               setIsEditMode(!isEditMode); 
               if (!isEditMode) setViewMode('map'); // Forzar vista plano al editar
             }}
-            className={`w-full md:w-auto flex justify-center items-center gap-2 px-6 py-3 rounded-2xl font-bold transition-all active:scale-95 border-2 text-sm md:text-base
+            className={`w-full sm:w-auto flex justify-center items-center gap-2 px-5 sm:px-6 py-2.5 sm:py-3 rounded-2xl font-bold transition-all active:scale-95 border-2 text-xs sm:text-sm md:text-base
               ${isEditMode 
                 ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200' 
                 : 'bg-white text-slate-700 border-slate-200 hover:border-slate-400'}`}
           >
-            {isEditMode ? <Save className="w-5 h-5" /> : <Move className="w-5 h-5" />}
+            {isEditMode ? <Save className="w-4 h-4 sm:w-5 sm:h-5" /> : <Move className="w-4 h-4 sm:w-5 sm:h-5" />}
             {isEditMode ? 'Guardar Cambios' : 'Modificar'}
           </button>
         </div>

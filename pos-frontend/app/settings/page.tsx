@@ -414,28 +414,28 @@ export default function SettingsPage() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 p-8 font-sans relative">
-      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8 bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+    <div className="min-h-screen bg-slate-50 p-4 sm:p-6 md:p-8 font-sans relative">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 sm:mb-8 bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-slate-100">
         <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-            <Settings className="text-slate-600 w-8 h-8" /> 
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2 sm:gap-3">
+            <Settings className="text-slate-600 w-7 h-7 sm:w-8 sm:h-8" /> 
             Configuración
           </h1>
-          <p className="text-slate-500 font-medium mt-1 uppercase text-sm tracking-widest">
+          <p className="text-slate-500 font-medium mt-1 uppercase text-xs sm:text-sm tracking-widest">
             Gestión del Plano de Sala (Zonas y Mesas)
           </p>
         </div>
         <button 
           onClick={() => openZoneModal()}
-          className="flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-2xl font-bold transition-all active:scale-95 shadow-lg shadow-slate-200"
+          className="w-full sm:w-auto justify-center flex items-center gap-2 px-5 sm:px-6 py-2.5 sm:py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-2xl font-bold text-xs sm:text-sm transition-all active:scale-95 shadow-lg shadow-slate-200"
         >
-          <Plus className="w-5 h-5" />
+          <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
           Nueva Zona
         </button>
       </header>
 
       {/* ===== DATOS DEL RESTAURANTE ===== */}
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 mb-8 overflow-hidden">
+      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 mb-6 sm:mb-8 overflow-hidden">
         {/* Card header (collapsible) */}
         <button
           type="button"

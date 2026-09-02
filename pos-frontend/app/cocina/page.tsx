@@ -485,30 +485,31 @@ export default function CocinaPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 p-4 md:p-6 font-sans">
+  return (
+    <div className="min-h-screen bg-slate-900 p-3 sm:p-4 md:p-6 font-sans pb-16">
       
       {/* HEADER */}
-      <header className="flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-xl mb-6 gap-4">
-        <div className="flex items-center gap-4 w-full md:w-auto">
-          <button onClick={() => router.push('/')} className="p-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl transition-colors text-white mt-1.5 md:mt-0 self-start md:self-auto">
-            <ArrowLeft className="w-6 h-6" />
+      <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-slate-800 p-3.5 sm:p-4 rounded-2xl border border-slate-700 shadow-xl mb-6 gap-4">
+        <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto">
+          <button onClick={() => router.push('/')} className="p-2 sm:p-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl transition-colors text-white shrink-0">
+            <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
           </button>
           <div>
-            <h1 className="text-2xl font-black text-white flex items-center gap-3 tracking-wide">
-              <ChefHat className="text-emerald-400 w-8 h-8" />
+            <h1 className="text-lg sm:text-2xl font-black text-white flex items-center gap-2 sm:gap-3 tracking-wide">
+              <ChefHat className="text-emerald-400 w-6 h-6 sm:w-8 sm:h-8" />
               MONITOR DE COCINA (KDS)
             </h1>
-            <p className="text-slate-400 text-sm font-medium mt-1">Sincronización en tiempo real</p>
+            <p className="text-slate-400 text-xs sm:text-sm font-medium mt-0.5 sm:mt-1">Sincronización en tiempo real</p>
           </div>
         </div>
-        <div className="flex gap-3 md:gap-4 w-full md:w-auto overflow-x-auto pb-1 md:pb-0 scrollbar-none snap-x">
-          <div className="bg-slate-700 px-4 py-2 rounded-xl border border-slate-600 flex items-center flex-1 md:flex-none justify-between md:justify-start min-w-[160px] snap-center">
-            <span className="text-slate-300 font-bold text-sm mr-2 leading-tight">Pedidos<br className="md:hidden"/> Terminados:</span>
-            <span className="text-2xl font-black text-slate-300">{finishedCount}</span>
+        <div className="flex gap-2 sm:gap-3 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0 scrollbar-none snap-x">
+          <div className="bg-slate-700/80 px-3.5 sm:px-4 py-2 rounded-xl border border-slate-600 flex items-center flex-1 sm:flex-none justify-between sm:justify-start min-w-[130px] sm:min-w-[150px] snap-center">
+            <span className="text-slate-300 font-bold text-xs sm:text-sm mr-2 leading-tight">Terminados:</span>
+            <span className="text-xl sm:text-2xl font-black text-slate-300">{finishedCount}</span>
           </div>
-          <div className="bg-slate-700 px-4 py-2 rounded-xl border border-slate-600 flex items-center flex-1 md:flex-none justify-between md:justify-start min-w-[160px] snap-center">
-            <span className="text-slate-300 font-bold text-sm mr-2 leading-tight">Pedidos<br className="md:hidden"/> Activos:</span>
-            <span className="text-2xl font-black text-emerald-400">
+          <div className="bg-slate-700/80 px-3.5 sm:px-4 py-2 rounded-xl border border-slate-600 flex items-center flex-1 sm:flex-none justify-between sm:justify-start min-w-[130px] sm:min-w-[150px] snap-center">
+            <span className="text-slate-300 font-bold text-xs sm:text-sm mr-2 leading-tight">Activos:</span>
+            <span className="text-xl sm:text-2xl font-black text-emerald-400">
               {orders.filter(o => !ackedOrders.includes(o.id) && o.status !== 'CANCELLED' && o.status !== 'SERVED' && o.items.some(i => i.status === 'ACTIVE')).length}
             </span>
           </div>
@@ -516,10 +517,10 @@ export default function CocinaPage() {
       </header>
 
       {/* FILTROS POR ÁREA DE PREPARACIÓN */}
-      <div className="flex items-center gap-3 mb-6 overflow-x-auto pb-2 scrollbar-none">
+      <div className="flex items-center gap-2 sm:gap-3 mb-6 overflow-x-auto pb-2 scrollbar-none hide-scrollbar-arrows">
         <button
           onClick={() => setSelectedStation(null)}
-          className={`px-6 py-2.5 rounded-2xl font-black text-sm uppercase tracking-wider transition-all shadow-sm whitespace-nowrap ${
+          className={`px-4 sm:px-6 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm uppercase tracking-wider transition-all shadow-sm whitespace-nowrap ${
             !selectedStation 
               ? 'bg-emerald-500 text-white shadow-emerald-500/20 scale-105' 
               : 'bg-slate-800 text-slate-400 hover:bg-slate-700 border border-slate-700'
@@ -531,7 +532,7 @@ export default function CocinaPage() {
           <button
             key={st.id}
             onClick={() => setSelectedStation(selectedStation === st.id ? null : st.id)}
-            className={`px-6 py-2.5 rounded-2xl font-black text-sm uppercase tracking-wider transition-all shadow-sm whitespace-nowrap flex items-center gap-2 ${
+            className={`px-4 sm:px-6 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl font-black text-xs sm:text-sm uppercase tracking-wider transition-all shadow-sm whitespace-nowrap flex items-center gap-2 ${
                selectedStation === st.id ? 'scale-105 shadow-lg ring-2 ring-white/20' : 'hover:scale-105 opacity-80 hover:opacity-100'
             }`}
              style={{ 
@@ -549,11 +550,11 @@ export default function CocinaPage() {
       {/* ÁREA DE TICKETS */}
       {orders.filter(o => !ackedOrders.includes(o.id) && o.status !== 'SERVED' && (o.status === 'CANCELLED' || o.items.some(i => i.status === 'ACTIVE'))).length === 0 ? (
         <div className="flex flex-col items-center justify-center h-[70vh] text-slate-500 gap-4">
-          <UtensilsCrossed className="w-24 h-24 text-slate-700 opacity-50" />
-          <h2 className="text-3xl font-black text-slate-600">Cocina Despejada</h2>
+          <UtensilsCrossed className="w-20 h-20 sm:w-24 sm:h-24 text-slate-700 opacity-50" />
+          <h2 className="text-2xl sm:text-3xl font-black text-slate-600">Cocina Despejada</h2>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 xl:gap-6 gap-4 items-start">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 xl:gap-6 gap-4 items-start">
           {orders.filter(o => {
             if (ackedOrders.includes(o.id)) return false;
             if (o.status === 'SERVED') return false;
