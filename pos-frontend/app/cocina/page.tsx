@@ -485,7 +485,6 @@ export default function CocinaPage() {
   }
 
   return (
-  return (
     <div className="min-h-screen bg-slate-900 p-3 sm:p-4 md:p-6 font-sans pb-16">
       
       {/* HEADER */}
