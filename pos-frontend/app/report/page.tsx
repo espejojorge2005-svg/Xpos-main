@@ -181,11 +181,12 @@ export default function CashRegisterPage() {
 
         // Mantener sincronizado el caché local
         setScopedStorage('mock_cash_shift', {
+          isOpen: true,
           shiftId: data.shiftId,
           openingCash: localOpeningCash,
           expenses: localExpensesArray,
         });
-      } else if (parsedShiftData) {
+      } else if (parsedShiftData && parsedShiftData.isOpen === true && parsedShiftData.openingCash > 0) {
         localOpeningCash = parsedShiftData.openingCash || 0;
         localExpensesArray = parsedShiftData.expenses || [];
         isLocalShiftOpen = true;
@@ -273,7 +274,6 @@ export default function CashRegisterPage() {
       });
 
       setIsShiftOpen(isLocalShiftOpen);
-      if (!isLocalShiftOpen) { setIsEditingOpening(false); setShowOpenModal(true); }
 
     } catch (error) { toast.error('Error al cargar reporte'); } finally { 
       setLoading(false); 
@@ -345,10 +345,30 @@ export default function CashRegisterPage() {
 
     unsubShift = subscribeToCashShift(restId, (cloudShift) => {
       if (cloudShift) {
-        setIsShiftOpen(cloudShift.isOpen);
+        if (!cloudShift.isOpen) {
+          setIsShiftOpen(false);
+          removeScopedStorage('mock_cash_shift');
+          setReport(prev => ({
+            ...prev,
+            shiftId: null,
+            openingCash: 0,
+            expectedCashInDrawer: 0,
+            cash: 0,
+            card: 0,
+            yapePlin: 0,
+            totalSales: 0,
+            totalExpenses: 0,
+            totalTips: 0,
+            ticketCount: 0
+          }));
+          return;
+        }
+
+        setIsShiftOpen(true);
         const currentMock = getScopedStorage<any>('mock_cash_shift', {}) || {};
         const mergedMock = {
           ...currentMock,
+          isOpen: true,
           openingCash: cloudShift.openingAmount || currentMock.openingCash || 0,
           shiftId: cloudShift.shiftId || currentMock.shiftId,
           expenses: cloudShift.expenses || currentMock.expenses || [],
@@ -407,6 +427,7 @@ export default function CashRegisterPage() {
     const currentData = getScopedStorage<any>('mock_cash_shift', { expenses: [] }) || { expenses: [] };
     const newShiftData = {
       ...currentData,
+      isOpen: true,
       shiftId: serverShift?.id || currentData.shiftId || `shift-${Date.now()}`,
       openingCash: amount
     };
@@ -546,6 +567,10 @@ export default function CashRegisterPage() {
     if (restId) {
       syncShiftToFirebase(restId, {
         isOpen: false,
+        openingAmount: 0,
+        expenses: [],
+        payments: [],
+        shiftId: '',
         closedAt: new Date().toISOString()
       }).catch(() => {});
       syncPastClosureToFirebase(restId, newHistoryRecord).catch(() => {});
@@ -577,7 +602,7 @@ export default function CashRegisterPage() {
 
     setShowCloseConfirmModal(false);
     setIsEditingOpening(false);
-    setShowOpenModal(true);
+    setShowOpenModal(false);
   };
 
   // NUEVO: ELIMINAR CIERRE DEL HISTORIAL
@@ -1004,7 +1029,7 @@ export default function CashRegisterPage() {
               <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Fondo Inicial</p>
               {isShiftOpen && <button onClick={openEditOpeningCash} className="text-slate-400 hover:text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity"><Edit2 className="w-3.5 h-3.5" /></button>}
             </div>
-            <h3 className="text-xl sm:text-2xl font-black text-slate-800">S/ {report.openingCash.toFixed(2)}</h3>
+            <h3 className="text-xl sm:text-2xl font-black text-slate-800">S/ {isShiftOpen ? report.openingCash.toFixed(2) : '0.00'}</h3>
           </div>
           <div className="bg-amber-50 p-3 sm:p-4 rounded-2xl"><PiggyBank className="w-6 h-6 sm:w-8 sm:h-8 text-amber-500" /></div>
         </div>
@@ -1012,8 +1037,8 @@ export default function CashRegisterPage() {
         <div className="bg-white p-5 sm:p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between">
           <div>
             <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mb-1">Efectivo (+)</p>
-            <h3 className="text-xl sm:text-2xl font-black text-slate-800">S/ {report.cash.toFixed(2)}</h3>
-            {report.tipsBreakdown.CASH > 0 && (
+            <h3 className="text-xl sm:text-2xl font-black text-slate-800">S/ {isShiftOpen ? report.cash.toFixed(2) : '0.00'}</h3>
+            {isShiftOpen && report.tipsBreakdown.CASH > 0 && (
               <p className="text-[11px] font-bold text-violet-500 mt-1 flex items-center gap-1">
                 <Heart className="w-3 h-3 fill-violet-200" /> Incluye S/ {report.tipsBreakdown.CASH.toFixed(2)} propina
               </p>
@@ -1022,8 +1047,8 @@ export default function CashRegisterPage() {
           <div className="bg-blue-50 p-3 sm:p-4 rounded-2xl"><Wallet className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600" /></div>
         </div>
 
-        <div className="bg-white p-5 sm:p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between cursor-pointer hover:border-rose-200 transition-colors sm:col-span-2 md:col-span-1" onClick={() => setShowExpensesList(true)}>
-          <div><p className="text-xs text-rose-500 font-bold uppercase tracking-widest mb-1">Gastos del Día (-)</p><h3 className="text-xl sm:text-2xl font-black text-rose-600">S/ {report.totalExpenses.toFixed(2)}</h3></div>
+        <div className="bg-white p-5 sm:p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between cursor-pointer hover:border-rose-200 transition-colors sm:col-span-2 md:col-span-1" onClick={() => isShiftOpen && setShowExpensesList(true)}>
+          <div><p className="text-xs text-rose-500 font-bold uppercase tracking-widest mb-1">Gastos del Día (-)</p><h3 className="text-xl sm:text-2xl font-black text-rose-600">S/ {isShiftOpen ? report.totalExpenses.toFixed(2) : '0.00'}</h3></div>
           <div className="bg-rose-50 p-3 sm:p-4 rounded-2xl"><TrendingDown className="w-6 h-6 sm:w-8 sm:h-8 text-rose-500" /></div>
         </div>
       </div>
@@ -1099,10 +1124,33 @@ export default function CashRegisterPage() {
         </div>
       </div>
 
-      <div className="bg-emerald-900 p-10 rounded-3xl shadow-xl max-w-4xl mx-auto text-center relative overflow-hidden text-white">
-        <h2 className="text-2xl font-black mb-2 opacity-90">Efectivo Esperado en Gaveta</h2>
-        <div className="text-6xl md:text-7xl font-black mb-8 tracking-tighter text-emerald-50">S/ {report.expectedCashInDrawer.toFixed(2)}</div>
-        <button onClick={confirmCloseRegister} disabled={!isShiftOpen} className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-900 font-black text-lg py-5 px-10 rounded-2xl shadow-xl shadow-emerald-950 transition-all mx-auto flex items-center gap-3"><Calculator className="w-6 h-6" /> Efectuar Cierre Definitivo</button>
+      <div className={`p-8 sm:p-10 rounded-3xl shadow-xl max-w-4xl mx-auto text-center relative overflow-hidden text-white transition-all ${isShiftOpen ? 'bg-emerald-900' : 'bg-slate-900 border border-slate-800'}`}>
+        <div className="mb-3">
+          <span className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest ${isShiftOpen ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'}`}>
+            {isShiftOpen ? 'Turno Activo en Curso' : 'Caja Cerrada'}
+          </span>
+        </div>
+        <h2 className="text-xl sm:text-2xl font-black mb-2 opacity-90">
+          {isShiftOpen ? 'Efectivo Esperado en Gaveta' : 'Efectivo en Gaveta'}
+        </h2>
+        <div className={`text-5xl sm:text-6xl md:text-7xl font-black mb-6 sm:mb-8 tracking-tighter ${isShiftOpen ? 'text-emerald-50' : 'text-slate-300'}`}>
+          S/ {isShiftOpen ? report.expectedCashInDrawer.toFixed(2) : '0.00'}
+        </div>
+        {isShiftOpen ? (
+          <button 
+            onClick={confirmCloseRegister} 
+            className="bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-black text-base sm:text-lg py-4 sm:py-5 px-8 sm:px-10 rounded-2xl shadow-xl shadow-emerald-950 transition-all mx-auto flex items-center gap-3 cursor-pointer active:scale-95"
+          >
+            <Calculator className="w-6 h-6" /> Efectuar Cierre Definitivo
+          </button>
+        ) : (
+          <button 
+            onClick={() => { setIsEditingOpening(false); setShowOpenModal(true); }} 
+            className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-base sm:text-lg py-4 sm:py-5 px-8 sm:px-10 rounded-2xl shadow-xl shadow-slate-950 transition-all mx-auto flex items-center gap-3 cursor-pointer active:scale-95"
+          >
+            <Wallet className="w-6 h-6" /> Abrir Nuevo Turno
+          </button>
+        )}
       </div>
 
       {/* ========================================= */}
