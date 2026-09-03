@@ -424,6 +424,17 @@ export default function Home() {
 
         // Combinar con órdenes activas locales existentes
         const currentActive = getScopedStorage<Record<string, any>>('pos_active_table_orders', {}) || {};
+        
+        // Si una orden en Firebase cambió de mesa, eliminar la mesa previa del caché local
+        openOrders.forEach(o => {
+          const tId = o.tableId;
+          Object.entries(currentActive).forEach(([k, existingOrder]: [string, any]) => {
+            if (existingOrder?.orderId === o.id && k !== tId && k !== o.tableName?.toLowerCase().replace(/\s+/g, '')) {
+              delete currentActive[k];
+            }
+          });
+        });
+
         const mergedActive = { ...currentActive, ...activeMap };
         setScopedStorage('pos_active_table_orders', mergedActive);
 
@@ -437,14 +448,15 @@ export default function Home() {
                 o && (o.status === 'OCCUPIED' || o.status === 'OPEN' || o.status === 'SERVED') && isTableMatchingOrder(table, o)
               );
 
-            const hasActiveOrder = matchedOrder || (localOrder && localOrder.status === 'OCCUPIED') || (table.orders && table.orders.length > 0) || table.status === 'OCCUPIED';
+            // Una mesa SOLO está ocupada si tiene una orden abierta activa real
+            const hasActiveOrder = Boolean(matchedOrder || (localOrder && (localOrder.status === 'OCCUPIED' || localOrder.status === 'OPEN')));
 
             if (hasActiveOrder) {
-              const activeSource = matchedOrder || localOrder || (table.orders ? table.orders[0] : null);
+              const activeSource = matchedOrder || localOrder;
               return {
                 ...table,
                 status: 'OCCUPIED' as const,
-                billRequested: !!(matchedOrder?.billRequested || localOrder?.billRequested || table.billRequested),
+                billRequested: !!(matchedOrder?.billRequested || localOrder?.billRequested),
                 orders: [{
                   id: activeSource?.id || activeSource?.orderId || `ord-${table.id}`,
                   createdAt: activeSource?.createdAt || new Date().toISOString(),

@@ -106,8 +106,29 @@ export default function CashRegisterPage() {
         Object.entries(activeObj).forEach(([key, val]: [string, any]) => {
           if (!val || val.status !== 'OCCUPIED') return;
           
-          // Extraer nombre y clave canónica de la mesa (ej. "mesa1", "mesa2", "mostrador")
-          const rawName = String(val.tableName || (key.startsWith('t-') ? `Mesa ${key.replace('t-', '')}` : (key.match(/^\d+$/) ? `Mesa ${key}` : key)));
+          // Extraer nombre limpio y clave canónica de la mesa (evita UUIDs como "Mesa 60904...")
+          let rawName = val.tableName || '';
+          if (!rawName || /Mesa\s+\d{6,}/i.test(rawName) || /^\d{6,}$/.test(key)) {
+            try {
+              const registeredZones = getScopedStorage<any[]>('pos_registered_zones', []);
+              for (const z of registeredZones) {
+                const found = (z.tables || []).find((tbl: any) => tbl.id === val.tableId || tbl.id === key);
+                if (found) {
+                  rawName = found.name || (found.number ? (String(found.number).toUpperCase().startsWith('MESA') ? String(found.number) : `Mesa ${found.number}`) : '');
+                  break;
+                }
+              }
+            } catch {}
+            if (!rawName || /Mesa\s+\d{6,}/i.test(rawName)) {
+              if (key.startsWith('t-')) {
+                rawName = `Mesa ${key.replace('t-', '').toUpperCase()}`;
+              } else if (key.match(/^\d{1,3}$/)) {
+                rawName = `Mesa ${key}`;
+              } else {
+                rawName = `Mesa ${key.slice(0, 4).toUpperCase()}`;
+              }
+            }
+          }
           const tableKey = rawName.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '') || key;
           
           // Si ya existe la mesa en el mapa, fusionar inteligentemente sin duplicar
@@ -117,7 +138,7 @@ export default function CashRegisterPage() {
               ...existing,
               ...val,
               tableId: val.tableId || existing.tableId || key,
-              tableName: val.tableName || existing.tableName || rawName,
+              tableName: rawName || existing.tableName,
               orderId: (val.orderId && !val.orderId.startsWith('ord-')) ? val.orderId : existing.orderId,
               billRequested: Boolean(existing.billRequested || val.billRequested),
               total: Math.max(Number(existing.total || 0), Number(val.total || 0)),
@@ -127,7 +148,7 @@ export default function CashRegisterPage() {
             uniqueByTable.set(tableKey, {
               tableId: val.tableId || key,
               ...val,
-              tableName: val.tableName || rawName,
+              tableName: rawName,
               billRequested: Boolean(val.billRequested)
             });
           }
@@ -330,14 +351,39 @@ export default function CashRegisterPage() {
         const activeMap: Record<string, any> = {};
 
         openOrders.forEach(o => {
-          const rawName = o.tableName || (o.tableId ? (o.tableId.startsWith('t-') ? `Mesa ${o.tableId.replace('t-', '')}` : `Mesa ${o.tableId}`) : 'Mesa');
+          let resolvedTableName = o.tableName || '';
+          if (!resolvedTableName || /Mesa\s+\d{6,}/i.test(resolvedTableName)) {
+            try {
+              const registeredZones = getScopedStorage<any[]>('pos_registered_zones', []);
+              for (const z of registeredZones) {
+                const found = (z.tables || []).find((tbl: any) => tbl.id === o.tableId);
+                if (found) {
+                  resolvedTableName = found.name || (found.number ? (String(found.number).toUpperCase().startsWith('MESA') ? String(found.number) : `Mesa ${found.number}`) : '');
+                  break;
+                }
+              }
+            } catch {}
+            if (!resolvedTableName || /Mesa\s+\d{6,}/i.test(resolvedTableName)) {
+              if (o.tableId && o.tableId.startsWith('t-')) {
+                resolvedTableName = `Mesa ${o.tableId.replace('t-', '').toUpperCase()}`;
+              } else if (o.tableId && /^\d{1,3}$/.test(o.tableId)) {
+                resolvedTableName = `Mesa ${o.tableId}`;
+              } else if (o.tableId && o.tableId.length > 10) {
+                resolvedTableName = `Mesa ${o.tableId.slice(0, 4).toUpperCase()}`;
+              } else {
+                resolvedTableName = o.tableId ? `Mesa ${o.tableId}` : 'Mesa';
+              }
+            }
+          }
+
+          const rawName = resolvedTableName;
           const tableKey = rawName.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '') || (o.tableId || o.id);
           const tableId = o.tableId || (o.tableName ? (o.tableName.toLowerCase().replace(/\s+/g, '')) : o.id);
 
           const entry = {
             tableId,
             orderId: o.id,
-            tableName: o.tableName || rawName,
+            tableName: rawName,
             status: 'OCCUPIED',
             billRequested: Boolean(o.billRequested),
             total: Number(o.totalAmount || 0),

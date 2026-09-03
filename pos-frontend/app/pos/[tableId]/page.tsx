@@ -271,8 +271,11 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
             if (fbOrder && (fbOrder.status === 'OPEN' || fbOrder.status === 'SERVED')) {
               foundActiveOrder = true;
               setActiveOrderId(fbOrder.id);
-              if (fbOrder.tableName) setTableName(fbOrder.tableName);
-              else if (queryTableName) setTableName(queryTableName);
+              if (fbOrder.tableName && !/Mesa\s+\d{6,}/i.test(fbOrder.tableName)) {
+                setTableName(fbOrder.tableName);
+              } else if (queryTableName && !/Mesa\s+\d{6,}/i.test(queryTableName)) {
+                setTableName(queryTableName);
+              }
 
               if (Array.isArray(fbOrder.items) && fbOrder.items.length > 0) {
                 const mappedItems = fbOrder.items.map((it: any) => ({
@@ -353,20 +356,28 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         setSelectedCategoryId(loadedCats[0].id);
       }
 
-      if (!tableName) {
+      if (!tableName || /Mesa\s+\d{6,}/i.test(tableName)) {
         try {
           const registeredZones = getScopedStorage<any[]>('pos_registered_zones', []);
           let foundName = '';
           for (const z of registeredZones) {
-            const t = (z.tables || []).find((tbl: any) => tbl.id === tableId);
+            const t = (z.tables || []).find((tbl: any) => tbl.id === tableId || (queryTableNumber && String(tbl.number) === String(queryTableNumber)));
             if (t) {
-              foundName = t.name || (t.number ? `Mesa ${t.number}` : '');
+              foundName = t.name || (t.number ? (String(t.number).toUpperCase().startsWith('MESA') ? String(t.number) : `Mesa ${t.number}`) : '');
               break;
             }
           }
-          setTableName(foundName || `Mesa ${tableId.replace(/[^0-9]/g, '') || tableId.slice(0, 4)}`);
+          if (foundName) {
+            setTableName(foundName);
+          } else if (tableId.startsWith('t-')) {
+            setTableName(`Mesa ${tableId.replace('t-', '').toUpperCase()}`);
+          } else if (/^\d{1,3}$/.test(tableId)) {
+            setTableName(`Mesa ${tableId}`);
+          } else {
+            setTableName(`Mesa ${tableId.slice(0, 4).toUpperCase()}`);
+          }
         } catch {
-          setTableName(`Mesa ${tableId.replace(/[^0-9]/g, '') || tableId.slice(0, 4)}`);
+          setTableName(tableId.startsWith('t-') ? `Mesa ${tableId.replace('t-', '').toUpperCase()}` : `Mesa ${tableId.slice(0, 4).toUpperCase()}`);
         }
       }
 
@@ -598,7 +609,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
           table: { 
             id: tableId,
             name: effectiveTableName, 
-            number: parseInt(tableId.replace(/[^0-9]/g, '') || '1', 10) 
+            number: tableId.startsWith('t-') ? tableId.replace('t-', '') : (/^\d+$/.test(tableId) && tableId.length <= 4 ? tableId : '1') 
           },
           items: newKitchenItems
         });
@@ -1062,12 +1073,22 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
     // 1. Intento con backend remoto si está disponible
     try {
       const token = localStorage.getItem('pos_token');
+      const restId = getRestaurantId() || 'main';
       const res = await fetch(getApiUrl('/floor/zones'), {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'x-restaurant-id': restId
+        }
       });
       if (res.ok) {
         const zonesData = await res.json();
-        available = zonesData.flatMap((z: any) => z.tables).filter((t: any) => t.status === 'FREE');
+        if (Array.isArray(zonesData) && zonesData.length > 0) {
+          available = zonesData.flatMap((z: any) => (z.tables || []).map((tbl: any) => ({
+            ...tbl,
+            name: tbl.name || (tbl.number ? (String(tbl.number).toUpperCase().startsWith('MESA') ? String(tbl.number) : `Mesa ${tbl.number}`) : `Mesa ${tbl.id.slice(0, 4)}`),
+            zoneName: z.name
+          }))).filter((t: any) => t.status === 'FREE');
+        }
       }
     } catch (e) {
       console.warn('Backend offline para consultar zonas, usando almacenamiento local');
@@ -1083,17 +1104,18 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         if (Array.isArray(registeredZones) && registeredZones.length > 0) {
           allTables = registeredZones.flatMap(z => (z.tables || []).map((t: any) => ({
             ...t,
+            name: t.name || (t.number ? (String(t.number).toUpperCase().startsWith('MESA') ? String(t.number) : `Mesa ${t.number}`) : `Mesa ${t.id.slice(0, 4)}`),
             zoneName: z.name
           })));
         } else {
           // Defaults estándar de salón y terraza
           allTables = [
-            { id: 't-1', name: 'Mesa 1', number: 1, capacity: 4, zoneName: 'SALON' },
-            { id: 't-2', name: 'Mesa 2', number: 2, capacity: 2, zoneName: 'SALON' },
-            { id: 't-3', name: 'Mesa 3', number: 3, capacity: 6, zoneName: 'SALON' },
-            { id: 't-4', name: 'Mesa 4', number: 4, capacity: 4, zoneName: 'SALON' },
-            { id: 't-5', name: 'Mesa T1', number: 5, capacity: 4, zoneName: 'TERRAZA' },
-            { id: 't-6', name: 'Mesa T2', number: 6, capacity: 2, zoneName: 'TERRAZA' },
+            { id: 't-1', name: 'Mesa 1', number: 1, capacity: 4, zoneName: 'SALA PRINCIPAL' },
+            { id: 't-2', name: 'Mesa 2', number: 2, capacity: 2, zoneName: 'SALA PRINCIPAL' },
+            { id: 't-3', name: 'Mesa 3', number: 3, capacity: 6, zoneName: 'SALA PRINCIPAL' },
+            { id: 't-4', name: 'Mesa 4', number: 4, capacity: 4, zoneName: 'SALA PRINCIPAL' },
+            { id: 't-5', name: 'Mesa T1', number: 'T1', capacity: 4, zoneName: 'TERRAZA' },
+            { id: 't-6', name: 'Mesa T2', number: 'T2', capacity: 2, zoneName: 'TERRAZA' },
           ];
         }
 
@@ -1124,34 +1146,79 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
     if (!selectedNewTableId) return;
     setSubmitting(true);
 
+    const restId = getRestaurantId() || 'main';
     const targetTable = freeTables.find(t => t.id === selectedNewTableId);
-    const newTableName = targetTable?.name || (targetTable?.number ? `Mesa ${targetTable.number}` : `Mesa ${selectedNewTableId.slice(0, 4)}`);
+    const newTableName = targetTable?.name || 
+      (targetTable?.number ? (String(targetTable.number).toUpperCase().startsWith('MESA') ? String(targetTable.number) : `Mesa ${targetTable.number}`) : `Mesa ${selectedNewTableId.slice(0, 4).toUpperCase()}`);
 
-    // 1. ACTUALIZAR LOCALMENTE DE FORMA GARANTIZADA
+    // 1. ACTUALIZAR LOCALMENTE Y EN FIREBASE DE FORMA GARANTIZADA
     try {
       const activeTableOrders = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
-      const currentOrder = activeTableOrders[tableId];
-
-      if (currentOrder) {
-        activeTableOrders[selectedNewTableId] = {
-          ...currentOrder,
-          tableName: newTableName
-        };
-        delete activeTableOrders[tableId];
-        setScopedStorage('pos_active_table_orders', activeTableOrders);
+      
+      // Buscar la orden actual
+      let currentOrder = activeTableOrders[tableId];
+      if (!currentOrder) {
+        const found = Object.values(activeTableOrders).find((o: any) => 
+          o && (o.status === 'OCCUPIED' || o.status === 'OPEN') && isTableMatchingOrder({ id: tableId, name: tableName }, o)
+        );
+        if (found) currentOrder = found;
       }
+
+      // Eliminar todas las variantes de clave de la mesa anterior
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tableId);
+      const cleanNum = (!isUuid && tableId.startsWith('t-') ? tableId.replace('t-', '') : '') || 
+                       (!isUuid && !isNaN(parseInt(tableId)) ? String(parseInt(tableId)) : '');
+
+      [tableId, cleanNum ? `t-${cleanNum}` : null, cleanNum].filter(Boolean).forEach((k: any) => {
+        delete activeTableOrders[k];
+      });
+
+      if (tableName) {
+        delete activeTableOrders[tableName.toLowerCase().replace(/\s+/g, '')];
+      }
+
+      // Registrar la orden con los datos de la nueva mesa
+      const updatedOrderData = {
+        ...(currentOrder || {}),
+        orderId: activeOrderId || currentOrder?.orderId || `ord-${selectedNewTableId}`,
+        tableId: selectedNewTableId,
+        tableName: newTableName,
+        status: 'OCCUPIED'
+      };
+      activeTableOrders[selectedNewTableId] = updatedOrderData;
+      setScopedStorage('pos_active_table_orders', activeTableOrders);
+
+      // Sincronizar activeTableOrders a Firebase en tiempo real para todos los meseros
+      await syncActiveTableOrdersToFirebase(restId, activeTableOrders).catch(() => {});
+
+      // Sincronizar documento de orden en Firebase (actualizando su mesa)
+      const orderIdToSync = activeOrderId || currentOrder?.orderId;
+      if (orderIdToSync) {
+        await syncOrderToFirebase({
+          id: orderIdToSync,
+          tableId: selectedNewTableId,
+          tableName: newTableName,
+          status: 'OPEN',
+          restaurantId: restId,
+          updatedAt: new Date().toISOString()
+        }).catch(() => {});
+      }
+
+      // Actualizar explícitamente el estado de ambas mesas en Firebase
+      syncTableToFirebase(tableId, 'FREE', restId).catch(() => {});
+      syncTableToFirebase(selectedNewTableId, 'OCCUPIED', restId).catch(() => {});
 
       // Actualizar comanda de cocina local
       let localKitchen = getScopedStorage<any[]>('pos_local_kitchen_orders', []);
       localKitchen = localKitchen.map((o: any) => {
-        if (o.id === activeOrderId || (o.table && o.table.name === (tableName || `Mesa ${tableId}`))) {
+        if (o.id === activeOrderId || (o.table && (o.table.id === tableId || o.table.name === (tableName || `Mesa ${tableId}`)))) {
           return {
             ...o,
             table: {
               ...o.table,
               id: selectedNewTableId,
               name: newTableName,
-              number: parseInt(selectedNewTableId.replace(/[^0-9]/g, '') || '1', 10)
+              number: targetTable?.number || (selectedNewTableId.startsWith('t-') ? selectedNewTableId.replace('t-', '') : '1')
             }
           };
         }
@@ -1169,7 +1236,11 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         const token = localStorage.getItem('pos_token');
         await fetch(getApiUrl(`/orders/${activeOrderId}/table`), {
           method: 'PATCH',
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          headers: { 
+            'Authorization': `Bearer ${token}`, 
+            'Content-Type': 'application/json',
+            'x-restaurant-id': restId
+          },
           body: JSON.stringify({ newTableId: selectedNewTableId })
         }).catch(() => null);
       } catch {}
@@ -1289,7 +1360,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
       const newPaymentRecord = {
         id: `pay-${Date.now()}`,
         orderId: activeOrderId || `ord-${tableId}`,
-        table: tableName || `Mesa ${tableId.replace(/[^0-9]/g, '') || tableId.slice(0, 4)}`,
+        table: tableName || (tableId.startsWith('t-') ? `Mesa ${tableId.replace('t-', '').toUpperCase()}` : `Mesa ${tableId.slice(0, 4).toUpperCase()}`),
         amount: paymentAmount,
         method: paymentMethod,
         tipAmount: tipAmount || 0,
@@ -1921,7 +1992,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                         syncOrderToFirebase({
                           id: activeOrderId,
                           tableId: tableId === 'takeout' ? undefined : tableId,
-                          tableName: tableName || `Mesa ${cleanNum || tableId}`,
+                          tableName: tableName || (tableId.startsWith('t-') ? `Mesa ${tableId.replace('t-', '').toUpperCase()}` : `Mesa ${tableId.slice(0, 4).toUpperCase()}`),
                           status: 'OPEN',
                           totalAmount: existingSubtotal,
                           items: existingItems as any,
