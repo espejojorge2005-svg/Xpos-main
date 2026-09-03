@@ -802,3 +802,49 @@ export const subscribeToPastOpenings = (restaurantId: string, onUpdate: (opening
     return () => {};
   }
 };
+
+/**
+ * PERSONAL / USUARIOS en Firebase Firestore (Multi-inquilino)
+ */
+export const syncStaffMemberToFirebase = async (restaurantId: string, member: any) => {
+  try {
+    if (!restaurantId || !member?.id) return;
+    const ref = doc(db, 'staff_members', String(member.id));
+    await setDoc(ref, {
+      ...member,
+      restaurantId,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (err) {
+    console.warn("Error syncing staff member to Firebase:", err);
+  }
+};
+
+export const deleteStaffMemberFromFirebase = async (memberId: string) => {
+  try {
+    if (!memberId) return;
+    const ref = doc(db, 'staff_members', String(memberId));
+    await deleteDoc(ref);
+  } catch (err) {
+    console.warn("Error deleting staff member from Firebase:", err);
+  }
+};
+
+export const subscribeToStaff = (restaurantId: string, onUpdate: (staff: any[]) => void) => {
+  try {
+    if (!restaurantId) return () => {};
+    const ref = collection(db, 'staff_members');
+    return onSnapshot(ref, (snapshot) => {
+      const staffList = snapshot.docs
+        .map(d => ({ id: d.id, ...(d.data() as any) }))
+        .filter((s: any) => s.restaurantId === restaurantId);
+      onUpdate(staffList);
+    }, (error) => {
+      console.warn("Firestore real-time subscription (staff_members) info:", error.message);
+    });
+  } catch (err) {
+    console.warn("Firebase staff members listener initialization:", err);
+    return () => {};
+  }
+};
+

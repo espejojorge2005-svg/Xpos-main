@@ -1,6 +1,7 @@
 'use client';
 import { getApiUrl, apiFetch } from '@/utils/api';
 import { getRestaurantId } from '@/utils/storage';
+import { syncStaffMemberToFirebase, deleteStaffMemberFromFirebase, subscribeToStaff } from '@/utils/firebaseSync';
 
 
 import { useState, useEffect } from 'react';
@@ -293,7 +294,37 @@ export default function UsersPage() {
       setSubInfo(getSubscriptionInfo());
     };
     window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+
+    // Sincronización en tiempo real con Firebase Firestore
+    const currentRestId = getRestaurantId();
+    let unsubStaff: (() => void) | undefined;
+    if (currentRestId) {
+      unsubStaff = subscribeToStaff(currentRestId, (cloudStaff) => {
+        if (Array.isArray(cloudStaff) && cloudStaff.length > 0) {
+          setUsers(prev => {
+            const map = new Map<string, User>();
+            prev.forEach(u => map.set(u.email.toLowerCase(), u));
+            cloudStaff.forEach((s: any) => {
+              map.set(s.email.toLowerCase(), {
+                id: s.id,
+                name: s.name,
+                email: s.email,
+                role: s.role,
+                pin: s.pin,
+                isActive: s.isActive ?? true,
+                allowedViews: s.allowedViews || ['cocina'],
+              });
+            });
+            return Array.from(map.values());
+          });
+        }
+      });
+    }
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      if (typeof unsubStaff === 'function') unsubStaff();
+    };
   }, []);
 
   const activeUsersCount = users.filter(u => u.isActive !== false).length;
@@ -375,67 +406,40 @@ export default function UsersPage() {
       body.pin = form.pin.trim().replace(/\D/g, '');
     }
 
-    let serverUser: any = null;
-    try {
-      const res = await apiFetch(endpoint, {
-        method,
-        body: JSON.stringify(body),
-      });
+    const tempId = form.id || `staff-${Date.now()}`;
+    const userRestaurantId = getRestaurantId() || (typeof window !== 'undefined' && localStorage.getItem('pos_user') ? JSON.parse(localStorage.getItem('pos_user') || '{}').restaurantId : null);
 
-      if (!res.ok) {
-        if (res.status === 401) {
-          console.warn('Backend API returned 401 Unauthorized. Falling back to local staff persistence.');
-        } else {
-          let errMsg = 'Error al guardar el usuario en el servidor';
-          try {
-            const errData = await res.json();
-            errMsg = Array.isArray(errData.message) ? errData.message.join(', ') : errData.message || errMsg;
-          } catch {}
-          toast.error(errMsg);
-          setIsSaving(false);
-          return;
-        }
-      } else {
-        try {
-          serverUser = await res.json();
-        } catch {}
+    const staffMember: User = {
+      id: tempId,
+      name: form.name.trim(),
+      email: cleanEmail,
+      role: form.role,
+      pin: body.pin || '1234',
+      allowedViews: form.allowedViews,
+      isActive: true,
+      createdAt: new Date().toISOString()
+    };
+
+    // 1. ACTUALIZACIÓN INSTANTÁNEA EN PANTALLA (0.05 segundos - Cero demora)
+    setUsers(prev => {
+      const idx = prev.findIndex(u => (form.id && u.id === form.id) || u.email.toLowerCase() === cleanEmail);
+      if (idx !== -1) {
+        const copy = [...prev];
+        copy[idx] = { ...copy[idx], ...staffMember };
+        return copy;
       }
-    } catch (err: any) {
-      console.warn('Network error saving user:', err);
-    }
+      return [...prev, staffMember];
+    });
 
-    // Save to local staff cache with restaurantId for permanent persistence
+    // 2. Persistencia local inmediata para login con PIN y funcionamiento offline
     try {
-      const userRestaurantId = serverUser?.restaurantId || getRestaurantId() || (typeof window !== 'undefined' && localStorage.getItem('pos_user') ? JSON.parse(localStorage.getItem('pos_user') || '{}').restaurantId : null);
       const existingStaffStr = localStorage.getItem('pos_registered_staff');
       const existingStaff: any[] = existingStaffStr ? JSON.parse(existingStaffStr) : [];
-      
-      const staffMember = {
-        id: serverUser?.id || form.id || `staff-${Date.now()}`,
-        name: form.name.trim(),
-        email: cleanEmail,
-        password: body.password || '123456',
-        role: form.role,
-        pin: body.pin || serverUser?.pin || '1234',
-        allowedViews: form.allowedViews,
-        restaurantId: userRestaurantId,
-        isActive: true,
-      };
-
-      if (isEditing) {
-        const idx = existingStaff.findIndex(s => s.id === form.id || s.email === cleanEmail);
-        if (idx !== -1) {
-          existingStaff[idx] = { ...existingStaff[idx], ...staffMember };
-        } else {
-          existingStaff.push(staffMember);
-        }
+      const idx = existingStaff.findIndex(s => (form.id && s.id === form.id) || s.email === cleanEmail);
+      if (idx !== -1) {
+        existingStaff[idx] = { ...existingStaff[idx], ...staffMember, password: body.password || '123456' };
       } else {
-        const idx = existingStaff.findIndex(s => s.id === staffMember.id || s.email === cleanEmail);
-        if (idx !== -1) {
-          existingStaff[idx] = staffMember;
-        } else {
-          existingStaff.push(staffMember);
-        }
+        existingStaff.push({ ...staffMember, password: body.password || '123456', restaurantId: userRestaurantId });
       }
       localStorage.setItem('pos_registered_staff', JSON.stringify(existingStaff));
 
@@ -443,22 +447,61 @@ export default function UsersPage() {
         const scopedKey = `pos_registered_staff_${userRestaurantId}`;
         const scopedStr = localStorage.getItem(scopedKey);
         const scopedList: any[] = scopedStr ? JSON.parse(scopedStr) : [];
-        const sIdx = scopedList.findIndex(s => s.id === staffMember.id || s.email === cleanEmail);
+        const sIdx = scopedList.findIndex(s => (form.id && s.id === form.id) || s.email === cleanEmail);
         if (sIdx !== -1) {
-          scopedList[sIdx] = staffMember;
+          scopedList[sIdx] = { ...scopedList[sIdx], ...staffMember, password: body.password || '123456' };
         } else {
-          scopedList.push(staffMember);
+          scopedList.push({ ...staffMember, password: body.password || '123456', restaurantId: userRestaurantId });
         }
         localStorage.setItem(scopedKey, JSON.stringify(scopedList));
       }
       window.dispatchEvent(new Event('storage'));
     } catch {}
 
+    // 3. Sincronización instantánea a Firebase Firestore para multidispositivo
+    if (userRestaurantId) {
+      syncStaffMemberToFirebase(userRestaurantId, {
+        ...staffMember,
+        restaurantId: userRestaurantId
+      }).catch(() => {});
+    }
 
+    // 4. Cerrar modal y notificar al usuario INMEDIATAMENTE
     toast.success(isEditing ? 'Usuario actualizado exitosamente' : '¡Usuario creado exitosamente!');
     setShowModal(false);
     setIsSaving(false);
-    fetchUsers();
+
+    // 5. Enviar en segundo plano al servidor PostgreSQL sin bloquear la pantalla
+    apiFetch(endpoint, {
+      method,
+      body: JSON.stringify(body),
+    }).then(async (res) => {
+      if (res.ok) {
+        const serverUser = await res.json().catch(() => null);
+        if (serverUser && serverUser.id && serverUser.id !== tempId) {
+          // Reemplazar ID temporal con ID definitivo de PostgreSQL
+          setUsers(prev => prev.map(u => u.id === tempId ? { ...u, id: serverUser.id } : u));
+          try {
+            const existingStaffStr = localStorage.getItem('pos_registered_staff');
+            if (existingStaffStr) {
+              const existingStaff = JSON.parse(existingStaffStr);
+              const updated = existingStaff.map((s: any) => s.id === tempId ? { ...s, id: serverUser.id } : s);
+              localStorage.setItem('pos_registered_staff', JSON.stringify(updated));
+            }
+          } catch {}
+        }
+      } else if (res.status !== 401) {
+        const errData = await res.json().catch(() => ({}));
+        const errMsg = Array.isArray(errData.message) ? errData.message.join(', ') : errData.message || 'Error en servidor';
+        if (errMsg.includes('correo') || errMsg.includes('email') || res.status === 409) {
+          toast.error(`Aviso: ${errMsg}`);
+          // Revertir optimistic si el correo ya estaba duplicado en la base de datos
+          setUsers(prev => prev.filter(u => u.id !== tempId));
+        }
+      }
+    }).catch((err) => {
+      console.warn('Backend remoto demoró en responder, usuario activo localmente y en Firebase:', err);
+    });
   };
 
   const handleToggleActive = async (u: User) => {
@@ -509,6 +552,7 @@ export default function UsersPage() {
         }
         const currentRestId = getRestaurantId();
         if (currentRestId) {
+          deleteStaffMemberFromFirebase(u.id).catch(() => {});
           const scopedKey = `pos_registered_staff_${currentRestId}`;
           const scopedStr = localStorage.getItem(scopedKey);
           if (scopedStr) {
@@ -521,7 +565,7 @@ export default function UsersPage() {
       } catch {}
 
       toast.success(`Usuario ${u.name} eliminado exitosamente ✅`);
-      fetchUsers();
+      setUsers(prev => prev.filter(x => x.id !== u.id));
     } catch {
       toast.error('Error al eliminar usuario');
     }
