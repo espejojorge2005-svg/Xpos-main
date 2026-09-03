@@ -6,7 +6,7 @@ import { getApiUrl } from '@/utils/api';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Calculator, Package, Settings, UtensilsCrossed, LogOut, ChefHat, Users, Table2, BarChart3, Shield, Flame, ClipboardList, Menu, X, Layers, History, Sparkles } from 'lucide-react';
+import { LayoutDashboard, Calculator, Package, Settings, UtensilsCrossed, LogOut, ChefHat, Users, Table2, BarChart3, Shield, Flame, ClipboardList, Menu, X, Layers, History, Sparkles, Headphones } from 'lucide-react';
 
 interface RestaurantConfig {
   name: string;
@@ -244,20 +244,32 @@ export default function Sidebar() {
       {/* User / Role badge */}
       {isMounted && role && ROLE_UI[role] && (
         <div className="px-4 pb-2">
-          <div className={`flex items-center gap-3 px-3 py-2 rounded-xl border ${ROLE_UI[role].bg}`}>
-            <div className={`p-1.5 bg-white rounded-lg shadow-sm ${ROLE_UI[role].text}`}>
+          <div className={`flex items-start gap-3 px-3 py-2.5 rounded-xl border ${ROLE_UI[role].bg}`}>
+            <div className={`p-1.5 bg-white rounded-lg shadow-sm ${ROLE_UI[role].text} mt-0.5 shrink-0`}>
               {(() => {
                 const RoleIcon = ROLE_UI[role].icon;
                 return <RoleIcon className="w-4 h-4" />;
               })()}
             </div>
-            <div className="flex flex-col min-w-0">
+            <div className="flex flex-col min-w-0 flex-1">
               <span className={`text-[10px] font-black uppercase tracking-widest ${ROLE_UI[role].text} truncate leading-tight`}>
                 {ROLE_UI[role].label}
               </span>
               <span className="text-[11px] font-bold text-slate-700 truncate leading-tight mt-0.5">
                 {userName}
               </span>
+              {(role === 'ADMIN' || role === 'SUPER_ADMIN') && (
+                <a
+                  href="https://wa.me/51982383176?text=Hola,%20soy%20administrador%20en%20Xpos%20y%20necesito%20soporte"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 mt-1.5 py-0.5 px-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 rounded-md transition-all group w-fit cursor-pointer active:scale-95"
+                  title="Contactar soporte por WhatsApp"
+                >
+                  <Headphones className="w-3 h-3 text-emerald-600 group-hover:rotate-12 transition-transform shrink-0" />
+                  <span className="text-[10px] font-bold leading-none">Ayuda Soporte</span>
+                </a>
+              )}
             </div>
           </div>
         </div>
