@@ -244,39 +244,45 @@ export default function Sidebar() {
       {/* User / Role badge */}
       {isMounted && role && ROLE_UI[role] && (
         <div className="px-4 pb-2">
-          <div className={`flex items-start gap-3 px-3 py-2.5 rounded-xl border ${ROLE_UI[role].bg}`}>
-            <div className={`p-1.5 bg-white rounded-lg shadow-sm ${ROLE_UI[role].text} mt-0.5 shrink-0`}>
+          <div className={`flex items-center gap-3 px-3 py-2 rounded-xl border ${ROLE_UI[role].bg}`}>
+            <div className={`p-1.5 bg-white rounded-lg shadow-sm ${ROLE_UI[role].text}`}>
               {(() => {
                 const RoleIcon = ROLE_UI[role].icon;
                 return <RoleIcon className="w-4 h-4" />;
               })()}
             </div>
-            <div className="flex flex-col min-w-0 flex-1">
+            <div className="flex flex-col min-w-0">
               <span className={`text-[10px] font-black uppercase tracking-widest ${ROLE_UI[role].text} truncate leading-tight`}>
                 {ROLE_UI[role].label}
               </span>
               <span className="text-[11px] font-bold text-slate-700 truncate leading-tight mt-0.5">
                 {userName}
               </span>
-              {(role === 'ADMIN' || role === 'SUPER_ADMIN') && (
-                <a
-                  href="https://wa.me/51982383176?text=Hola,%20soy%20administrador%20en%20Xpos%20y%20necesito%20soporte"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 mt-1.5 py-0.5 px-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 rounded-md transition-all group w-fit cursor-pointer active:scale-95"
-                  title="Contactar soporte por WhatsApp"
-                >
-                  <Headphones className="w-3 h-3 text-emerald-600 group-hover:rotate-12 transition-transform shrink-0" />
-                  <span className="text-[10px] font-bold leading-none">Ayuda Soporte</span>
-                </a>
-              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Logout */}
-      <div className="p-4 border-t border-slate-100">
+      {/* Soporte WhatsApp (Exclusivo Administradores) & Logout */}
+      <div className="p-4 border-t border-slate-100 space-y-2">
+        {isMounted && (role === 'ADMIN' || role === 'SUPER_ADMIN') && (
+          <a
+            href="https://wa.me/51982383176?text=Hola,%20soy%20administrador%20en%20Xpos%20y%20necesito%20soporte"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex w-full items-center gap-3 px-4 py-3 rounded-2xl font-bold text-emerald-700 bg-emerald-50/80 hover:bg-emerald-100/80 border border-emerald-200/60 transition-all active:scale-95 text-xs group shadow-xs cursor-pointer"
+            title="Contactar soporte por WhatsApp"
+          >
+            <div className="w-6 h-6 rounded-lg bg-emerald-500/20 group-hover:bg-emerald-500/30 flex items-center justify-center text-emerald-600 transition-colors shrink-0">
+              <Headphones className="w-3.5 h-3.5 group-hover:rotate-12 transition-transform" />
+            </div>
+            <div className="flex flex-col text-left">
+              <span className="text-[9px] uppercase font-black tracking-widest text-emerald-600 leading-none">¿Ayuda técnica?</span>
+              <span className="text-xs font-black tracking-wide leading-tight mt-0.5">Ayuda Soporte</span>
+            </div>
+          </a>
+        )}
+
         <button
           onClick={handleLogout}
           className="flex w-full items-center gap-3 px-4 py-3.5 rounded-2xl font-bold text-slate-500 hover:bg-rose-50 hover:text-rose-600 border border-transparent transition-all active:scale-95"
