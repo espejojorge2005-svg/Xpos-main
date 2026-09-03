@@ -286,6 +286,15 @@ export default function CocinaPage() {
       itemIds.forEach(id => servedItemIdsRef.current.add(id));
     }
 
+    // Extraer datos de la comanda antes de removerla de la pantalla
+    const targetOrder = orders.find(o => o.id === orderId);
+    const orderTableName = targetOrder?.table?.name || 
+      (targetOrder?.table?.number ? `Mesa ${targetOrder.table.number}` : null) || 
+      (targetOrder as any)?.tableName || 
+      (targetOrder as any)?.customerName || 
+      'Mesa';
+    const orderTableId = (targetOrder?.table as any)?.id || (targetOrder as any)?.tableId;
+
     // Update local kitchen cache - completely remove the finished order
     try {
       let localOrders = getScopedStorage<KitchenOrder[]>('pos_local_kitchen_orders', []);
@@ -298,10 +307,27 @@ export default function CocinaPage() {
     // Optimistic Update: remove order from view
     setOrders(current => current.filter(o => o.id !== orderId));
     setFinishedCount(prev => prev + (itemIds.length || 1));
-    toast.success('Comanda despachada por completo ✅');
+    toast.success(`Comanda de ${orderTableName} despachada por completo ✅`);
 
-    // Sincronizar con Firebase en Tiempo Real
-    updateKitchenOrderStatusInFirebase(orderId, 'SERVED').catch(() => {});
+    // Sincronizar con Firebase en Tiempo Real con nombre de mesa para notificar al mozo
+    updateKitchenOrderStatusInFirebase(orderId, 'SERVED', {
+      tableName: orderTableName,
+      tableId: orderTableId
+    }).catch(() => {});
+
+    // Notificación y sincronización en tiempo real local
+    try {
+      const activeOrders = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
+      if (orderTableId && activeOrders[orderTableId]) {
+        activeOrders[orderTableId].isFoodServed = true;
+        activeOrders[orderTableId].dispatchedAt = new Date().toISOString();
+        setScopedStorage('pos_active_table_orders', activeOrders);
+      }
+      window.dispatchEvent(new CustomEvent('pos:order_served', {
+        detail: { id: orderId, tableName: orderTableName, tableId: orderTableId }
+      }));
+      window.dispatchEvent(new Event('storage'));
+    } catch {}
 
     try {
       const token = localStorage.getItem('pos_token');

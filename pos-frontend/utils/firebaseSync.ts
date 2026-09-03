@@ -610,7 +610,11 @@ export const closeTableOrdersInFirebase = async (
  * IMPORTANTE: Despachar comida marca los platos como SERVIDOS, pero NO cierra la comanda
  * ni libera la mesa en el salón (la mesa sigue ocupada hasta cobrar en caja).
  */
-export const updateKitchenOrderStatusInFirebase = async (orderId: string, status: 'OPEN' | 'SERVED' | 'CANCELLED') => {
+export const updateKitchenOrderStatusInFirebase = async (
+  orderId: string, 
+  status: 'OPEN' | 'SERVED' | 'CANCELLED',
+  extraData?: { tableName?: string; tableId?: string }
+) => {
   try {
     const realOrderId = (orderId || '').split('-adic-')[0];
     const orderDocRef = doc(db, 'orders', realOrderId);
@@ -624,10 +628,24 @@ export const updateKitchenOrderStatusInFirebase = async (orderId: string, status
       );
       await updateDoc(orderDocRef, {
         items: updatedItems,
-        kitchenStatus: status === 'SERVED' ? 'SERVED' : (status === 'CANCELLED' ? 'CANCELLED' : (order as any).kitchenStatus || 'OPEN'),
+        kitchenStatus: status,
+        isServed: status === 'SERVED',
         ...(status === 'SERVED' ? { dispatchedAt: nowIso } : {}),
+        ...(extraData?.tableName ? { tableName: extraData.tableName } : {}),
+        ...(extraData?.tableId ? { tableId: extraData.tableId } : {}),
         updatedAt: nowIso
       });
+    } else {
+      await setDoc(orderDocRef, {
+        id: realOrderId,
+        status: 'OPEN',
+        kitchenStatus: status,
+        isServed: status === 'SERVED',
+        dispatchedAt: nowIso,
+        tableName: extraData?.tableName || 'Mesa',
+        tableId: extraData?.tableId,
+        updatedAt: nowIso
+      }, { merge: true });
     }
   } catch (err) {
     console.warn("Error updating order status in Firebase:", err);

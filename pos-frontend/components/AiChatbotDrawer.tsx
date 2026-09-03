@@ -1,9 +1,9 @@
 'use client';
 
-import React from 'react';
-import { usePathname } from 'next/navigation';
-import { Sparkles, X, Send, Bot, User } from 'lucide-react';
-import { useAiChat, ChatMessage } from '@/hooks/useAiChat';
+import React, { useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { Sparkles, X, Send, Bot, User, BellRing, AlertTriangle, ArrowRight, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react';
+import { useAiChat, ChatMessage, AiAlert } from '@/hooks/useAiChat';
 
 const QUICK_ACTIONS = [
   { label: '📊 Ventas de hoy', query: '¿Cuánto hemos vendido hoy y cuál es el resumen de caja?' },
@@ -25,14 +25,20 @@ export default function AiChatbotDrawer() {
     isLoading,
     messagesEndRef,
     sendMessage,
+    proactiveAlerts,
   } = useAiChat();
 
   if (!canAccess) return null;
 
   return (
     <>
-      {/* Botón Flotante (FAB) */}
-      <FloatingTriggerButton isOpen={isOpen} onOpen={() => setIsOpen(true)} isPosPage={pathname?.startsWith('/pos/') ?? false} />
+      {/* Botón Flotante (FAB) con badge de alertas proactivas */}
+      <FloatingTriggerButton 
+        isOpen={isOpen} 
+        onOpen={() => setIsOpen(true)} 
+        isPosPage={pathname?.startsWith('/pos/') ?? false} 
+        alertsCount={proactiveAlerts.length}
+      />
 
       {/* Backdrop */}
       {isOpen && (
@@ -48,7 +54,12 @@ export default function AiChatbotDrawer() {
           isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
-        <ChatHeader onClose={() => setIsOpen(false)} />
+        <ChatHeader onClose={() => setIsOpen(false)} alertsCount={proactiveAlerts.length} />
+
+        {/* Banner de Alertas Proactivas Inteligentes (Opción 7) */}
+        {proactiveAlerts.length > 0 && (
+          <ProactiveAlertsBanner alerts={proactiveAlerts} onAskAi={sendMessage} />
+        )}
 
         <QuickActionChips onSelectAction={sendMessage} disabled={isLoading} />
 
@@ -65,7 +76,17 @@ export default function AiChatbotDrawer() {
   );
 }
 
-function FloatingTriggerButton({ isOpen, onOpen, isPosPage }: { isOpen: boolean; onOpen: () => void; isPosPage: boolean }) {
+function FloatingTriggerButton({ 
+  isOpen, 
+  onOpen, 
+  isPosPage, 
+  alertsCount 
+}: { 
+  isOpen: boolean; 
+  onOpen: () => void; 
+  isPosPage: boolean; 
+  alertsCount: number;
+}) {
   return (
     <button
       onClick={onOpen}
@@ -76,14 +97,20 @@ function FloatingTriggerButton({ isOpen, onOpen, isPosPage }: { isOpen: boolean;
     >
       <div className="relative">
         <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300 animate-pulse" />
-        <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-400 rounded-full border-2 border-white animate-ping" />
+        {alertsCount > 0 ? (
+          <span className="absolute -top-2.5 -right-2.5 bg-rose-500 text-white font-black text-[10px] px-1.5 py-0.2 rounded-full border-2 border-slate-900 animate-bounce flex items-center gap-0.5 shadow-md">
+            {alertsCount}
+          </span>
+        ) : (
+          <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-400 rounded-full border-2 border-white animate-ping" />
+        )}
       </div>
       <span className="font-black text-xs sm:text-sm tracking-wide">ChefAI</span>
     </button>
   );
 }
 
-function ChatHeader({ onClose }: { onClose: () => void }) {
+function ChatHeader({ onClose, alertsCount }: { onClose: () => void; alertsCount: number }) {
   return (
     <header className="p-4 bg-slate-800/80 border-b border-slate-700/80 flex items-center justify-between backdrop-blur-md">
       <div className="flex items-center gap-3">
@@ -97,6 +124,12 @@ function ChatHeader({ onClose }: { onClose: () => void }) {
               <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
               Activo
             </span>
+            {alertsCount > 0 && (
+              <span className="text-[10px] bg-rose-500/20 text-rose-300 font-bold px-2 py-0.5 rounded-full border border-rose-500/30 flex items-center gap-1">
+                <BellRing className="w-2.5 h-2.5" />
+                {alertsCount} {alertsCount === 1 ? 'alerta' : 'alertas'}
+              </span>
+            )}
           </div>
           <p className="text-xs text-slate-400 font-medium">Asistente y Analítica Predictiva</p>
         </div>
@@ -108,6 +141,84 @@ function ChatHeader({ onClose }: { onClose: () => void }) {
         <X className="w-5 h-5" />
       </button>
     </header>
+  );
+}
+
+function ProactiveAlertsBanner({ 
+  alerts, 
+  onAskAi 
+}: { 
+  alerts: AiAlert[]; 
+  onAskAi: (query: string) => void;
+}) {
+  const [isExpanded, setIsExpanded] = useState(true);
+  const router = useRouter();
+
+  return (
+    <div className="border-b border-slate-800 bg-slate-950/60 p-3 animate-in fade-in duration-200">
+      <div 
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex items-center justify-between cursor-pointer select-none mb-1.5"
+      >
+        <div className="flex items-center gap-2">
+          <div className="w-5 h-5 rounded-md bg-amber-500/20 text-amber-400 flex items-center justify-center">
+            <BellRing className="w-3.5 h-3.5 animate-pulse" />
+          </div>
+          <span className="text-xs font-black uppercase tracking-wider text-amber-300">
+            Alertas Proactivas Inteligentes ({alerts.length})
+          </span>
+        </div>
+        <button className="text-slate-400 hover:text-white p-1">
+          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        </button>
+      </div>
+
+      {isExpanded && (
+        <div className="space-y-2 mt-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+          {alerts.map((alert) => {
+            const isCritical = alert.severity === 'critical';
+            const isWarning = alert.severity === 'warning';
+            const bgBorder = isCritical
+              ? 'bg-rose-950/30 border-rose-500/30 text-rose-200'
+              : isWarning
+              ? 'bg-amber-950/30 border-amber-500/30 text-amber-200'
+              : 'bg-indigo-950/30 border-indigo-500/30 text-indigo-200';
+
+            return (
+              <div 
+                key={alert.id}
+                className={`p-2.5 rounded-xl border text-xs flex flex-col gap-1.5 transition-all ${bgBorder}`}
+              >
+                <div className="font-bold flex items-center justify-between">
+                  <span className="font-black text-[11px]">{alert.title}</span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-snug">
+                  {alert.description}
+                </p>
+                <div className="flex items-center gap-2 mt-1">
+                  <button
+                    onClick={() => onAskAi(alert.actionQuery)}
+                    className="flex-1 py-1 px-2 rounded-lg bg-violet-600/40 hover:bg-violet-600 border border-violet-500/50 text-white font-bold text-[10px] flex items-center justify-center gap-1 transition-all active:scale-95"
+                  >
+                    <Sparkles className="w-3 h-3 text-amber-300" />
+                    Resolver con ChefAI
+                  </button>
+                  {alert.actionRoute && (
+                    <button
+                      onClick={() => router.push(alert.actionRoute)}
+                      className="py-1 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold text-[10px] flex items-center gap-1 transition-all shrink-0"
+                    >
+                      Ver
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
