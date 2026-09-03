@@ -1,14 +1,14 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
 import { getScopedStorage, setScopedStorage, removeScopedStorage, getRestaurantId } from '@/utils/storage';
-import { syncShiftToFirebase, syncShiftExpenseToFirebase, syncPastClosureToFirebase, subscribeToPastClosures, subscribeToCashShift, subscribeToActiveTableOrders, subscribeToOrders } from '@/utils/firebaseSync';
+import { syncShiftToFirebase, syncShiftExpenseToFirebase, syncPastClosureToFirebase, subscribeToPastClosures, subscribeToCashShift, subscribeToActiveTableOrders, subscribeToOrders, syncPastOpeningToFirebase, deletePastOpeningFromFirebase, subscribeToPastOpenings } from '@/utils/firebaseSync';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Calculator, DollarSign, CreditCard, Printer, Wallet,
   ArrowDownToLine, ReceiptText, Smartphone, TrendingDown,
-  PiggyBank, Plus, X, Edit2, Trash2, List, Heart, CheckCircle2, RefreshCw, History, Utensils, Calendar
+  PiggyBank, Plus, X, Edit2, Trash2, List, Heart, CheckCircle2, RefreshCw, History, Utensils, Calendar, User as UserIcon
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useGuardedRoute } from '@/hooks/useGuardedRoute';
@@ -32,6 +32,15 @@ interface PastClosure {
   report: any;
   expenses: Expense[];
   closureNote?: string;
+}
+interface PastOpening {
+  id: string;
+  shiftId: string;
+  date: string;
+  timestamp: string;
+  openingCash: number;
+  userName?: string;
+  note?: string;
 }
 
 export default function CashRegisterPage() {
@@ -59,6 +68,8 @@ export default function CashRegisterPage() {
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [pastClosures, setPastClosures] = useState<PastClosure[]>([]);
+  const [pastOpenings, setPastOpenings] = useState<PastOpening[]>([]);
+  const [historyTab, setHistoryTab] = useState<'closures' | 'openings'>('closures');
 
   // Modales
   const [showOpenModal, setShowOpenModal] = useState(false);
@@ -161,6 +172,23 @@ export default function CashRegisterPage() {
 
       const historyData = getScopedStorage<PastClosure[]>('pos_shift_history', []);
       setPastClosures(historyData);
+
+      let openingsData = getScopedStorage<PastOpening[]>('pos_opening_history', []);
+      if (openingsData.length === 0 && historyData.length > 0) {
+        openingsData = historyData
+          .filter(c => c.report && Number(c.report.openingCash) > 0)
+          .map((c, idx) => ({
+            id: `op-hist-${c.id || idx}`,
+            shiftId: c.report.shiftId || `shift-${c.id || idx}`,
+            date: c.date,
+            timestamp: new Date().toISOString(),
+            openingCash: Number(c.report.openingCash),
+            userName: 'Administrador'
+          }));
+        setScopedStorage('pos_opening_history', openingsData);
+      }
+      setPastOpenings(openingsData);
+
       const closedItemsIds = getScopedStorage<string[]>('pos_closed_items', []);
 
       let ordersToUse: OrderDetail[] = Array.isArray(data.ordersDetail) ? [...data.ordersDetail] : [];
@@ -288,6 +316,7 @@ export default function CashRegisterPage() {
     const restId = getRestaurantId() || 'main';
     let unsubShift: (() => void) | undefined;
     let unsubClosures: (() => void) | undefined;
+    let unsubOpenings: (() => void) | undefined;
     let unsubActiveOrders: (() => void) | undefined;
 
     const handleStorageEvent = () => {
@@ -386,11 +415,19 @@ export default function CashRegisterPage() {
       }
     });
 
+    unsubOpenings = subscribeToPastOpenings(restId, (cloudOpenings) => {
+      if (Array.isArray(cloudOpenings) && cloudOpenings.length > 0) {
+        setPastOpenings(cloudOpenings);
+        setScopedStorage('pos_opening_history', cloudOpenings);
+      }
+    });
+
     return () => {
       window.removeEventListener('storage', handleStorageEvent);
       if (typeof unsubActiveOrders === 'function') unsubActiveOrders();
       if (typeof unsubShift === 'function') unsubShift();
       if (typeof unsubClosures === 'function') unsubClosures();
+      if (typeof unsubOpenings === 'function') unsubOpenings();
     };
   }, [router]);
 
@@ -432,6 +469,33 @@ export default function CashRegisterPage() {
       openingCash: amount
     };
     setScopedStorage('mock_cash_shift', newShiftData);
+
+    const userStr = localStorage.getItem('pos_user');
+    let currentUserName = 'Administrador';
+    if (userStr) {
+      try {
+        const u = JSON.parse(userStr);
+        if (u.name) currentUserName = u.name;
+      } catch {}
+    }
+
+    if (!isEditingOpening) {
+      const newOpeningRecord: PastOpening = {
+        id: Date.now().toString(),
+        shiftId: newShiftData.shiftId,
+        date: new Date().toLocaleString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        timestamp: new Date().toISOString(),
+        openingCash: amount,
+        userName: currentUserName
+      };
+      const currentOpenings = getScopedStorage<PastOpening[]>('pos_opening_history', []);
+      const updatedOpenings = [newOpeningRecord, ...currentOpenings];
+      setScopedStorage('pos_opening_history', updatedOpenings);
+      setPastOpenings(updatedOpenings);
+      if (restId) {
+        syncPastOpeningToFirebase(restId, newOpeningRecord).catch(() => {});
+      }
+    }
     setReport(prev => ({
       ...prev,
       shiftId: newShiftData.shiftId,
@@ -613,6 +677,89 @@ export default function CashRegisterPage() {
     setPastClosures(updatedHistory);
     setScopedStorage('pos_shift_history', updatedHistory);
     toast.success('Cierre eliminado del historial exitosamente.');
+  };
+
+  // NUEVO: ELIMINAR APERTURA DEL HISTORIAL
+  const handleDeleteOpening = (openingId: string) => {
+    if (!confirm('¿Estás seguro de ELIMINAR este registro de apertura? Esta acción no se puede deshacer.')) return;
+
+    const updatedOpenings = pastOpenings.filter(o => o.id !== openingId);
+    setPastOpenings(updatedOpenings);
+    setScopedStorage('pos_opening_history', updatedOpenings);
+    deletePastOpeningFromFirebase(openingId).catch(() => {});
+    toast.success('Apertura eliminada del historial exitosamente.');
+  };
+
+  // IMPRIMIR TICKET DE APERTURA DE CAJA
+  const handlePrintOpening = (opening: PastOpening) => {
+    const configStr = localStorage.getItem('pos_restaurant_config');
+    let restName = 'Xpos';
+    if (configStr) {
+      try { restName = JSON.parse(configStr).name || 'Xpos'; } catch {}
+    }
+
+    const printHTML = `
+      <style>
+        @page { margin: 0; }
+        body { font-family: 'Courier New', Courier, monospace; width: 80mm; margin: 0 auto; padding: 15px; color: #000; font-size: 13px; }
+        h2 { text-align: center; margin: 5px 0; font-size: 18px; font-weight: bold; }
+        h3 { text-align: center; margin: 2px 0; font-size: 14px; }
+        .divider { border-top: 1px dashed #000; margin: 10px 0; }
+        .row { display: flex; justify-content: space-between; margin: 5px 0; }
+        .bold { font-weight: bold; }
+        .text-center { text-align: center; }
+        .text-xs { font-size: 11px; }
+      </style>
+      <div class="text-center">
+        <h2>${restName.toUpperCase()}</h2>
+        <h3>TICKET DE APERTURA DE CAJA</h3>
+        <p class="text-xs">Fecha: ${opening.date}</p>
+      </div>
+      <div class="divider"></div>
+      <div class="row"><span>Responsable:</span> <span class="bold">${opening.userName || 'Cajero'}</span></div>
+      <div class="row"><span>ID Turno:</span> <span>#${opening.shiftId ? opening.shiftId.slice(-6) : opening.id.slice(-6)}</span></div>
+      <div class="divider"></div>
+      <div class="row bold" style="font-size: 16px;">
+        <span>FONDO INICIAL:</span>
+        <span>S/ ${opening.openingCash.toFixed(2)}</span>
+      </div>
+      <div class="divider"></div>
+      <div style="margin-top: 35px; text-align: center;">
+        <div style="border-top: 1px solid #000; width: 60%; margin: 0 auto;"></div>
+        <p class="text-xs" style="margin-top: 5px;">Firma del Responsable</p>
+      </div>
+      <div class="text-center text-xs" style="margin-top: 20px;">--- Fin del Comprobante ---</div>
+    `;
+
+    try {
+      let printFrame = document.getElementById('print-ticket-iframe') as HTMLIFrameElement | null;
+      if (!printFrame) {
+        printFrame = document.createElement('iframe');
+        printFrame.id = 'print-ticket-iframe';
+        printFrame.style.position = 'fixed';
+        printFrame.style.right = '0';
+        printFrame.style.bottom = '0';
+        printFrame.style.width = '0';
+        printFrame.style.height = '0';
+        printFrame.style.border = '0';
+        printFrame.style.visibility = 'hidden';
+        document.body.appendChild(printFrame);
+      }
+
+      const frameDoc = printFrame.contentWindow?.document || printFrame.contentDocument;
+      if (frameDoc) {
+        frameDoc.open();
+        frameDoc.write(`<!DOCTYPE html><html><head><title>Ticket de Apertura</title></head><body>${printHTML}</body></html>`);
+        frameDoc.close();
+        setTimeout(() => {
+          printFrame?.contentWindow?.focus();
+          printFrame?.contentWindow?.print();
+        }, 200);
+      }
+    } catch (e) {
+      console.error('Error imprimiendo apertura:', e);
+      window.print();
+    }
   };
 
   // ==========================================
@@ -933,6 +1080,21 @@ export default function CashRegisterPage() {
       closure.date.includes(`${paddedDay}-${paddedMonth}-${year}`);
   });
 
+  const filteredOpenings = pastOpenings.filter(opening => {
+    if (!historyDateFilter) return true;
+
+    const [year, month, day] = historyDateFilter.split('-');
+    const paddedDay = day;
+    const unpaddedDay = parseInt(day, 10).toString();
+    const paddedMonth = month;
+    const unpaddedMonth = parseInt(month, 10).toString();
+
+    return opening.date.includes(`${paddedDay}/${paddedMonth}/${year}`) ||
+      opening.date.includes(`${unpaddedDay}/${unpaddedMonth}/${year}`) ||
+      opening.date.includes(`${paddedDay}-${paddedMonth}-${year}`) ||
+      (opening.timestamp && opening.timestamp.startsWith(historyDateFilter));
+  });
+
   if (loading && !report.totalSales && !showOpenModal) return (
     <div className="flex h-screen w-full items-center justify-center bg-slate-50"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div></div>
   );
@@ -1154,14 +1316,51 @@ export default function CashRegisterPage() {
       </div>
 
       {/* ========================================= */}
-      {/* MODAL HISTORIAL DE CIERRES ACTUALIZADO CON FILTRO */}
+      {/* MODAL HISTORIAL DE CAJA (CIERRES Y APERTURAS) */}
       {/* ========================================= */}
       {showHistoryModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl p-6 md:p-8 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2"><History className="text-blue-500" /> Historial de Cierres</h2>
-              <button onClick={() => setShowHistoryModal(false)} className="text-slate-400 hover:bg-slate-100 p-2 rounded-full"><X className="w-6 h-6" /></button>
+            <div className="flex justify-between items-center mb-5">
+              <h2 className="text-xl sm:text-2xl font-black text-slate-800 flex items-center gap-2">
+                <History className="text-blue-500 w-6 h-6" /> Historial de Caja
+              </h2>
+              <button onClick={() => setShowHistoryModal(false)} className="text-slate-400 hover:bg-slate-100 p-2 rounded-full transition-colors"><X className="w-6 h-6" /></button>
+            </div>
+
+            {/* PESTAÑAS: CIERRES vs APERTURAS */}
+            <div className="flex gap-2 p-1.5 bg-slate-100 rounded-2xl mb-4">
+              <button
+                type="button"
+                onClick={() => setHistoryTab('closures')}
+                className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  historyTab === 'closures'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <Calculator className="w-4 h-4 text-emerald-600" />
+                <span>Cierres de Caja</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${historyTab === 'closures' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
+                  {filteredClosures.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setHistoryTab('openings')}
+                className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  historyTab === 'openings'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                <Wallet className="w-4 h-4 text-blue-600" />
+                <span>Aperturas de Caja</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${historyTab === 'openings' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'}`}>
+                  {filteredOpenings.length}
+                </span>
+              </button>
             </div>
 
             {/* SECCIÓN DE FILTRO DE FECHA */}
@@ -1180,39 +1379,81 @@ export default function CashRegisterPage() {
             </div>
 
             <div className="max-h-[50vh] overflow-y-auto pr-2">
-              {filteredClosures.length === 0 ? (
-                <div className="text-center py-10 text-slate-400 font-medium">
-                  {historyDateFilter ? 'No hay cierres registrados en esta fecha.' : 'No hay cierres anteriores registrados.'}
-                </div>
+              {historyTab === 'closures' ? (
+                filteredClosures.length === 0 ? (
+                  <div className="text-center py-10 text-slate-400 font-medium">
+                    {historyDateFilter ? 'No hay cierres registrados en esta fecha.' : 'No hay cierres anteriores registrados.'}
+                  </div>
+                ) : (
+                  <ul className="space-y-4">
+                    {filteredClosures.map((closure) => (
+                      <li key={closure.id} className="bg-slate-50 border border-slate-200 p-5 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-blue-200 transition-colors">
+                        <div className="flex flex-col gap-1 w-full md:w-auto">
+                          <span className="font-bold text-slate-800 text-lg">Cierre del {closure.date}</span>
+                          <div className="flex gap-3 text-xs font-bold text-slate-500">
+                            <span>Ventas: S/ {closure.report.totalSales.toFixed(2)}</span><span>•</span><span>Tickets: {closure.report.ticketCount}</span>
+                          </div>
+                          {closure.closureNote && <p className="text-xs text-slate-400 mt-1 italic max-w-sm truncate">Nota: {closure.closureNote}</p>}
+                        </div>
+                        <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
+                          <div className="text-right">
+                            <p className="text-[10px] uppercase font-bold text-emerald-600 tracking-wider">Gaveta Final</p>
+                            <p className="text-slate-900 font-black text-xl">S/ {closure.report.expectedCashInDrawer.toFixed(2)}</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={() => handlePrint('detailed', closure.closureNote, closure.report, closure.expenses)} className="p-3 bg-white text-blue-600 hover:bg-blue-50 rounded-xl border border-slate-200 flex items-center gap-2 font-bold text-sm cursor-pointer" title="Imprimir Ticket">
+                              <Printer className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => handleDeleteClosure(closure.id)} className="p-3 bg-white text-rose-500 hover:bg-rose-50 rounded-xl border border-slate-200 flex items-center gap-2 font-bold text-sm cursor-pointer" title="Eliminar Registro">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )
               ) : (
-                <ul className="space-y-4">
-                  {filteredClosures.map((closure) => (
-                    <li key={closure.id} className="bg-slate-50 border border-slate-200 p-5 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-blue-200 transition-colors">
-                      <div className="flex flex-col gap-1 w-full md:w-auto">
-                        <span className="font-bold text-slate-800 text-lg">Cierre del {closure.date}</span>
-                        <div className="flex gap-3 text-xs font-bold text-slate-500">
-                          <span>Ventas: S/ {closure.report.totalSales.toFixed(2)}</span><span>•</span><span>Tickets: {closure.report.ticketCount}</span>
+                filteredOpenings.length === 0 ? (
+                  <div className="text-center py-10 text-slate-400 font-medium">
+                    {historyDateFilter ? 'No hay aperturas registradas en esta fecha.' : 'No hay aperturas anteriores registradas.'}
+                  </div>
+                ) : (
+                  <ul className="space-y-4">
+                    {filteredOpenings.map((opening) => (
+                      <li key={opening.id} className="bg-slate-50 border border-slate-200 p-5 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-blue-200 transition-colors">
+                        <div className="flex flex-col gap-1 w-full md:w-auto">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-800 text-lg">Apertura del {opening.date}</span>
+                            {isShiftOpen && report.openingCash === opening.openingCash && (
+                              <span className="px-2 py-0.5 text-[10px] font-black uppercase rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                Activo
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex gap-2 text-xs font-bold text-slate-500 items-center">
+                            <UserIcon className="w-3.5 h-3.5 text-slate-400" />
+                            <span>Responsable: {opening.userName || 'Administrador'}</span>
+                          </div>
                         </div>
-                        {closure.closureNote && <p className="text-xs text-slate-400 mt-1 italic max-w-sm truncate">Nota: {closure.closureNote}</p>}
-                      </div>
-                      <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
-                        <div className="text-right">
-                          <p className="text-[10px] uppercase font-bold text-emerald-600 tracking-wider">Gaveta Final</p>
-                          <p className="text-slate-900 font-black text-xl">S/ {closure.report.expectedCashInDrawer.toFixed(2)}</p>
+                        <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
+                          <div className="text-right">
+                            <p className="text-[10px] uppercase font-bold text-blue-600 tracking-wider">Fondo Inicial</p>
+                            <p className="text-slate-900 font-black text-xl">S/ {opening.openingCash.toFixed(2)}</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={() => handlePrintOpening(opening)} className="p-3 bg-white text-blue-600 hover:bg-blue-50 rounded-xl border border-slate-200 flex items-center gap-2 font-bold text-sm cursor-pointer" title="Imprimir Ticket de Apertura">
+                              <Printer className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => handleDeleteOpening(opening.id)} className="p-3 bg-white text-rose-500 hover:bg-rose-50 rounded-xl border border-slate-200 flex items-center gap-2 font-bold text-sm cursor-pointer" title="Eliminar Registro">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex gap-2">
-                          <button onClick={() => handlePrint('detailed', closure.closureNote, closure.report, closure.expenses)} className="p-3 bg-white text-blue-600 hover:bg-blue-50 rounded-xl border border-slate-200 flex items-center gap-2 font-bold text-sm" title="Imprimir Ticket">
-                            <Printer className="w-4 h-4" />
-                          </button>
-                          {/* BOTÓN ELIMINAR */}
-                          <button onClick={() => handleDeleteClosure(closure.id)} className="p-3 bg-white text-rose-500 hover:bg-rose-50 rounded-xl border border-slate-200 flex items-center gap-2 font-bold text-sm" title="Eliminar Registro">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                      </li>
+                    ))}
+                  </ul>
+                )
               )}
             </div>
           </div>

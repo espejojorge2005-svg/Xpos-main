@@ -756,3 +756,49 @@ export const subscribeToPastClosures = (restaurantId: string, onUpdate: (closure
     return () => {};
   }
 };
+
+/**
+ * HISTORIAL DE APERTURAS DE CAJA en Firebase Firestore (Multi-inquilino)
+ */
+export const syncPastOpeningToFirebase = async (restaurantId: string, opening: any) => {
+  try {
+    if (!restaurantId || !opening?.id) return;
+    const ref = doc(db, 'past_openings', opening.id);
+    await setDoc(ref, {
+      ...opening,
+      restaurantId,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (err) {
+    console.warn("Error syncing past opening to Firebase:", err);
+  }
+};
+
+export const deletePastOpeningFromFirebase = async (openingId: string) => {
+  try {
+    if (!openingId) return;
+    const ref = doc(db, 'past_openings', openingId);
+    await deleteDoc(ref);
+  } catch (err) {
+    console.warn("Error deleting past opening from Firebase:", err);
+  }
+};
+
+export const subscribeToPastOpenings = (restaurantId: string, onUpdate: (openings: any[]) => void) => {
+  try {
+    if (!restaurantId) return () => {};
+    const ref = collection(db, 'past_openings');
+    return onSnapshot(ref, (snapshot) => {
+      const openings = snapshot.docs
+        .map(d => ({ id: d.id, ...(d.data() as any) }))
+        .filter((o: any) => o.restaurantId === restaurantId)
+        .sort((a, b) => new Date(b.timestamp || b.date || 0).getTime() - new Date(a.timestamp || a.date || 0).getTime());
+      onUpdate(openings);
+    }, (error) => {
+      console.warn("Firestore real-time subscription (past_openings) info:", error.message);
+    });
+  } catch (err) {
+    console.warn("Firebase past openings listener initialization:", err);
+    return () => {};
+  }
+};
