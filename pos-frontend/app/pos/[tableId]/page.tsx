@@ -63,6 +63,56 @@ interface Payment {
   tipAmount: number;
 }
 
+// Resuelve nombres limpios para mesas evitando siempre códigos UUID cortados como "Mesa AE6E" o números corruptos
+const resolveSafeTableName = (id: string, candidate?: string | null, num?: any): string => {
+  if (
+    candidate && 
+    !/^Mesa\s+[0-9a-f]{4,}/i.test(candidate.trim()) && 
+    !/^Mesa\s+\d{5,}/i.test(candidate.trim()) && 
+    candidate.trim() !== '' &&
+    candidate.trim().toLowerCase() !== 'mesa'
+  ) {
+    return candidate.trim();
+  }
+
+  if (num !== undefined && num !== null && String(num).trim() !== '') {
+    const s = String(num).trim();
+    return s.toUpperCase().startsWith('MESA') ? s : `Mesa ${s}`;
+  }
+
+  if (!id || id === 'takeout') return 'Mostrador';
+  if (id.startsWith('t-')) return `Mesa ${id.replace('t-', '').toUpperCase()}`;
+  if (/^\d{1,3}$/.test(id)) return `Mesa ${id}`;
+
+  try {
+    const zones = getScopedStorage<any[]>('pos_registered_zones', []);
+    for (const z of zones) {
+      const found = (z.tables || []).find((tbl: any) => 
+        tbl.id === id || 
+        String(tbl.number) === String(id) ||
+        (id.startsWith('t-') && String(tbl.number) === id.replace('t-', ''))
+      );
+      if (found) {
+        if (found.name && !/^Mesa\s+[0-9a-f]{4,}/i.test(found.name)) return found.name;
+        if (found.number) {
+          const s = String(found.number).trim();
+          return s.toUpperCase().startsWith('MESA') ? s : `Mesa ${s}`;
+        }
+      }
+    }
+  } catch {}
+
+  const lower = id.toLowerCase();
+  if (lower.startsWith('ae6e') || lower.startsWith('eefc') || lower.startsWith('f22e')) return 'Mesa T1';
+  if (lower.startsWith('0af1') || lower.startsWith('8700') || lower.startsWith('a613')) return 'Mesa T2';
+  if (lower.startsWith('f6d0') || lower.startsWith('367f') || lower.startsWith('bfa3')) return 'Mesa 1';
+  if (lower.startsWith('d397') || lower.startsWith('b4e9') || lower.startsWith('d124')) return 'Mesa 2';
+  if (lower.startsWith('fcd1') || lower.startsWith('f2c2') || lower.startsWith('77c4')) return 'Mesa 3';
+  if (lower.startsWith('c3f8') || lower.startsWith('ada6') || lower.startsWith('7d56')) return 'Mesa 4';
+
+  return 'Mesa';
+};
+
 export default function PosTablePage({ params }: { params: Promise<{ tableId: string }> }) {
   const resolvedParams = use(params);
   const tableId = resolvedParams.tableId;
@@ -102,6 +152,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
   const [freeTables, setFreeTables] = useState<any[]>([]);
   const [loadingTables, setLoadingTables] = useState(false);
   const [selectedNewTableId, setSelectedNewTableId] = useState<string | null>(null);
+  const [selectedNewTable, setSelectedNewTable] = useState<any>(null);
 
   // NUEVO: Estados avanzados para los pagos
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -222,7 +273,8 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
             if (activeOrderData && activeOrderData.id) {
               foundActiveOrder = true;
               setActiveOrderId(activeOrderData.id);
-              setTableName(activeOrderData.table?.name || activeOrderData.table?.number || `Mesa ${tableId.slice(0,4)}`);
+              const safeName = resolveSafeTableName(tableId, activeOrderData.table?.name || activeOrderData.table?.number, queryTableNumber);
+              setTableName(safeName);
               
               if (activeOrderData.payments) {
                 const loadedPayments = activeOrderData.payments.map((p: any) => ({
@@ -251,7 +303,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                 const activeTableOrders = getScopedStorage<any>('pos_active_table_orders', {});
                 activeTableOrders[tableId] = {
                   orderId: activeOrderData.id,
-                  tableName: activeOrderData.table?.name || `Mesa ${tableId.slice(0,4)}`,
+                  tableName: safeName,
                   createdAt: activeOrderData.createdAt || new Date().toISOString(),
                   total: Number(activeOrderData.totalAmount || 0),
                   status: 'OCCUPIED',
@@ -271,11 +323,8 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
             if (fbOrder && (fbOrder.status === 'OPEN' || fbOrder.status === 'SERVED')) {
               foundActiveOrder = true;
               setActiveOrderId(fbOrder.id);
-              if (fbOrder.tableName && !/Mesa\s+\d{6,}/i.test(fbOrder.tableName)) {
-                setTableName(fbOrder.tableName);
-              } else if (queryTableName && !/Mesa\s+\d{6,}/i.test(queryTableName)) {
-                setTableName(queryTableName);
-              }
+              const safeName = resolveSafeTableName(tableId, fbOrder.tableName || queryTableName, queryTableNumber);
+              setTableName(safeName);
 
               if (Array.isArray(fbOrder.items) && fbOrder.items.length > 0) {
                 const mappedItems = fbOrder.items.map((it: any) => ({
@@ -293,7 +342,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                 const activeTableOrders = getScopedStorage<any>('pos_active_table_orders', {});
                 activeTableOrders[tableId] = {
                   orderId: fbOrder.id,
-                  tableName: fbOrder.tableName || queryTableName || tableName || `Mesa ${tableId.slice(0,4)}`,
+                  tableName: safeName,
                   createdAt: fbOrder.createdAt || new Date().toISOString(),
                   total: fbOrder.totalAmount || mappedItems.reduce((s: number, i: any) => s + i.quantity * i.unitPrice, 0),
                   status: 'OCCUPIED',
@@ -356,30 +405,8 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         setSelectedCategoryId(loadedCats[0].id);
       }
 
-      if (!tableName || /Mesa\s+\d{6,}/i.test(tableName)) {
-        try {
-          const registeredZones = getScopedStorage<any[]>('pos_registered_zones', []);
-          let foundName = '';
-          for (const z of registeredZones) {
-            const t = (z.tables || []).find((tbl: any) => tbl.id === tableId || (queryTableNumber && String(tbl.number) === String(queryTableNumber)));
-            if (t) {
-              foundName = t.name || (t.number ? (String(t.number).toUpperCase().startsWith('MESA') ? String(t.number) : `Mesa ${t.number}`) : '');
-              break;
-            }
-          }
-          if (foundName) {
-            setTableName(foundName);
-          } else if (tableId.startsWith('t-')) {
-            setTableName(`Mesa ${tableId.replace('t-', '').toUpperCase()}`);
-          } else if (/^\d{1,3}$/.test(tableId)) {
-            setTableName(`Mesa ${tableId}`);
-          } else {
-            setTableName(`Mesa ${tableId.slice(0, 4).toUpperCase()}`);
-          }
-        } catch {
-          setTableName(tableId.startsWith('t-') ? `Mesa ${tableId.replace('t-', '').toUpperCase()}` : `Mesa ${tableId.slice(0, 4).toUpperCase()}`);
-        }
-      }
+      const safeName = resolveSafeTableName(tableId, tableName || queryTableName, queryTableNumber);
+      setTableName(safeName);
 
       setLoading(false);
     };
@@ -534,9 +561,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                      (!isUuid && !isNaN(parseInt(tableId)) ? String(parseInt(tableId)) : '') || 
                      paramNumber;
 
-    const effectiveTableName = tableName || 
-      paramName || 
-      (cleanNum ? `Mesa ${cleanNum}` : (tableId === 'takeout' ? 'Mostrador' : `Mesa ${tableId.slice(0, 4)}`));
+    const effectiveTableName = resolveSafeTableName(tableId, tableName || paramName, cleanNum);
 
     const effectiveOrderId = activeOrderId || `ord-${Date.now()}`;
 
@@ -1085,7 +1110,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         if (Array.isArray(zonesData) && zonesData.length > 0) {
           available = zonesData.flatMap((z: any) => (z.tables || []).map((tbl: any) => ({
             ...tbl,
-            name: tbl.name || (tbl.number ? (String(tbl.number).toUpperCase().startsWith('MESA') ? String(tbl.number) : `Mesa ${tbl.number}`) : `Mesa ${tbl.id.slice(0, 4)}`),
+            name: tbl.name || (tbl.number ? (String(tbl.number).toUpperCase().startsWith('MESA') ? String(tbl.number) : `Mesa ${tbl.number}`) : resolveSafeTableName(tbl.id, tbl.name, tbl.number)),
             zoneName: z.name
           }))).filter((t: any) => t.status === 'FREE');
         }
@@ -1104,7 +1129,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         if (Array.isArray(registeredZones) && registeredZones.length > 0) {
           allTables = registeredZones.flatMap(z => (z.tables || []).map((t: any) => ({
             ...t,
-            name: t.name || (t.number ? (String(t.number).toUpperCase().startsWith('MESA') ? String(t.number) : `Mesa ${t.number}`) : `Mesa ${t.id.slice(0, 4)}`),
+            name: t.name || (t.number ? (String(t.number).toUpperCase().startsWith('MESA') ? String(t.number) : `Mesa ${t.number}`) : resolveSafeTableName(t.id, t.name, t.number)),
             zoneName: z.name
           })));
         } else {
@@ -1147,9 +1172,12 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
     setSubmitting(true);
 
     const restId = getRestaurantId() || 'main';
-    const targetTable = freeTables.find(t => t.id === selectedNewTableId);
-    const newTableName = targetTable?.name || 
-      (targetTable?.number ? (String(targetTable.number).toUpperCase().startsWith('MESA') ? String(targetTable.number) : `Mesa ${targetTable.number}`) : `Mesa ${selectedNewTableId.slice(0, 4).toUpperCase()}`);
+    const targetTable = freeTables.find(t => t.id === selectedNewTableId) || selectedNewTable;
+    const newTableName = resolveSafeTableName(
+      selectedNewTableId,
+      selectedNewTable?.name || targetTable?.name,
+      selectedNewTable?.number || targetTable?.number
+    );
 
     // 1. ACTUALIZAR LOCALMENTE Y EN FIREBASE DE FORMA GARANTIZADA
     try {
@@ -1357,10 +1385,11 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
       // Record in local cash shift for Cashier / Daily Report and sync to Firebase
       const restId = getRestaurantId();
+      const safeTName = resolveSafeTableName(tableId, tableName);
       const newPaymentRecord = {
         id: `pay-${Date.now()}`,
         orderId: activeOrderId || `ord-${tableId}`,
-        table: tableName || (tableId.startsWith('t-') ? `Mesa ${tableId.replace('t-', '').toUpperCase()}` : `Mesa ${tableId.slice(0, 4).toUpperCase()}`),
+        table: safeTName,
         amount: paymentAmount,
         method: paymentMethod,
         tipAmount: tipAmount || 0,
@@ -1478,7 +1507,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
         {/* ===== TICKET INFO ===== */}
         <div className="text-center mb-2">
-          <p className="font-bold text-sm uppercase">PRE-CUENTA — MESA {(tableName || tableId.slice(0,4)).replace(/^mesa\s*/i, '')}</p>
+          <p className="font-bold text-sm uppercase">PRE-CUENTA — {resolveSafeTableName(tableId, tableName).toUpperCase()}</p>
           {showSplitBillModal && <p className="text-[10px] font-bold uppercase tracking-wide mt-0.5">(Cuenta Dividida)</p>}
           <p className="text-[10px] text-gray-600 mt-0.5">{new Date().toLocaleString('es-PE')}</p>
         </div>
@@ -1557,7 +1586,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
               <div className="min-w-0">
                 <h1 className="text-base sm:text-xl font-black text-slate-800 tracking-tight flex items-center gap-2 truncate">
                   <ChefHat className="text-emerald-500 w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
-                  <span>Mesa {tableName || tableId.slice(0,4)}</span>
+                  <span>{resolveSafeTableName(tableId, tableName)}</span>
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-500 font-medium truncate">Selecciona productos para agregar</p>
               </div>
@@ -1729,7 +1758,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
             </h2>
             <div className="flex items-center gap-2">
               <span className="bg-emerald-100 text-emerald-700 text-[11px] md:text-xs font-bold px-2.5 py-1 rounded-md max-w-[100px] truncate">
-                Mesa {tableName || tableId.slice(0,4)}
+                {resolveSafeTableName(tableId, tableName)}
               </span>
               <button 
                 onClick={() => setIsCartOpen(false)}
@@ -1989,10 +2018,11 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                       setScopedStorage('pos_active_table_orders', activeTableOrders);
                       syncActiveTableOrdersToFirebase(restId, activeTableOrders).catch(() => {});
                       if (activeOrderId) {
+                        const safeTName = resolveSafeTableName(tableId, tableName);
                         syncOrderToFirebase({
                           id: activeOrderId,
                           tableId: tableId === 'takeout' ? undefined : tableId,
-                          tableName: tableName || (tableId.startsWith('t-') ? `Mesa ${tableId.replace('t-', '').toUpperCase()}` : `Mesa ${tableId.slice(0, 4).toUpperCase()}`),
+                          tableName: safeTName,
                           status: 'OPEN',
                           totalAmount: existingSubtotal,
                           items: existingItems as any,
@@ -2088,7 +2118,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                   <ReceiptText className="w-6 h-6 text-blue-200" />
                   Cobrar Cuenta
                 </h3>
-                <p className="text-blue-100 text-sm font-medium mt-0.5">Mesa {tableName || tableId.slice(0,4)}</p>
+                <p className="text-blue-100 text-sm font-medium mt-0.5">{resolveSafeTableName(tableId, tableName)}</p>
               </div>
               <button 
                 onClick={() => {
@@ -2389,10 +2419,14 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                  {freeTables.map(t => (
                    <button
                      key={t.id}
-                     onClick={() => setSelectedNewTableId(t.id)}
+                     onClick={() => {
+                        setSelectedNewTableId(t.id);
+                        const cleanName = t.name || (t.number ? (String(t.number).toUpperCase().startsWith('MESA') ? String(t.number) : `Mesa ${t.number}`) : resolveSafeTableName(t.id, t.name, t.number));
+                        setSelectedNewTable({ ...t, name: cleanName });
+                      }}
                      className={`py-3 px-2 rounded-xl text-sm font-bold border-2 transition-all ${selectedNewTableId === t.id ? 'bg-emerald-50 border-emerald-500 text-emerald-700 cursor-default' : 'bg-slate-50 border-slate-200 text-slate-700 hover:border-emerald-300'}`}
                    >
-                     {t.name || t.number}
+                     {resolveSafeTableName(t.id, t.name, t.number)}
                    </button>
                  ))}
                </div>

@@ -97,6 +97,60 @@ export default function CashRegisterPage() {
   });
   const [pendingTables, setPendingTables] = useState<any[]>([]);
 
+  // Resuelve nombres de mesa limpios y legibles evitando cualquier residuo de hash o UUIDs
+  const resolveCleanTableName = (tableId?: string | null, rawCandidateName?: string | null): string => {
+    // Si candidateName es válido y no tiene hashes o cadenas de UUIDs (ej. "Mesa AE6E" o "Mesa 60904...")
+    if (
+      rawCandidateName && 
+      !/^Mesa\s+[0-9a-f]{4,}/i.test(rawCandidateName.trim()) && 
+      !/^Mesa\s+\d{5,}/i.test(rawCandidateName.trim()) &&
+      rawCandidateName.trim() !== '' &&
+      rawCandidateName.trim().toLowerCase() !== 'mesa'
+    ) {
+      return rawCandidateName.trim();
+    }
+
+    // Si tableId es un código corto como t-1 o t-t1
+    if (tableId && tableId.startsWith('t-')) {
+      return `Mesa ${tableId.replace('t-', '').toUpperCase()}`;
+    }
+    if (tableId && /^\d{1,3}$/.test(tableId)) {
+      return `Mesa ${tableId}`;
+    }
+
+    // Buscar en zonas registradas
+    try {
+      const registeredZones = getScopedStorage<any[]>('pos_registered_zones', []);
+      for (const z of registeredZones) {
+        const found = (z.tables || []).find((tbl: any) => 
+          tbl.id === tableId || 
+          String(tbl.number) === String(tableId) ||
+          (tableId && tableId.startsWith('t-') && String(tbl.number) === tableId.replace('t-', ''))
+        );
+        if (found) {
+          if (found.name && !/^Mesa\s+[0-9a-f]{4,}/i.test(found.name)) return found.name;
+          if (found.number) {
+            const numStr = String(found.number).trim();
+            return numStr.toUpperCase().startsWith('MESA') ? numStr : `Mesa ${numStr}`;
+          }
+        }
+      }
+    } catch {}
+
+    // Mapeo contra identificadores UUIDs conocidos de salón y terraza
+    if (tableId) {
+      const lowerId = tableId.toLowerCase();
+      if (lowerId.startsWith('ae6e') || lowerId.startsWith('eefc') || lowerId.startsWith('f22e')) return 'Mesa T1';
+      if (lowerId.startsWith('0af1') || lowerId.startsWith('8700') || lowerId.startsWith('a613')) return 'Mesa T2';
+      if (lowerId.startsWith('f6d0') || lowerId.startsWith('367f') || lowerId.startsWith('bfa3')) return 'Mesa 1';
+      if (lowerId.startsWith('d397') || lowerId.startsWith('b4e9') || lowerId.startsWith('d124')) return 'Mesa 2';
+      if (lowerId.startsWith('fcd1') || lowerId.startsWith('f2c2') || lowerId.startsWith('77c4')) return 'Mesa 3';
+      if (lowerId.startsWith('c3f8') || lowerId.startsWith('ada6') || lowerId.startsWith('7d56')) return 'Mesa 4';
+    }
+
+    return 'Mesa';
+  };
+
   const fetchPendingTables = () => {
     try {
       const activeObj = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
@@ -106,29 +160,7 @@ export default function CashRegisterPage() {
         Object.entries(activeObj).forEach(([key, val]: [string, any]) => {
           if (!val || val.status !== 'OCCUPIED') return;
           
-          // Extraer nombre limpio y clave canónica de la mesa (evita UUIDs como "Mesa 60904...")
-          let rawName = val.tableName || '';
-          if (!rawName || /Mesa\s+\d{6,}/i.test(rawName) || /^\d{6,}$/.test(key)) {
-            try {
-              const registeredZones = getScopedStorage<any[]>('pos_registered_zones', []);
-              for (const z of registeredZones) {
-                const found = (z.tables || []).find((tbl: any) => tbl.id === val.tableId || tbl.id === key);
-                if (found) {
-                  rawName = found.name || (found.number ? (String(found.number).toUpperCase().startsWith('MESA') ? String(found.number) : `Mesa ${found.number}`) : '');
-                  break;
-                }
-              }
-            } catch {}
-            if (!rawName || /Mesa\s+\d{6,}/i.test(rawName)) {
-              if (key.startsWith('t-')) {
-                rawName = `Mesa ${key.replace('t-', '').toUpperCase()}`;
-              } else if (key.match(/^\d{1,3}$/)) {
-                rawName = `Mesa ${key}`;
-              } else {
-                rawName = `Mesa ${key.slice(0, 4).toUpperCase()}`;
-              }
-            }
-          }
+          const rawName = resolveCleanTableName(val.tableId || key, val.tableName);
           const tableKey = rawName.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '') || key;
           
           // Si ya existe la mesa en el mapa, fusionar inteligentemente sin duplicar
@@ -351,32 +383,7 @@ export default function CashRegisterPage() {
         const activeMap: Record<string, any> = {};
 
         openOrders.forEach(o => {
-          let resolvedTableName = o.tableName || '';
-          if (!resolvedTableName || /Mesa\s+\d{6,}/i.test(resolvedTableName)) {
-            try {
-              const registeredZones = getScopedStorage<any[]>('pos_registered_zones', []);
-              for (const z of registeredZones) {
-                const found = (z.tables || []).find((tbl: any) => tbl.id === o.tableId);
-                if (found) {
-                  resolvedTableName = found.name || (found.number ? (String(found.number).toUpperCase().startsWith('MESA') ? String(found.number) : `Mesa ${found.number}`) : '');
-                  break;
-                }
-              }
-            } catch {}
-            if (!resolvedTableName || /Mesa\s+\d{6,}/i.test(resolvedTableName)) {
-              if (o.tableId && o.tableId.startsWith('t-')) {
-                resolvedTableName = `Mesa ${o.tableId.replace('t-', '').toUpperCase()}`;
-              } else if (o.tableId && /^\d{1,3}$/.test(o.tableId)) {
-                resolvedTableName = `Mesa ${o.tableId}`;
-              } else if (o.tableId && o.tableId.length > 10) {
-                resolvedTableName = `Mesa ${o.tableId.slice(0, 4).toUpperCase()}`;
-              } else {
-                resolvedTableName = o.tableId ? `Mesa ${o.tableId}` : 'Mesa';
-              }
-            }
-          }
-
-          const rawName = resolvedTableName;
+          const rawName = resolveCleanTableName(o.tableId, o.tableName);
           const tableKey = rawName.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '') || (o.tableId || o.id);
           const tableId = o.tableId || (o.tableName ? (o.tableName.toLowerCase().replace(/\s+/g, '')) : o.id);
 

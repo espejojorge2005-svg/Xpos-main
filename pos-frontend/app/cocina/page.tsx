@@ -572,9 +572,14 @@ export default function CocinaPage() {
               );
             });
           }).map((order) => {
-            // NUEVO: Verificamos si la orden completa fue cancelada por el mozo
-            const isOrderCanceled = order.status === 'CANCELLED';
-            const tableName = order.table?.name || (order.table?.number ? `MESA ${order.table?.number}` : null) || (order as any).customerName || order.previousTableName || 'MOSTRADOR';
+            // Determinar si es cambio de mesa
+            const rawTableName = order.table?.name || (order.table?.number ? `MESA ${order.table?.number}` : null) || (order as any).customerName || order.previousTableName || 'MOSTRADOR';
+            const tableName = rawTableName.toUpperCase();
+            const prevTableName = order.previousTableName ? order.previousTableName.toUpperCase() : null;
+
+            const isTableChanged = Boolean(prevTableName && prevTableName.trim() !== tableName.trim());
+            // Si hubo cambio de mesa, NO es orden cancelada/anulada sino un traslado de mesa
+            const isOrderCanceled = order.status === 'CANCELLED' && !isTableChanged;
 
             return (
               <div 
@@ -582,6 +587,8 @@ export default function CocinaPage() {
                 className={`rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] border-t-8 overflow-hidden animate-in fade-in zoom-in-95 duration-300 relative flex flex-col transition-all
                   ${isOrderCanceled 
                     ? 'bg-rose-50 border-rose-500 scale-105 shadow-xl shadow-rose-950/20 z-10' // Estilo crítico para orden cancelada
+                    : isTableChanged
+                    ? 'bg-amber-50/50 border-amber-500 shadow-xl shadow-amber-950/10' // Estilo de atención para cambio de mesa
                     : 'bg-[#fdfbf7] border-emerald-500'}`}
                 style={{ minHeight: '320px' }}
               >
@@ -591,18 +598,30 @@ export default function CocinaPage() {
                 </div>
 
                 {/* Cabecera Ticket */}
-                <div className={`p-5 border-b-2 border-dashed mt-1 ${isOrderCanceled ? 'bg-rose-100 border-rose-400' : 'bg-white border-slate-300'}`}>
+                <div className={`p-5 border-b-2 border-dashed mt-1 ${
+                  isOrderCanceled ? 'bg-rose-100 border-rose-400' : isTableChanged ? 'bg-amber-100/80 border-amber-300' : 'bg-white border-slate-300'
+                }`}>
                   <div className="flex justify-between items-start mb-2">
                     <h3 className={`text-3xl font-black uppercase tracking-tighter flex flex-col ${isOrderCanceled ? 'text-rose-900 line-through decoration-rose-400' : 'text-slate-800'}`}>
-                      {order.previousTableName && (
-                        <span className="text-xl text-slate-400 line-through decoration-slate-400 mb-1 leading-none">{order.previousTableName}</span>
+                      {prevTableName && (
+                        <span className="text-base text-slate-400 line-through decoration-rose-500 mb-1 leading-none font-bold">
+                          {prevTableName}
+                        </span>
                       )}
-                      <span>{tableName}</span>
+                      <span className={isTableChanged ? 'text-amber-950 font-black' : ''}>
+                        {tableName}
+                      </span>
                     </h3>
                     {isOrderCanceled && (
                        <div className="flex items-center gap-1.5 px-3 py-1 bg-rose-600 text-white rounded-lg font-bold text-sm shadow-sm animate-pulse">
                          <XCircle className="w-4 h-4" />
                          ¡ANULADA!
+                       </div>
+                    )}
+                    {isTableChanged && (
+                       <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-500 text-white rounded-lg font-black text-xs sm:text-sm shadow-sm animate-pulse">
+                         <ArrowRightLeft className="w-4 h-4" />
+                         CAMBIO DE MESA
                        </div>
                     )}
                   </div>
@@ -615,12 +634,17 @@ export default function CocinaPage() {
                     </div>
                   </div>
 
-                  {!isOrderCanceled ? (
-                    <OrderTimer createdAt={order.createdAt} />
-                  ) : (
+                  {isOrderCanceled ? (
                     <p className="text-rose-700 font-bold text-sm mt-2 leading-tight">
                       El mozo canceló esta mesa.<br/>¡Detener preparaciones!
                     </p>
+                  ) : isTableChanged ? (
+                    <div className="bg-amber-100/90 border border-amber-300 text-amber-950 rounded-lg p-2.5 mt-2 font-bold text-xs flex items-center gap-2">
+                      <ArrowRightLeft className="w-4 h-4 text-amber-700 shrink-0" />
+                      <span>El cliente fue trasladado de <span className="line-through font-black">{prevTableName}</span> a <span className="underline font-black text-amber-950">{tableName}</span>. Entregar aquí.</span>
+                    </div>
+                  ) : (
+                    <OrderTimer createdAt={order.createdAt} />
                   )}
                 </div>
 
