@@ -254,7 +254,7 @@ export class SaasService {
   }
 
   async getRestaurantAdmin(restaurantId: string) {
-    const admin = await this.prisma.user.findFirst({
+    let admin = await this.prisma.user.findFirst({
       where: {
         restaurantId,
         role: 'ADMIN',
@@ -266,37 +266,89 @@ export class SaasService {
       }
     });
 
-    if (!admin) throw new NotFoundException('El restaurante no tiene administrador asignado');
+    if (!admin) {
+      admin = await this.prisma.user.findFirst({
+        where: { restaurantId },
+        select: { id: true, name: true, email: true }
+      });
+    }
+
+    if (!admin) {
+      const rest = await this.prisma.restaurant.findUnique({
+        where: { id: restaurantId },
+        select: { ownerName: true }
+      });
+      return {
+        id: null,
+        name: rest?.ownerName || 'Administrador',
+        email: '',
+      };
+    }
+
     return admin;
   }
 
   async updateRestaurantAdmin(restaurantId: string, dto: UpdateAdminSaaS) {
-    const admin = await this.prisma.user.findFirst({
+    let admin = await this.prisma.user.findFirst({
       where: { restaurantId, role: 'ADMIN' }
     });
 
-    if (!admin) throw new NotFoundException('No existe administrador asignado para este restaurante');
+    if (!admin) {
+      admin = await this.prisma.user.findFirst({
+        where: { restaurantId }
+      });
+    }
+
+    const cleanEmail = dto.email ? dto.email.trim().toLowerCase() : null;
+
+    if (!admin) {
+      if (!cleanEmail) throw new BadRequestException('Debe ingresar un correo electrónico para el administrador');
+      const plainPassword = dto.password?.trim() || '123456';
+      const hashedPassword = await bcrypt.hash(plainPassword, 10);
+      
+      const newAdmin = await this.prisma.user.create({
+        data: {
+          name: 'Administrador Restaurante',
+          email: cleanEmail,
+          password: hashedPassword,
+          role: 'ADMIN',
+          restaurantId,
+          allowedViews: ['*'],
+          isActive: true,
+        },
+        select: { id: true, name: true, email: true, role: true }
+      });
+      return { message: 'Administrador creado y credenciales asignadas exitosamente', user: newAdmin };
+    }
 
     const updateData: any = {};
-    if (dto.email) {
-      const cleanEmail = dto.email.trim().toLowerCase();
-      if (cleanEmail !== admin.email) {
-        const emailExists = await this.prisma.user.findUnique({ where: { email: cleanEmail } });
-        if (emailExists) throw new BadRequestException('El correo ya está en uso por otro usuario');
-        updateData.email = cleanEmail;
+    if (cleanEmail && cleanEmail !== admin.email) {
+      const emailExists = await this.prisma.user.findUnique({ where: { email: cleanEmail } });
+      if (emailExists && emailExists.id !== admin.id) {
+        throw new BadRequestException('El correo ya está en uso por otro usuario del sistema');
       }
+      updateData.email = cleanEmail;
     }
 
     if (dto.password && dto.password.trim().length > 0) {
       updateData.password = await bcrypt.hash(dto.password.trim(), 10);
     }
 
-    if (Object.keys(updateData).length === 0) return { message: 'No hay cambios' };
+    if (Object.keys(updateData).length === 0) {
+      return { message: 'No hay cambios para actualizar', user: admin };
+    }
 
-    return this.prisma.user.update({
+    updateData.role = 'ADMIN';
+    updateData.isActive = true;
+    updateData.allowedViews = ['*'];
+
+    const updated = await this.prisma.user.update({
       where: { id: admin.id },
-      data: updateData
+      data: updateData,
+      select: { id: true, name: true, email: true, role: true }
     });
+
+    return { message: 'Credenciales del dueño actualizadas exitosamente', user: updated };
   }
 
   async updateRestaurant(id: string, dto: UpdateRestaurantSaaS) {
@@ -339,22 +391,34 @@ export class SaasService {
     if (!restaurant) throw new NotFoundException('Restaurante no encontrado');
 
     return this.prisma.$transaction(async (tx) => {
+      // 0. Desvincular mesas de órdenes para evitar errores de clave foránea
+      await tx.order.updateMany({
+        where: { restaurantId: id },
+        data: { tableId: null },
+      });
+
       // 1. Pagos asociados a órdenes del restaurante
       await tx.payment.deleteMany({
         where: { order: { restaurantId: id } },
       });
 
-      // 2. Items de órdenes asociadas al restaurante
+      // 2. Desvincular items hijos (parentItemId) para evitar auto-referencia en cascada
+      await tx.orderItem.updateMany({
+        where: { order: { restaurantId: id } },
+        data: { parentItemId: null },
+      });
+
+      // 3. Items de órdenes asociadas al restaurante
       await tx.orderItem.deleteMany({
         where: { order: { restaurantId: id } },
       });
 
-      // 3. Órdenes del restaurante
+      // 4. Órdenes del restaurante
       await tx.order.deleteMany({
         where: { restaurantId: id },
       });
 
-      // 4. Gastos de caja y turnos de caja
+      // 5. Gastos de caja y turnos de caja
       await tx.cashExpense.deleteMany({
         where: { shift: { restaurantId: id } },
       });
@@ -362,25 +426,30 @@ export class SaasService {
         where: { restaurantId: id },
       });
 
-      // 5. Movimientos de stock
+      // 6. Movimientos de stock
       await tx.stockMovement.deleteMany({
         where: { product: { restaurantId: id } },
       });
 
-      // 6. Opciones y grupos de modificadores
+      // 7. Opciones y grupos de modificadores (tanto por grupo como por producto objetivo)
       const products = await tx.product.findMany({ where: { restaurantId: id }, select: { id: true } });
       const productIds = products.map((p) => p.id);
 
       if (productIds.length > 0) {
         await tx.modifierOption.deleteMany({
-          where: { group: { productId: { in: productIds } } },
+          where: {
+            OR: [
+              { group: { productId: { in: productIds } } },
+              { targetProductId: { in: productIds } },
+            ],
+          },
         });
         await tx.modifierGroup.deleteMany({
           where: { productId: { in: productIds } },
         });
       }
 
-      // 7. Recetas asociadas a productos o insumos del restaurante
+      // 8. Recetas asociadas a productos o insumos del restaurante
       const inventoryItems = await tx.inventoryItem.findMany({ where: { restaurantId: id }, select: { id: true } });
       const invItemIds = inventoryItems.map((i) => i.id);
 
@@ -393,47 +462,50 @@ export class SaasService {
         },
       });
 
-      // 8. Productos
+      // 9. Productos
       await tx.product.deleteMany({
         where: { restaurantId: id },
       });
 
-      // 9. Categorías
+      // 10. Categorías
       await tx.category.deleteMany({
         where: { restaurantId: id },
       });
 
-      // 10. Insumos de inventario
+      // 11. Insumos de inventario
       await tx.inventoryItem.deleteMany({
         where: { restaurantId: id },
       });
 
-      // 11. Estaciones de cocina
+      // 12. Estaciones de cocina
       await tx.kitchenStation.deleteMany({
         where: { restaurantId: id },
       });
 
-      // 12. Mesas de zonas del restaurante
+      // 13. Mesas de zonas del restaurante
       await tx.table.deleteMany({
         where: { zone: { restaurantId: id } },
       });
 
-      // 13. Zonas
+      // 14. Zonas
       await tx.zone.deleteMany({
         where: { restaurantId: id },
       });
 
-      // 14. Usuarios del restaurante
+      // 15. Usuarios del restaurante
       await tx.user.deleteMany({
         where: { restaurantId: id },
       });
 
-      // 15. Restaurante
+      // 16. Restaurante
       await tx.restaurant.delete({
         where: { id },
       });
 
       return { message: 'Restaurante y todos sus datos asociados eliminados permanentemente' };
+    }, {
+      maxWait: 20000,
+      timeout: 45000,
     });
   }
 }

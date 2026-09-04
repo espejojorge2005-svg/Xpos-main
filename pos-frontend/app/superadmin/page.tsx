@@ -2,7 +2,7 @@
 import { getApiUrl, apiFetch } from '@/utils/api';
 
 import { useState, useEffect } from 'react';
-import { Plus, Search, Store, Users, Receipt, Building, Mail, Lock, User, Check, X, Building2, Phone, Crown, CalendarPlus, Edit, LayoutDashboard, Settings, Trash2 } from 'lucide-react';
+import { Plus, Search, Store, Users, Receipt, Building, Mail, Lock, User, Check, X, Building2, Phone, Crown, CalendarPlus, Edit, LayoutDashboard, Settings, Trash2, Eye, EyeOff, Copy, Key } from 'lucide-react';
 import { toast } from 'sonner';
 import { PlansManager, SubscriptionPlan, DEFAULT_PLANS } from './components/PlansManager';
 import { SuperAdminProfile } from './components/SuperAdminProfile';
@@ -58,6 +58,27 @@ export default function SuperAdminPage() {
   
   const [editAdminEmail, setEditAdminEmail] = useState('');
   const [editAdminPassword, setEditAdminPassword] = useState('');
+  const [showAdminPassword, setShowAdminPassword] = useState(false);
+  const [lastUpdatedCredentials, setLastUpdatedCredentials] = useState<{ email: string; password?: string; restaurantName?: string } | null>(null);
+
+  const generateRandomPassword = () => {
+    const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let res = 'Xpos';
+    for (let i = 0; i < 4; i++) {
+      res += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    res += '!2026';
+    setEditAdminPassword(res);
+    setShowAdminPassword(true);
+    toast.info('Nueva clave generada. Presiona "Guardar y Actualizar Accesos" para aplicarla en la BD.');
+  };
+
+  const copyCredentials = (emailToCopy: string, passwordToCopy?: string) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const text = `🍽️ Acceso al Sistema Xpos\n🏢 Local: ${editTenantName}\n👤 Usuario: ${emailToCopy}\n🔑 Contraseña: ${passwordToCopy || '(Mantiene su contraseña actual)'}\n🌐 Enlace: ${origin}/login`;
+    navigator.clipboard.writeText(text);
+    toast.success('¡Credenciales copiadas al portapapeles! Puedes enviarlas en privado al dueño.');
+  };
 
   const fetchInitialData = async () => {
     try {
@@ -180,34 +201,45 @@ export default function SuperAdminPage() {
   };
 
   const deleteRestaurant = async (id: string, name: string) => {
-    if (!window.confirm(`¿Estás seguro de eliminar permanentemente el restaurante "${name}" y toda su información?`)) return;
+    if (!window.confirm(`¿Estás seguro de eliminar permanentemente el restaurante "${name}" y toda su información (menú, órdenes, reportes, personal)? Esta acción es definitiva e irreversible.`)) return;
     try {
       const token = localStorage.getItem('pos_token');
-      if (!token) return;
+      if (!token) {
+        window.location.href = '/login';
+        return;
+      }
+      
       const res = await fetch(getApiUrl(`/saas/restaurants/${id}`), {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       });
       
+      const data = await res.json().catch(() => ({}));
+      
       if (!res.ok) {
-        throw new Error('Error al eliminar en el servidor');
+        throw new Error(data.message || 'Error al eliminar en el servidor');
       }
 
       setRestaurants(prev => prev.filter(r => r.id !== id));
 
-      // Limpiar credenciales registradas asociadas a este restaurante
+      // Limpiar cachés locales asociadas a este restaurante
       try {
+        const cachedTenantsStr = localStorage.getItem('pos_saas_tenants_cache');
+        if (cachedTenantsStr) {
+          const tenants: any[] = JSON.parse(cachedTenantsStr);
+          localStorage.setItem('pos_saas_tenants_cache', JSON.stringify(tenants.filter((t: any) => t.id !== id)));
+        }
         const registeredAdminsStr = localStorage.getItem('pos_registered_admins');
         if (registeredAdminsStr) {
           const registeredAdmins: any[] = JSON.parse(registeredAdminsStr);
-          const filtered = registeredAdmins.filter(a => a.restaurantId !== id);
+          const filtered = registeredAdmins.filter((a: any) => a.restaurantId !== id);
           localStorage.setItem('pos_registered_admins', JSON.stringify(filtered));
         }
       } catch {}
 
       toast.success(`Restaurante "${name}" eliminado permanentemente.`);
-    } catch {
-      toast.error('Error al eliminar el restaurante');
+    } catch (err: any) {
+      toast.error(err.message || 'Error al eliminar el restaurante');
     }
   };
 
@@ -347,6 +379,8 @@ export default function SuperAdminPage() {
     }
 
     setEditAdminEmail(''); setEditAdminPassword('');
+    setShowAdminPassword(false);
+    setLastUpdatedCredentials(null);
     setEditTab('TENANT');
     setIsEditOpen(true);
 
@@ -355,7 +389,7 @@ export default function SuperAdminPage() {
       const res = await apiFetch(`/saas/restaurants/${r.id}/admin`);
       if (res.ok) {
         const adminData = await res.json();
-        setEditAdminEmail(adminData.email);
+        setEditAdminEmail(adminData.email || '');
       } else {
         // Fallback a administradores registrados localmente
         const registeredAdminsStr = localStorage.getItem('pos_registered_admins');
@@ -445,7 +479,8 @@ export default function SuperAdminPage() {
         body: JSON.stringify(payload)
       });
       
-      if (!res.ok) throw new Error('Error al actualizar credenciales en el servidor');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Error al actualizar credenciales en el servidor');
       
       try {
         const registeredAdminsStr = localStorage.getItem('pos_registered_admins');
@@ -456,11 +491,19 @@ export default function SuperAdminPage() {
             if (cleanEmail) registeredAdmins[idx].email = cleanEmail;
             if (payload.password) registeredAdmins[idx].password = payload.password;
             localStorage.setItem('pos_registered_admins', JSON.stringify(registeredAdmins));
+          } else {
+            registeredAdmins.push({ restaurantId: editingId, email: cleanEmail, password: payload.password || '123456' });
+            localStorage.setItem('pos_registered_admins', JSON.stringify(registeredAdmins));
           }
         }
       } catch {}
 
-      toast.success('Credenciales maestras actualizadas exitosamente');
+      toast.success('¡Credenciales del dueño actualizadas exitosamente en el servidor!');
+      setLastUpdatedCredentials({
+        email: cleanEmail,
+        password: editAdminPassword.trim() || undefined,
+        restaurantName: editTenantName,
+      });
       setEditAdminPassword('');
     } catch (err: any) {
       toast.error(err.message || 'Error al actualizar credenciales');
@@ -803,32 +846,108 @@ export default function SuperAdminPage() {
                  </form>
                )}
 
-               {editTab === 'ADMIN' && (
-                 <form onSubmit={handleUpdateAdmin} className="space-y-6">
-                   <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl mb-6">
-                     <h3 className="text-sm font-black text-rose-800 mb-1 flex items-center gap-2"><Lock className="w-4 h-4" /> Zona Crítica</h3>
-                     <p className="text-xs font-medium text-rose-600/80">Esta utilería edita obligatoriamente los accesos del administrador maestro del inquilino (Dueño).</p>
-                   </div>
-                   <div className="space-y-4">
-                     <div className="space-y-2">
-                       <label className="text-xs font-bold text-slate-700 ml-1">Correo Electrónico del Dueño</label>
-                       <input type="email" required value={editAdminEmail} onChange={e => setEditAdminEmail(e.target.value)}
-                         className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 text-sm font-medium outline-none transition-all" />
-                     </div>
-                     <div className="space-y-2">
-                       <label className="text-xs font-bold text-slate-700 ml-1">Forzar Nueva Contraseña</label>
-                       <input type="password" value={editAdminPassword} onChange={e => setEditAdminPassword(e.target.value)}
-                         className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 text-sm font-medium outline-none transition-all" 
-                         placeholder="Dejar en blanco para no cambiar..." />
-                     </div>
-                   </div>
-                   <div className="pt-4 flex items-center justify-end">
-                     <button type="submit" disabled={isSubmitting} className="px-8 py-3.5 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-lg shadow-rose-200 transition-all active:scale-95 disabled:opacity-50">
-                       {isSubmitting ? 'Actualizando...' : 'Actualizar Accesos'}
-                     </button>
-                   </div>
-                 </form>
-               )}
+                {editTab === 'ADMIN' && (
+                  <form onSubmit={handleUpdateAdmin} className="space-y-6">
+                    <div className="p-4 bg-slate-900 text-white rounded-2xl mb-6 shadow-md">
+                      <div className="flex items-center gap-2 text-emerald-400 font-black text-sm mb-1">
+                        <Lock className="w-4 h-4" /> Seguridad y Claves del Dueño
+                      </div>
+                      <p className="text-xs text-slate-300 font-medium leading-relaxed">
+                        Como Super Administrador, puedes consultar o reestablecer el correo y la contraseña del dueño de este negocio de forma privada y segura.
+                      </p>
+                    </div>
+
+                    {lastUpdatedCredentials && (
+                      <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex flex-col gap-2.5 animate-in fade-in slide-in-from-top-2">
+                        <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
+                          <Check className="w-4 h-4 text-emerald-600" /> Accesos Actualizados con Éxito
+                        </div>
+                        <div className="bg-white p-3 rounded-xl border border-emerald-100 text-xs space-y-1 font-mono text-slate-700">
+                          <div><strong>Usuario:</strong> {lastUpdatedCredentials.email}</div>
+                          {lastUpdatedCredentials.password && (
+                            <div><strong>Nueva Clave:</strong> {lastUpdatedCredentials.password}</div>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => copyCredentials(lastUpdatedCredentials.email, lastUpdatedCredentials.password)}
+                          className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                        >
+                          <Copy className="w-3.5 h-3.5" /> Copiar Credenciales para Enviar por Privado al Dueño
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-700 ml-1">Correo Electrónico del Dueño (Login Administrador)</label>
+                        <div className="relative">
+                          <Mail className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
+                          <input
+                            type="email"
+                            required
+                            value={editAdminEmail}
+                            onChange={e => setEditAdminEmail(e.target.value)}
+                            className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-900 text-sm font-medium outline-none transition-all"
+                            placeholder="dueno@restaurante.com"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-slate-700 ml-1">Nueva Contraseña (Opcional)</label>
+                          <button
+                            type="button"
+                            onClick={generateRandomPassword}
+                            className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 hover:underline"
+                          >
+                            <Key className="w-3 h-3" /> Generar Clave Aleatoria
+                          </button>
+                        </div>
+                        <div className="relative">
+                          <Lock className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
+                          <input
+                            type={showAdminPassword ? 'text' : 'password'}
+                            value={editAdminPassword}
+                            onChange={e => setEditAdminPassword(e.target.value)}
+                            className="w-full pl-10 pr-11 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-900 text-sm font-medium outline-none transition-all" 
+                            placeholder="Dejar en blanco para no cambiar..."
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowAdminPassword(!showAdminPassword)}
+                            className="absolute right-3.5 top-3.5 text-slate-400 hover:text-slate-600"
+                          >
+                            {showAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-slate-400 ml-1">
+                          Solo escribe aquí si el dueño olvidó su clave o solicita un reseteo de seguridad.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 flex items-center justify-between border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => copyCredentials(editAdminEmail, editAdminPassword || undefined)}
+                        className="text-xs font-bold text-slate-600 hover:text-slate-900 flex items-center gap-1.5 py-2 px-3 rounded-lg hover:bg-slate-100 transition-all"
+                      >
+                        <Copy className="w-3.5 h-3.5" /> Copiar Datos
+                      </button>
+
+                      <button
+                        type="submit"
+                        disabled={isSubmitting}
+                        className="px-8 py-3.5 text-sm font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl shadow-lg transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                      >
+                        <Check className="w-4 h-4 text-emerald-400" />
+                        {isSubmitting ? 'Guardando en BD...' : 'Guardar y Actualizar Accesos'}
+                      </button>
+                    </div>
+                  </form>
+                )}
              </div>
           </div>
         </div>
