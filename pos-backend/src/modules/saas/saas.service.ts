@@ -167,7 +167,7 @@ export class SaasService {
         adminUser: adminUser ? { id: adminUser.id, name: adminUser.name, email: adminUser.email } : null,
         _count: { users: 1, orders: 0 }
       };
-    });
+    }, { maxWait: 15000, timeout: 30000 });
   }
 
 

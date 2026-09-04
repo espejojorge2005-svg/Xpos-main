@@ -154,8 +154,8 @@ export class OrdersService {
       }
     }
 
-    // Usamos una transacción para crear la orden explicitamente con subItems y descontar inventario
-    return this.prisma.$transaction(async (tx) => {
+    // Usamos una transacción con timeout extendido para crear la orden de manera ultrarrápida y atómica
+    const createdOrder = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.create({
         data: {
           tableId: validTableId,
@@ -179,9 +179,6 @@ export class OrdersService {
           }
         });
 
-        // Descontar inventario del ítem principal
-        await this.deductProductStock(tx, item.productId, item.quantity, order.id, effectiveCustomerName);
-
         if ((item as any).subItems && (item as any).subItems.length > 0) {
           await tx.orderItem.createMany({
             data: (item as any).subItems.map((sub: any) => ({
@@ -195,13 +192,6 @@ export class OrdersService {
               status: 'ACTIVE'
             }))
           });
-
-          // Descontar inventario de cada sub-ítem
-          for (const sub of (item as any).subItems) {
-            if (sub.productId) {
-              await this.deductProductStock(tx, sub.productId, sub.quantity, order.id, effectiveCustomerName);
-            }
-          }
         }
       }
 
@@ -212,16 +202,30 @@ export class OrdersService {
         });
       }
 
-      const createdOrder = await tx.order.findUnique({
+      return await tx.order.findUnique({
         where: { id: order.id },
         include: { 
           table: true,
           items: { include: { product: true, subItems: { include: { product: true } } } } 
         }
       });
+    }, { maxWait: 15000, timeout: 30000 });
 
-      return createdOrder;
-    });
+    // Descontar inventario de manera asíncrona sin bloquear la transacción interactiva en la nube
+    (async () => {
+      for (const item of data.items) {
+        await this.deductProductStock(this.prisma, item.productId, item.quantity, createdOrder.id, effectiveCustomerName);
+        if ((item as any).subItems && (item as any).subItems.length > 0) {
+          for (const sub of (item as any).subItems) {
+            if (sub.productId) {
+              await this.deductProductStock(this.prisma, sub.productId, sub.quantity, createdOrder.id, effectiveCustomerName);
+            }
+          }
+        }
+      }
+    })().catch(err => console.warn('Error asíncrono deduciendo inventario:', err));
+
+    return createdOrder;
   }
 
   async getOpenOrderForTable(tableId: string) {
@@ -280,8 +284,8 @@ export class OrdersService {
     }, 0);
     const newTotalAmount = Number(order.totalAmount) + newItemsTotal;
 
-    return this.prisma.$transaction(async (tx) => {
-      // 1. Agregar los nuevos items jerárquicos y descontar stock
+    const updatedOrder = await this.prisma.$transaction(async (tx) => {
+      // 1. Agregar los nuevos items jerárquicos
       for (const item of data.items) {
         const parent = await tx.orderItem.create({
           data: {
@@ -294,9 +298,6 @@ export class OrdersService {
             status: 'ACTIVE', // Los nuevos ítems nacen activos
           }
         });
-
-        // Descontar inventario del ítem nuevo
-        await this.deductProductStock(tx, item.productId, item.quantity, orderId, order.customerName || 'Mesa');
 
         if (item.subItems && item.subItems.length > 0) {
           await tx.orderItem.createMany({
@@ -311,18 +312,11 @@ export class OrdersService {
               status: 'ACTIVE'
             }))
           });
-
-          // Descontar inventario de cada sub-ítem
-          for (const sub of item.subItems) {
-            if (sub.productId) {
-              await this.deductProductStock(tx, sub.productId, sub.quantity, orderId, order.customerName || 'Mesa');
-            }
-          }
         }
       }
 
       // 2. Actualizar el total de la orden
-      const updatedOrder = await tx.order.update({
+      return await tx.order.update({
         where: { id: orderId },
         data: { totalAmount: newTotalAmount },
         include: {
@@ -334,9 +328,23 @@ export class OrdersService {
           },
         },
       });
+    }, { maxWait: 15000, timeout: 30000 });
 
-      return updatedOrder;
-    });
+    // Descontar inventario de los nuevos items de forma asíncrona
+    (async () => {
+      for (const item of data.items) {
+        await this.deductProductStock(this.prisma, item.productId, item.quantity, orderId, order.customerName || 'Mesa');
+        if (item.subItems) {
+          for (const sub of item.subItems) {
+            if (sub.productId) {
+              await this.deductProductStock(this.prisma, sub.productId, sub.quantity, orderId, order.customerName || 'Mesa');
+            }
+          }
+        }
+      }
+    })().catch(err => console.warn('Error asíncrono deduciendo inventario en adición:', err));
+
+    return updatedOrder;
   }
 
   async cancelOrder(orderId: string) {
@@ -349,26 +357,12 @@ export class OrdersService {
       throw new NotFoundException(`Order ${orderId} not found`);
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const updatedOrder = await tx.order.update({
+    const updatedOrder = await this.prisma.$transaction(async (tx) => {
+      const canceled = await tx.order.update({
         where: { id: orderId },
         // Estado 'CANCELLED' para que el KDS lo reconozca y muestre la alerta roja
         data: { status: 'CANCELLED' } 
       });
-
-      // Restaurar inventario de los ítems cancelados
-      for (const item of order.items) {
-        if (item.status === 'ACTIVE') {
-          await this.restoreProductStock(tx, item.productId, item.quantity, orderId, 'Cancelación de pedido');
-          if (item.subItems) {
-            for (const sub of item.subItems) {
-              if (sub.status === 'ACTIVE') {
-                await this.restoreProductStock(tx, sub.productId, sub.quantity, orderId, 'Cancelación de sub-ítem');
-              }
-            }
-          }
-        }
-      }
 
       if (order.tableId) {
         await tx.table.update({
@@ -377,8 +371,26 @@ export class OrdersService {
         });
       }
 
-      return updatedOrder;
-    });
+      return canceled;
+    }, { maxWait: 15000, timeout: 30000 });
+
+    // Restaurar inventario de los ítems cancelados de forma asíncrona
+    (async () => {
+      for (const item of order.items) {
+        if (item.status === 'ACTIVE') {
+          await this.restoreProductStock(this.prisma, item.productId, item.quantity, orderId, 'Cancelación de pedido');
+          if (item.subItems) {
+            for (const sub of item.subItems) {
+              if (sub.status === 'ACTIVE') {
+                await this.restoreProductStock(this.prisma, sub.productId, sub.quantity, orderId, 'Cancelación de sub-ítem');
+              }
+            }
+          }
+        }
+      }
+    })().catch(err => console.warn('Error asíncrono restaurando inventario:', err));
+
+    return updatedOrder;
   }
 
   async changeTable(orderId: string, newTableId: string) {
@@ -440,7 +452,7 @@ export class OrdersService {
       });
 
       return updatedOrder;
-    });
+    }, { maxWait: 15000, timeout: 30000 });
   }
 
   async removeOrderItem(orderId: string, itemId: string) {
@@ -455,33 +467,24 @@ export class OrdersService {
     const itemToRemove = order.items.find(item => item.id === itemId);
     if (!itemToRemove) throw new NotFoundException(`Item ${itemId} not found in order`);
 
-    return this.prisma.$transaction(async (tx) => {
-      
+    const updatedOrder = await this.prisma.$transaction(async (tx) => {
       // CAMBIO CLAVE: En lugar de borrar físicamente, actualizamos su estado a CANCELED
       await tx.orderItem.update({
         where: { id: itemId },
         data: { status: 'CANCELED' }
       });
 
-      // Restaurar stock del ítem cancelado
-      await this.restoreProductStock(tx, itemToRemove.productId, itemToRemove.quantity, orderId, 'Cancelación de ítem');
-      if (itemToRemove.subItems) {
-        for (const sub of itemToRemove.subItems) {
-          await this.restoreProductStock(tx, sub.productId, sub.quantity, orderId, 'Cancelación de sub-ítem');
-        }
-      }
-
       // Recalcular el nuevo monto total
       const newTotalAmount = Number(order.totalAmount) - Number(itemToRemove.subtotal);
       
-      const updatedOrder = await tx.order.update({
+      const resOrder = await tx.order.update({
         where: { id: orderId },
         data: { totalAmount: newTotalAmount },
         include: { items: { include: { product: true } } }
       });
 
       // Verificamos cuántos ítems quedan "Activos"
-      const activeItems = updatedOrder.items.filter(i => (i as any).status !== 'CANCELED');
+      const activeItems = resOrder.items.filter(i => (i as any).status !== 'CANCELED');
       
       // Si el pedido se quedó sin ítems activos, lo cancelamos entero y liberamos la mesa
       if (activeItems.length === 0) {
@@ -498,8 +501,20 @@ export class OrdersService {
         }
       }
 
-      return updatedOrder;
-    });
+      return resOrder;
+    }, { maxWait: 15000, timeout: 30000 });
+
+    // Restaurar stock del ítem cancelado de forma asíncrona
+    (async () => {
+      await this.restoreProductStock(this.prisma, itemToRemove.productId, itemToRemove.quantity, orderId, 'Cancelación de ítem');
+      if (itemToRemove.subItems) {
+        for (const sub of itemToRemove.subItems) {
+          await this.restoreProductStock(this.prisma, sub.productId, sub.quantity, orderId, 'Cancelación de sub-ítem');
+        }
+      }
+    })().catch(err => console.warn('Error asíncrono restaurando inventario de ítem:', err));
+
+    return updatedOrder;
   }
 
   async updateItemNotes(orderId: string, itemId: string, notes: string) {
