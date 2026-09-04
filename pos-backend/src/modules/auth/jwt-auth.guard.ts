@@ -43,16 +43,6 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       };
     }
 
-    // Token de SuperAdmin master
-    if (token === 'superadmin-token-master') {
-      return {
-        userId: 'superadmin-master',
-        email: 'superadmin@xpos.com',
-        role: 'SUPER_ADMIN',
-        restaurantId: isHeaderUuid ? headerRestId : null,
-      };
-    }
-
     throw new UnauthorizedException('Sesión no autorizada o expirada.');
   }
 }

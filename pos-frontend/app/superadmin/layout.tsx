@@ -11,45 +11,42 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
   const [isAuthorized, setIsAuthorized] = useState(false);
 
   useEffect(() => {
-    let token = localStorage.getItem('pos_token');
-    if (!token) {
-      token = 'superadmin-token-master';
-      localStorage.setItem('pos_token', token);
-    }
-
+    const token = localStorage.getItem('pos_token');
     const userStr = localStorage.getItem('pos_user');
-    if (!userStr) {
-      const defaultSuperUser = {
-        id: 'superadmin-master',
-        name: 'Super Administrador SaaS',
-        email: 'superadmin@xpos.com',
-        role: 'SUPER_ADMIN',
-        allowedViews: ['*'],
-        restaurantId: null,
-      };
-      localStorage.setItem('pos_user', JSON.stringify(defaultSuperUser));
-      localStorage.removeItem('pos_restaurant_id');
-      setUserName(defaultSuperUser.name);
-      setIsAuthorized(true);
+
+    // Si no hay token o es el token mock antiguo o no hay usuario en sesión
+    if (!token || token === 'superadmin-token-master' || !userStr) {
+      localStorage.removeItem('pos_token');
+      localStorage.removeItem('pos_user');
+      setIsAuthorized(false);
+      router.replace('/login');
       return;
     }
-    
+
     try {
       const user = JSON.parse(userStr);
       if (user.role !== 'SUPER_ADMIN') {
-        router.replace('/');
+        localStorage.removeItem('pos_token');
+        localStorage.removeItem('pos_user');
+        setIsAuthorized(false);
+        router.replace('/login');
         return;
       }
       setUserName(user.name || 'Super Administrador');
       setIsAuthorized(true);
     } catch {
-      setIsAuthorized(true);
+      localStorage.removeItem('pos_token');
+      localStorage.removeItem('pos_user');
+      setIsAuthorized(false);
+      router.replace('/login');
     }
   }, [router]);
 
   const handleLogout = () => {
     localStorage.removeItem('pos_token');
     localStorage.removeItem('pos_user');
+    localStorage.removeItem('pos_restaurant_id');
+    localStorage.removeItem('pos_restaurant_config');
     router.replace('/login');
   };
 
@@ -57,7 +54,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">
         <div className="flex items-center gap-3 text-emerald-400 font-bold">
-          <Shield className="w-6 h-6 animate-pulse" /> Cargando Panel SaaS Control...
+          <Shield className="w-6 h-6 animate-pulse" /> Verificando autorización de seguridad...
         </div>
       </div>
     );

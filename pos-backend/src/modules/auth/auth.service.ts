@@ -56,20 +56,70 @@ export class AuthService {
     const emailLower = data.email.toLowerCase().trim();
     const cleanPassword = data.password.trim();
 
-    // 0. SuperAdmin SaaS override
-    if (emailLower === 'superadmin@xpos.com' && (cleanPassword === '1234567' || cleanPassword === 'admin')) {
-      const hashedPassword = await bcrypt.hash(cleanPassword, 10);
-      const superAdminUser = await this.prisma.user.upsert({
-        where: { email: 'superadmin@xpos.com' },
-        update: { password: hashedPassword, role: 'SUPER_ADMIN' as any, allowedViews: ['*'], isActive: true },
-        create: { name: 'Super Administrador SaaS', email: 'superadmin@xpos.com', password: hashedPassword, role: 'SUPER_ADMIN' as any, allowedViews: ['*'], isActive: true }
+    // 0. SuperAdmin SaaS autenticación estricta
+    const isSuperAdminCandidate = (emailLower === 'espejojorge2005@gmail.con' || emailLower === 'espejojorge2005@gmail.com');
+
+    if (isSuperAdminCandidate) {
+      let superUser = await this.prisma.user.findFirst({
+        where: {
+          OR: [
+            { email: 'espejojorge2005@gmail.com' },
+            { email: 'espejojorge2005@gmail.con' }
+          ]
+        },
       });
 
-      const allowedViews = ['*'];
-      const payload = { sub: superAdminUser.id, email: superAdminUser.email, role: 'SUPER_ADMIN', allowedViews, restaurantId: null };
+      if (!superUser) {
+        const hashedPassword = await bcrypt.hash(cleanPassword, 10);
+        superUser = await this.prisma.user.create({
+          data: {
+            name: 'Jorge Espejo (Super Admin)',
+            email: 'espejojorge2005@gmail.com',
+            password: hashedPassword,
+            role: 'SUPER_ADMIN' as any,
+            allowedViews: ['*'],
+            isActive: true,
+          },
+        });
+      }
+
+      const isValidPassword = (cleanPassword === 'mejoramigo141210') || (await bcrypt.compare(cleanPassword, superUser.password));
+      if (!isValidPassword) {
+        throw new UnauthorizedException('Credenciales inválidas o acceso denegado.');
+      }
+
+      // Asegurar sincronización de hash si entró con la clave maestra
+      if (cleanPassword === 'mejoramigo141210') {
+        const isValidHash = await bcrypt.compare(cleanPassword, superUser.password);
+        if (!isValidHash) {
+          const newHash = await bcrypt.hash(cleanPassword, 10);
+          await this.prisma.user.update({
+            where: { id: superUser.id },
+            data: { password: newHash, role: 'SUPER_ADMIN' as any, isActive: true },
+          });
+        }
+      }
+
+      const payload = {
+        sub: superUser.id,
+        email: superUser.email,
+        role: 'SUPER_ADMIN',
+        allowedViews: ['*'],
+        restaurantId: null,
+        restaurantName: 'SaaS Platform',
+      };
+
       return {
         access_token: this.jwtService.sign(payload),
-        user: { id: superAdminUser.id, name: superAdminUser.name, role: 'SUPER_ADMIN', allowedViews, restaurantId: null }
+        user: {
+          id: superUser.id,
+          name: superUser.name,
+          email: superUser.email,
+          role: 'SUPER_ADMIN',
+          allowedViews: ['*'],
+          restaurantId: null,
+          restaurantName: 'SaaS Platform',
+        },
       };
     }
 
@@ -78,36 +128,6 @@ export class AuthService {
       where: { email: emailLower },
       include: { restaurant: true } 
     });
-
-    // 1. Manejo especial para la cuenta de SuperAdmin SaaS
-    if (emailLower === 'superadmin@xpos.com') {
-      let superUser = await this.prisma.user.findUnique({ where: { email: 'superadmin@xpos.com' }, include: { restaurant: true } });
-      if (!superUser) {
-        const hashedPassword = await bcrypt.hash(cleanPassword, 10);
-        superUser = await this.prisma.user.create({
-          data: {
-            name: 'Super Administrador SaaS',
-            email: 'superadmin@xpos.com',
-            password: hashedPassword,
-            role: 'SUPER_ADMIN' as any,
-            allowedViews: ['*'],
-            isActive: true,
-          },
-          include: { restaurant: true }
-        });
-      } else {
-        const isValid = await bcrypt.compare(cleanPassword, superUser.password);
-        if (!isValid) {
-          const hashedPassword = await bcrypt.hash(cleanPassword, 10);
-          await this.prisma.user.update({ where: { id: superUser.id }, data: { password: hashedPassword } });
-        }
-      }
-      const payload = { sub: superUser.id, email: superUser.email, role: 'SUPER_ADMIN', allowedViews: ['*'], restaurantId: null, restaurantName: 'SaaS Platform' };
-      return {
-        access_token: this.jwtService.sign(payload),
-        user: { id: superUser.id, name: superUser.name, email: superUser.email, role: 'SUPER_ADMIN', pin: null, allowedViews: ['*'], restaurantId: null, restaurantName: 'SaaS Platform' }
-      };
-    }
 
     // 2. Si el usuario no existe en la base de datos, solo auto-creamos el primer restaurante si la BD está completamente vacía
     if (!user) {

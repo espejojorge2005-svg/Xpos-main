@@ -62,7 +62,11 @@ export default function SuperAdminPage() {
   const fetchInitialData = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('pos_token') || 'superadmin-token-master';
+      const token = localStorage.getItem('pos_token');
+      if (!token) {
+        window.location.href = '/login';
+        return;
+      }
       const headers = { Authorization: `Bearer ${token}` };
       
       // 1. Cargar planes desde pos_saas_plans_cache primero
@@ -83,6 +87,13 @@ export default function SuperAdminPage() {
         fetch(getApiUrl('/saas/plans'), { headers })
       ]);
       
+      if (resTenants.status === 401 || resTenants.status === 403 || resPlans.status === 401 || resPlans.status === 403) {
+        localStorage.removeItem('pos_token');
+        localStorage.removeItem('pos_user');
+        window.location.href = '/login';
+        return;
+      }
+
       if (resTenants.ok) {
         const dbTenants = await resTenants.json();
         setRestaurants(dbTenants);
@@ -171,7 +182,8 @@ export default function SuperAdminPage() {
   const deleteRestaurant = async (id: string, name: string) => {
     if (!window.confirm(`¿Estás seguro de eliminar permanentemente el restaurante "${name}" y toda su información?`)) return;
     try {
-      const token = localStorage.getItem('pos_token') || 'superadmin-token-master';
+      const token = localStorage.getItem('pos_token');
+      if (!token) return;
       const res = await fetch(getApiUrl(`/saas/restaurants/${id}`), {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }

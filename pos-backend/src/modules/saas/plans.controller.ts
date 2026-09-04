@@ -1,7 +1,10 @@
-import { Controller, Get, Post, Body, Patch, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, UseGuards } from '@nestjs/common';
 import { PlansService, CreatePlanDto, UpdatePlanDto } from './plans.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { SuperAdminGuard } from '../auth/super-admin.guard';
 
 @Controller('saas/plans')
+@UseGuards(JwtAuthGuard, SuperAdminGuard)
 export class PlansController {
   constructor(private readonly plansService: PlansService) {}
 

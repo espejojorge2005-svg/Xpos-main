@@ -83,7 +83,8 @@ export function PlansManager() {
 
     // 2. Intentar actualizar desde el servidor silenciosamente si está online
     try {
-      const token = localStorage.getItem('pos_token') || 'superadmin-token-master';
+      const token = localStorage.getItem('pos_token');
+      if (!token) return;
       const res = await fetch(getApiUrl('/saas/plans'), {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -163,7 +164,8 @@ export function PlansManager() {
 
     // 2. Sincronizar con el backend si está disponible
     try {
-      const token = localStorage.getItem('pos_token') || 'superadmin-token-master';
+      const token = localStorage.getItem('pos_token');
+      if (!token) return;
       const payload = {
         name: planToSave.name,
         code: planToSave.code,
@@ -203,7 +205,8 @@ export function PlansManager() {
 
     // 2. Sincronizar con backend si está disponible
     try {
-      const token = localStorage.getItem('pos_token') || 'superadmin-token-master';
+      const token = localStorage.getItem('pos_token');
+      if (!token) return;
       await fetch(getApiUrl(`/saas/plans/${id}/status`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },

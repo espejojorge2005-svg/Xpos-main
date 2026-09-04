@@ -104,11 +104,12 @@ export default function LoginPage() {
     const savedRestaurantId = localStorage.getItem('pos_restaurant_id');
     if (savedRestaurantId) {
       setRestaurantId(savedRestaurantId);
-      setMode('STAFF'); // Terminal vinculada: mostrar directo teclado PIN de personal
+      fetchStaff(savedRestaurantId);
     } else {
-      setMode('ADMIN'); // Terminal nueva: pedir correo y contraseña primero
+      setIsStaffLoading(false);
     }
-    fetchStaff(savedRestaurantId);
+    // Siempre iniciar en modo Correo y Contraseña por defecto
+    setMode('ADMIN');
   }, []);
 
   const unlinkDevice = () => {
@@ -307,24 +308,6 @@ export default function LoginPage() {
       if (response && !response.ok) {
         toast.error(data?.message || 'Credenciales inválidas o acceso denegado.');
         setLoading(false);
-        return;
-      }
-
-      // Fallback A: SuperAdmin SaaS Master
-      if (cleanEmail === 'superadmin@xpos.com' && (cleanPassword === '1234567' || cleanPassword === 'admin')) {
-        const superUser = {
-          id: 'superadmin-master',
-          name: 'Super Administrador SaaS',
-          email: 'superadmin@xpos.com',
-          role: 'SUPER_ADMIN',
-          allowedViews: ['*'],
-          restaurantId: null,
-        };
-        syncRestaurantSession(null, 'SuperAdmin Master');
-        localStorage.setItem('pos_token', 'superadmin-token-master');
-        localStorage.setItem('pos_user', JSON.stringify(superUser));
-        toast.success('¡Bienvenido al Panel SuperAdmin!');
-        window.location.href = '/superadmin';
         return;
       }
 
@@ -558,29 +541,31 @@ export default function LoginPage() {
         {/* Right Side: Form Area */}
         <div className="w-full max-w-md bg-white/10 backdrop-blur-xl rounded-[2rem] border border-white/20 shadow-2xl p-8 flex flex-col relative overflow-hidden">
           
-          {/* Mode Switch Tabs */}
-          <div className="flex bg-slate-900/60 p-1.5 rounded-2xl border border-white/10 mb-6">
-            <button
-              onClick={() => setMode('ADMIN')}
-              className={`flex-1 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${
-                mode === 'ADMIN' 
-                  ? 'bg-emerald-500 text-white shadow-md' 
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Mail className="w-4 h-4" /> Correo y Contraseña
-            </button>
-            <button
-              onClick={() => setMode('STAFF')}
-              className={`flex-1 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${
-                mode === 'STAFF' || mode === 'PIN'
-                  ? 'bg-emerald-500 text-white shadow-md' 
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <KeyRound className="w-4 h-4" /> Personal (PIN)
-            </button>
-          </div>
+          {/* Mode Switch Tabs: Solo disponible si el local tiene restaurante vinculado y personal registrado */}
+          {restaurantId && staff.length > 0 && (
+            <div className="flex bg-slate-900/60 p-1.5 rounded-2xl border border-white/10 mb-6">
+              <button
+                onClick={() => setMode('ADMIN')}
+                className={`flex-1 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${
+                  mode === 'ADMIN' 
+                    ? 'bg-emerald-500 text-white shadow-md' 
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Mail className="w-4 h-4" /> Correo y Contraseña
+              </button>
+              <button
+                onClick={() => setMode('STAFF')}
+                className={`flex-1 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${
+                  mode === 'STAFF' || mode === 'PIN'
+                    ? 'bg-emerald-500 text-white shadow-md' 
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <KeyRound className="w-4 h-4" /> Personal (PIN)
+              </button>
+            </div>
+          )}
 
           {/* ----- EMAIL & PASSWORD LOGIN MODE ----- */}
           {mode === 'ADMIN' && (
