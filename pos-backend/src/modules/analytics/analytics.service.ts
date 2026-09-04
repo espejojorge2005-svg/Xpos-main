@@ -64,17 +64,42 @@ export class AnalyticsService {
       paymentWhere.order = { restaurantId };
     }
 
-    // ── 1. PAYMENTS in range ─────────────────────────────────────────────────
-    const payments = await this.prisma.payment.findMany({
-      where: paymentWhere,
-      include: { order: { include: { items: { where: { parentItemId: null } }, table: true } } },
-    });
-
-    // ── 2. ORDERS with items in range ────────────────────────────────────────
-    const orders = await this.prisma.order.findMany({
-      where: orderWhere,
-      include: { items: { where: { parentItemId: null }, include: { product: { include: { category: true } } } } },
-    });
+    // ── 1. PAYMENTS & 2. ORDERS in range (Ejecutados concurrentemente con Promise.all) ────
+    const [payments, orders] = await Promise.all([
+      this.prisma.payment.findMany({
+        where: paymentWhere,
+        select: {
+          id: true,
+          amount: true,
+          tipAmount: true,
+          paymentMethod: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.order.findMany({
+        where: orderWhere,
+        select: {
+          id: true,
+          createdAt: true,
+          updatedAt: true,
+          items: {
+            where: { parentItemId: null },
+            select: {
+              id: true,
+              productId: true,
+              quantity: true,
+              unitPrice: true,
+              product: {
+                select: {
+                  name: true,
+                  category: { select: { name: true } },
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
 
     // ── KPIs ─────────────────────────────────────────────────────────────────
     const totalRevenue = payments.reduce((s, p) => s + Number(p.amount || 0), 0);

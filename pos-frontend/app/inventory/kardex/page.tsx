@@ -131,8 +131,23 @@ export default function KardexPage() {
   const router = useRouter();
   useGuardedRoute('kardex');
 
-  const [data, setData] = useState<KardexData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<KardexData | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      return computeLocalKardex(7);
+    } catch {
+      return null;
+    }
+  });
+  const [loading, setLoading] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      const local = computeLocalKardex(7);
+      return !local || local.kardex.length === 0;
+    } catch {
+      return true;
+    }
+  });
   const [search, setSearch] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
 

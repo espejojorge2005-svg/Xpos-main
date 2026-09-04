@@ -60,6 +60,7 @@ model Zone {
   createdAt    DateTime    @default(now()) @map("created_at")
   updatedAt    DateTime    @updatedAt @map("updated_at")
 
+  @@index([restaurantId])
   @@map("zones")
 }
 
@@ -78,6 +79,7 @@ model Table {
   createdAt DateTime    @default(now()) @map("created_at")
   updatedAt DateTime    @updatedAt @map("updated_at")
 
+  @@index([zoneId])
   @@map("tables")
 }
 
@@ -93,6 +95,7 @@ model Category {
   name         String
   products     Product[]
 
+  @@index([restaurantId])
   @@map("categories")
 }
 
@@ -132,6 +135,8 @@ model Product {
   // Agrega esta línea en tu modelo Product
   isActive Boolean @default(true) @map("is_active")
 
+  @@index([restaurantId, isActive])
+  @@index([categoryId])
   @@map("products")
 }
 
@@ -235,6 +240,12 @@ model Order {
   createdAt    DateTime    @default(now()) @map("created_at")
   updatedAt    DateTime    @updatedAt @map("updated_at")
 
+  @@index([restaurantId])
+  @@index([restaurantId, status])
+  @@index([restaurantId, status, updatedAt])
+  @@index([restaurantId, createdAt])
+  @@index([tableId])
+  @@index([tableId, status])
   @@index([status])
   @@index([updatedAt])
   @@index([createdAt])
@@ -263,6 +274,8 @@ model OrderItem {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([orderId])
+  @@index([orderId, status])
+  @@index([productId])
   @@index([status])
   @@map("order_items")
 }
@@ -288,6 +301,7 @@ model StockMovement {
   
   createdAt   DateTime           @default(now()) @map("created_at")
 
+  @@index([productId, createdAt])
   @@index([createdAt])
   @@map("stock_movements")
 }
@@ -303,6 +317,9 @@ model Payment {
   
   createdAt     DateTime      @default(now()) @map("created_at")
 
+  @@index([orderId])
+  @@index([createdAt])
+  @@index([paymentMethod])
   @@map("payments")
 }
 
@@ -326,6 +343,7 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  @@index([restaurantId])
   @@map("users")
 }
 
@@ -351,6 +369,8 @@ model CashShift {
   
   expenses       CashExpense[]
 
+  @@index([restaurantId, status])
+  @@index([restaurantId, openedAt])
   @@map("cash_shifts")
 }
 
@@ -364,6 +384,7 @@ model CashExpense {
   
   createdAt   DateTime  @default(now()) @map("created_at")
 
+  @@index([shiftId])
   @@map("cash_expenses")
 }
 

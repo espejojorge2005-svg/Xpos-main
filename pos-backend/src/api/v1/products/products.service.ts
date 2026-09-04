@@ -299,7 +299,7 @@ export class ProductsService {
           productId: { in: productIds },
           createdAt: { gte: since } 
         },
-        include: { product: { select: { id: true, name: true, stock: true, minStock: true, category: { select: { name: true } } } } },
+        select: { productId: true, createdAt: true, stockAfter: true },
         orderBy: { createdAt: 'asc' },
       }) : [];
 

@@ -63,14 +63,13 @@ export default function Sidebar() {
       setUserName('');
     }
 
-    // Only fetch restaurant config from backend if logged in strictly as restaurant ADMIN
-    if (userRole === 'ADMIN') {
+    // Only fetch restaurant config from backend if not cached or logged in as restaurant ADMIN
+    if (userRole === 'ADMIN' && !cached) {
       const fetchConfig = async () => {
         try {
           const token = localStorage.getItem('pos_token');
           const res = await fetch(getApiUrl('/restaurant-config'), {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
-            cache: 'no-store',
           });
           if (res.ok) {
             const data: RestaurantConfig = await res.json();
@@ -91,7 +90,7 @@ export default function Sidebar() {
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
-  }, [pathname]);
+  }, []);
 
   if (!isMounted) return null;
   const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;

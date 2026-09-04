@@ -8,6 +8,9 @@ const isValidUuid = (val: any): boolean =>
 
 @Injectable()
 export class PaymentsService {
+  private verifiedRestCache = new Map<string, number>();
+  private readonly REST_CACHE_TTL = 5 * 60 * 1000;
+
   constructor(
     private prisma: PrismaService,
     private cls: ClsService,
@@ -16,8 +19,15 @@ export class PaymentsService {
   private async resolveRestaurantId(reqUser?: any, restaurantIdParam?: string | null): Promise<string | null> {
     const rawId = restaurantIdParam || reqUser?.restaurantId || this.cls.get('restaurantId');
     if (isValidUuid(rawId)) {
-      const rest = await this.prisma.restaurant.findUnique({ where: { id: rawId } });
-      if (rest) return rest.id;
+      const cachedTime = this.verifiedRestCache.get(rawId);
+      if (cachedTime && Date.now() < cachedTime) {
+        return rawId;
+      }
+      const rest = await this.prisma.restaurant.findUnique({ where: { id: rawId }, select: { id: true } });
+      if (rest) {
+        this.verifiedRestCache.set(rawId, Date.now() + this.REST_CACHE_TTL);
+        return rest.id;
+      }
     }
 
     if (reqUser?.userId && isValidUuid(reqUser.userId)) {
@@ -26,6 +36,7 @@ export class PaymentsService {
         select: { restaurantId: true }
       });
       if (user?.restaurantId && isValidUuid(user.restaurantId)) {
+        this.verifiedRestCache.set(user.restaurantId, Date.now() + this.REST_CACHE_TTL);
         return user.restaurantId;
       }
     }
@@ -268,7 +279,9 @@ export class PaymentsService {
         },
         include: {
           order: {
-            include: { table: true },
+            select: {
+              table: { select: { number: true } },
+            },
           },
         },
         orderBy: { createdAt: 'desc' }
@@ -278,13 +291,22 @@ export class PaymentsService {
         where: shiftWhere,
         include: { expenses: true }
       }),
-      // 5. Detalle de todas las órdenes cerradas
+      // 5. Detalle de todas las órdenes cerradas (select optimizado sin sobrecarga de joins)
       this.prisma.order.findMany({
         where: orderWhere,
         include: {
-          table: true,
-          payments: true,
-          items: { include: { product: true } }
+          table: { select: { id: true, number: true } },
+          payments: { select: { id: true, amount: true, tipAmount: true, paymentMethod: true } },
+          items: {
+            select: {
+              id: true,
+              quantity: true,
+              unitPrice: true,
+              subtotal: true,
+              productId: true,
+              product: { select: { id: true, name: true } }
+            }
+          }
         },
         orderBy: { updatedAt: 'desc' }
       })

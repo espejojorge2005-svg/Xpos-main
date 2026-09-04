@@ -35,12 +35,24 @@ interface RestaurantConfig {
 export default function SettingsPage() {
   const router = useRouter();
   useGuardedRoute('configuracion');
-  const [zones, setZones] = useState<Zone[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [zones, setZones] = useState<Zone[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const cached = getScopedStorage<Zone[]>('pos_registered_zones', []);
+      return Array.isArray(cached) ? cached : [];
+    } catch { return []; }
+  });
+  const [loading, setLoading] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
-  // Restaurant config state
-  const [config, setConfig] = useState<RestaurantConfig>({ id: 'default', name: '' });
+  // Restaurant config state (inicializado de inmediato desde caché)
+  const [config, setConfig] = useState<RestaurantConfig>(() => {
+    if (typeof window === 'undefined') return { id: 'default', name: '' };
+    try {
+      const cached = localStorage.getItem('pos_restaurant_config');
+      return cached ? JSON.parse(cached) : { id: 'default', name: '' };
+    } catch { return { id: 'default', name: '' }; }
+  });
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [configOpen, setConfigOpen] = useState(true);
 
@@ -57,16 +69,18 @@ export default function SettingsPage() {
     const token = localStorage.getItem('pos_token') || '';
     try {
       const res = await fetch(getApiUrl('/restaurant-config'), {
-        headers: { 'Authorization': `Bearer ${token}` },
-        cache: 'no-store'
+        headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (res.ok) setConfig(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setConfig(data);
+        localStorage.setItem('pos_restaurant_config', JSON.stringify(data));
+      }
     } catch { /* silently ignore */ }
   };
 
   useEffect(() => {
-    fetchConfig();
-    fetchZones();
+    Promise.all([fetchConfig(), fetchZones()]);
 
     const currentRestId = getRestaurantId();
     let unsubscribe: (() => void) | undefined;

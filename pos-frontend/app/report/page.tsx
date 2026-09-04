@@ -3,7 +3,7 @@ import { getApiUrl } from '@/utils/api';
 import { getScopedStorage, setScopedStorage, removeScopedStorage, getRestaurantId } from '@/utils/storage';
 import { syncShiftToFirebase, syncShiftExpenseToFirebase, syncPastClosureToFirebase, subscribeToPastClosures, subscribeToCashShift, subscribeToActiveTableOrders, subscribeToOrders, syncPastOpeningToFirebase, deletePastOpeningFromFirebase, subscribeToPastOpenings } from '@/utils/firebaseSync';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Calculator, DollarSign, CreditCard, Printer, Wallet,
@@ -46,7 +46,12 @@ interface PastOpening {
 export default function CashRegisterPage() {
   const router = useRouter();
   useGuardedRoute('caja');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    const shift = getScopedStorage<any>('mock_cash_shift', null);
+    const history = getScopedStorage<any[]>('pos_shift_history', []);
+    return !shift && (!history || history.length === 0);
+  });
 
   const [isShiftOpen, setIsShiftOpen] = useState(false);
   const [report, setReport] = useState({
@@ -200,13 +205,20 @@ export default function CashRegisterPage() {
     }
   };
 
+  const isFetchingReportRef = useRef(false);
+
   // 1. CARGAR DATOS 
-  const fetchDailyReport = async () => {
+  const fetchDailyReport = async (silent = false) => {
+    if (isFetchingReportRef.current) return;
+    isFetchingReportRef.current = true;
     const token = localStorage.getItem('pos_token');
-    if (!token) return router.push('/login');
+    if (!token) {
+      isFetchingReportRef.current = false;
+      return router.push('/login');
+    }
 
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       let data: any = {};
       const currentRestId = getRestaurantId();
       try {
@@ -357,6 +369,7 @@ export default function CashRegisterPage() {
       setIsShiftOpen(isLocalShiftOpen);
 
     } catch (error) { toast.error('Error al cargar reporte'); } finally { 
+      isFetchingReportRef.current = false;
       setLoading(false); 
       fetchPendingTables();
     }
@@ -425,6 +438,7 @@ export default function CashRegisterPage() {
       }
     });
 
+    let isInitialShiftSnapshot = true;
     unsubShift = subscribeToCashShift(restId, (cloudShift) => {
       if (cloudShift) {
         if (!cloudShift.isOpen) {
@@ -457,7 +471,11 @@ export default function CashRegisterPage() {
           payments: cloudShift.payments || currentMock.payments || []
         };
         setScopedStorage('mock_cash_shift', mergedMock);
-        fetchDailyReport();
+        if (isInitialShiftSnapshot) {
+          isInitialShiftSnapshot = false;
+          return;
+        }
+        fetchDailyReport(true);
       }
     });
 

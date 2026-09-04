@@ -100,8 +100,20 @@ const getCleanWaiterName = (order: KitchenOrder) => {
 export default function CocinaPage() {
   const router = useRouter();
   useGuardedRoute('cocina');
-  const [orders, setOrders] = useState<KitchenOrder[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [orders, setOrders] = useState<KitchenOrder[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const cached = getScopedStorage<KitchenOrder[]>('pos_local_kitchen_orders', []);
+      return Array.isArray(cached) ? cached : [];
+    } catch { return []; }
+  });
+  const [loading, setLoading] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      const cached = getScopedStorage<KitchenOrder[]>('pos_local_kitchen_orders', []);
+      return !Array.isArray(cached) || cached.length === 0;
+    } catch { return true; }
+  });
   const [ackedOrders, setAckedOrders] = useState<string[]>([]);
   const isUpdatingRef = useRef(false);
 
@@ -109,8 +121,14 @@ export default function CocinaPage() {
   const servedOrderIdsRef = useRef<Set<string>>(new Set());
   const servedItemIdsRef = useRef<Set<string>>(new Set());
 
-  // NUEVO: Estados para filtrar estaciones
-  const [stations, setStations] = useState<{id: string, name: string, colorHex: string}[]>([]);
+  // Estados para filtrar estaciones (inicializados desde caché inmediata)
+  const [stations, setStations] = useState<{id: string, name: string, colorHex: string}[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const cached = getScopedStorage<any[]>('pos_registered_stations', []);
+      return Array.isArray(cached) ? cached : [];
+    } catch { return []; }
+  });
   const [selectedStation, setSelectedStation] = useState<string | null>(null);
   const [finishedCount, setFinishedCount] = useState<number>(0);
 

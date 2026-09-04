@@ -11,6 +11,9 @@ const isValidUuid = (val: any): boolean =>
 
 @Injectable()
 export class FloorService {
+  private verifiedRestCache = new Map<string, number>();
+  private readonly REST_CACHE_TTL = 5 * 60 * 1000;
+
   constructor(
     private prisma: PrismaService,
     private cls: ClsService,
@@ -19,8 +22,15 @@ export class FloorService {
   private async resolveRestaurantId(reqUser?: any, restaurantIdParam?: string | null): Promise<string | null> {
     const rawId = restaurantIdParam || reqUser?.restaurantId || this.cls.get('restaurantId');
     if (isValidUuid(rawId)) {
-      const rest = await this.prisma.restaurant.findUnique({ where: { id: rawId } });
-      if (rest) return rest.id;
+      const cachedTime = this.verifiedRestCache.get(rawId);
+      if (cachedTime && Date.now() < cachedTime) {
+        return rawId;
+      }
+      const rest = await this.prisma.restaurant.findUnique({ where: { id: rawId }, select: { id: true } });
+      if (rest) {
+        this.verifiedRestCache.set(rawId, Date.now() + this.REST_CACHE_TTL);
+        return rest.id;
+      }
     }
 
     // Si el usuario en req tiene userId válido, verificar si tiene restaurantId asignado en BD
@@ -30,12 +40,17 @@ export class FloorService {
         select: { restaurantId: true }
       });
       if (user?.restaurantId && isValidUuid(user.restaurantId)) {
+        this.verifiedRestCache.set(user.restaurantId, Date.now() + this.REST_CACHE_TTL);
         return user.restaurantId;
       }
     }
 
-    const defaultRest = await this.prisma.restaurant.findFirst({ orderBy: { createdAt: 'asc' } });
-    return defaultRest ? defaultRest.id : null;
+    const defaultRest = await this.prisma.restaurant.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } });
+    if (defaultRest) {
+      this.verifiedRestCache.set(defaultRest.id, Date.now() + this.REST_CACHE_TTL);
+      return defaultRest.id;
+    }
+    return null;
   }
 
   async createZone(data: CreateZoneDto, reqUser?: any, restaurantIdParam?: string | null) {

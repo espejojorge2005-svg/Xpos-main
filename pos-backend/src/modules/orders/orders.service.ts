@@ -581,50 +581,67 @@ export class OrdersService {
   async getKitchenOrders(restaurantId?: string | null) {
     const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
 
-    const orders = await this.prisma.order.findMany({
-      where: {
-        ...(restaurantId ? { restaurantId } : {}),
-        OR: [
-          { status: 'CANCELLED' },
-          {
-            status: 'OPEN',
-            items: {
-              some: { status: 'ACTIVE' }
+    // Ejecutar concurrentemente las 3 consultas principales para evitar acumulación de latencia
+    const [orders, allOrderTxs, finishedOrdersCount] = await Promise.all([
+      this.prisma.order.findMany({
+        where: {
+          ...(restaurantId ? { restaurantId } : {}),
+          OR: [
+            { status: 'CANCELLED' },
+            {
+              status: 'OPEN',
+              items: {
+                some: { status: 'ACTIVE' }
+              }
             }
+          ],
+          updatedAt: {
+            gte: twelveHoursAgo 
           }
-        ],
-        updatedAt: {
-          gte: twelveHoursAgo 
+        },
+        include: {
+          table: true,
+          items: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  category: { select: { name: true } },
+                  stations: { select: { id: true, name: true, colorHex: true } }
+                }
+              }
+            },
+            orderBy: [
+              { createdAt: 'asc' },
+              { id: 'asc' }
+            ]
+          }
+        },
+        orderBy: {
+          createdAt: 'asc'
         }
-      },
-      include: {
-        table: true,
-        items: {
-          include: {
-            product: {
-              include: { category: true, stations: true }
-            }
-          },
-          orderBy: [
-            { createdAt: 'asc' },
-            { id: 'asc' }
-          ]
+      }),
+      this.prisma.order.findMany({
+        where: { 
+          ...(restaurantId ? { restaurantId } : {}),
+          createdAt: { gte: twelveHoursAgo } 
+        },
+        select: { id: true, createdAt: true },
+        orderBy: { createdAt: 'asc' }
+      }),
+      this.prisma.order.count({
+        where: {
+          ...(restaurantId ? { restaurantId } : {}),
+          createdAt: { gte: twelveHoursAgo },
+          status: { not: 'CANCELLED' },
+          items: {
+            some: {}, // Has at least one item
+            every: { status: { in: ['SERVED', 'CANCELED'] } }
+          }
         }
-      },
-      orderBy: {
-        createdAt: 'asc'
-      }
-    });
-
-    // To know if another order intervened, we fetch all order creation times in the last 12 hours
-    const allOrderTxs = await this.prisma.order.findMany({
-      where: { 
-        ...(restaurantId ? { restaurantId } : {}),
-        createdAt: { gte: twelveHoursAgo } 
-      },
-      select: { id: true, createdAt: true },
-      orderBy: { createdAt: 'asc' }
-    });
+      })
+    ]);
 
     const tickets: any[] = [];
 
@@ -694,19 +711,6 @@ export class OrdersService {
 
     // Sort by chronological effective createdAt of the ticket
     tickets.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-
-    // Calculate finished orders for today
-    const finishedOrdersCount = await this.prisma.order.count({
-      where: {
-        ...(restaurantId ? { restaurantId } : {}),
-        createdAt: { gte: twelveHoursAgo },
-        status: { not: 'CANCELLED' },
-        items: {
-          some: {}, // Has at least one item
-          every: { status: { in: ['SERVED', 'CANCELED'] } }
-        }
-      }
-    });
 
     return {
       orders: tickets,

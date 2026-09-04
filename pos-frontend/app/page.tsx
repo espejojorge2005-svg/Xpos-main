@@ -192,18 +192,45 @@ const GridTable = ({
   );
 };
 
+const getInitialZones = (): Zone[] => {
+  try {
+    const savedZones = getScopedStorage<any[]>('pos_registered_zones', []);
+    if (Array.isArray(savedZones) && savedZones.length > 0) {
+      return savedZones.map(z => ({
+        ...z,
+        tables: (z.tables || []).map((t: any, idx: number) => ({
+          ...t,
+          id: t.id || `t-${idx + 1}`,
+          name: t.name || `Mesa ${t.number}`,
+          number: t.number,
+          capacity: t.capacity || 4,
+          status: t.status || 'FREE',
+          posX: t.posX ?? (40 + (idx % 3) * 160),
+          posY: t.posY ?? (40 + Math.floor(idx / 3) * 160),
+          zoneId: z.id
+        }))
+      }));
+    }
+  } catch {}
+  return [];
+};
+
 export default function Home() {
   const router = useRouter();
   useGuardedRoute('pos');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-  const [zones, setZones] = useState<Zone[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [zones, setZones] = useState<Zone[]>(() => (typeof window !== 'undefined' ? getInitialZones() : []));
+  const [loading, setLoading] = useState(() => (typeof window !== 'undefined' ? getInitialZones().length === 0 : true));
   const [isEditMode, setIsEditMode] = useState(false);
   const [viewMode, setViewMode] = useState<'map' | 'grid'>('grid');
 
   
-  // NUEVO: Estado para verificar si la caja está abierta
-  const [isShiftOpen, setIsShiftOpen] = useState<boolean | null>(null);
+  // Estado para verificar si la caja está abierta (inicializado desde caché inmediata)
+  const [isShiftOpen, setIsShiftOpen] = useState<boolean | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const s = getScopedStorage<any>('mock_cash_shift', null);
+    return s ? true : null;
+  });
   const [restaurantName, setRestaurantName] = useState<string>('');
 
   const fetchZonas = async () => {
@@ -223,6 +250,7 @@ export default function Home() {
         const data = await response.json();
         if (Array.isArray(data) && data.length > 0) {
           loadedZones = data;
+          setScopedStorage('pos_registered_zones', data);
         }
       }
     } catch (error) {

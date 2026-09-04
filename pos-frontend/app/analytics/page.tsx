@@ -220,16 +220,25 @@ function formatLocalDate(d: Date): string {
 export default function AnalyticsPage() {
   const router = useRouter();
   useGuardedRoute('analytics');
-  const [data, setData] = useState<AnalyticsData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [dateRange, setDateRange] = useState<'TODAY' | 'LAST_7_DAYS' | 'LAST_30_DAYS' | 'CUSTOM'>('TODAY');
   
   // Custom date range state (Fecha Local Exacta)
   const [fromDate, setFromDate] = useState(() => formatLocalDate(new Date()));
   const [toDate, setToDate] = useState(() => formatLocalDate(new Date()));
 
+  const [data, setData] = useState<AnalyticsData | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const today = formatLocalDate(new Date());
+      return computeLocalAnalytics(today, today);
+    } catch {
+      return null;
+    }
+  });
+  const [loading, setLoading] = useState(false);
+  const [dateRange, setDateRange] = useState<'TODAY' | 'LAST_7_DAYS' | 'LAST_30_DAYS' | 'CUSTOM'>('TODAY');
+
   const fetchAnalytics = async (from: string, to: string) => {
-    setLoading(true);
+    if (!data) setLoading(true);
     let serverData: AnalyticsData | null = null;
     try {
       const token = localStorage.getItem('pos_token') || '';
