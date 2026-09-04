@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { subscribeToOrders, FirebaseOrder } from '@/utils/firebaseSync';
 import { getRestaurantId, getScopedStorage, setScopedStorage } from '@/utils/storage';
 import { toast } from 'sonner';
 
 export default function OrderNotificationListener() {
   const router = useRouter();
+  const pathname = usePathname();
   const mountedAtRef = useRef<number>(Date.now());
   const knownOrderStatusRef = useRef<Map<string, string>>(new Map());
   const notifiedOrdersRef = useRef<Set<string>>(new Set());
@@ -45,6 +46,11 @@ export default function OrderNotificationListener() {
   };
 
   const triggerServedNotification = (tableLabel: string, tableId?: string) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
+    if (!token || pathname === '/login' || pathname === '/register' || pathname?.startsWith('/superadmin')) {
+      return;
+    }
+
     playBellChime();
     toast.success(`🍽️ ¡Pedido Listo para Servir!`, {
       description: `${tableLabel} — Cocina terminó de preparar los platos y están listos para llevar a la mesa.`,
@@ -64,9 +70,19 @@ export default function OrderNotificationListener() {
   };
 
   useEffect(() => {
+    // 1. Desactivar estrictamente en pantallas de login, registro, superadmin o sin sesión
+    if (pathname === '/login' || pathname === '/register' || pathname?.startsWith('/superadmin')) {
+      return;
+    }
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
+    if (!token) {
+      return;
+    }
+
     mountedAtRef.current = Date.now();
 
-    // Restaurar órdenes notificadas en esta sesión para evitar duplicidad al navegar
+    // Restaurar órdenes ya notificadas en esta sesión para evitar duplicidad al navegar
     try {
       const stored = sessionStorage.getItem('notified_served_orders');
       if (stored) {
@@ -79,8 +95,11 @@ export default function OrderNotificationListener() {
 
     const restaurantId = getRestaurantId() || 'main';
 
-    // 1. Escuchar evento local en tiempo real inmediato (mismo navegador / red local)
+    // 2. Escuchar evento local en tiempo real inmediato (mismo navegador / red local)
     const handleLocalServed = (e: any) => {
+      const currentToken = localStorage.getItem('pos_token');
+      if (!currentToken || pathname === '/login' || pathname === '/register') return;
+
       const detail = e.detail || {};
       const id = detail.id;
       if (!id || notifiedOrdersRef.current.has(id)) return;
@@ -106,9 +125,13 @@ export default function OrderNotificationListener() {
 
     window.addEventListener('pos:order_served', handleLocalServed);
 
-    // 2. Escuchar Firebase Firestore en tiempo real (para celulares y tablets de mozos)
+    // 3. Escuchar Firebase Firestore en tiempo real (para celulares y tablets de mozos)
+    let isInitialSnapshot = true;
     const unsubscribe = subscribeToOrders(restaurantId, (orders: FirebaseOrder[]) => {
       if (!Array.isArray(orders)) return;
+
+      const currentToken = localStorage.getItem('pos_token');
+      if (!currentToken || pathname === '/login' || pathname === '/register') return;
 
       let userRole = '';
       try {
@@ -119,6 +142,26 @@ export default function OrderNotificationListener() {
         }
       } catch {}
 
+      // EN EL SNAPSHOT INICIAL DE FIREBASE:
+      // Solo registramos el estado actual del historial para no lanzar alertas de pedidos antiguos
+      if (isInitialSnapshot) {
+        isInitialSnapshot = false;
+        orders.forEach((order) => {
+          const isKitchenServed = 
+            (order as any).kitchenStatus === 'SERVED' || 
+            (order as any).isServed === true ||
+            order.status === 'SERVED' ||
+            (Array.isArray(order.items) && order.items.length > 0 && order.items.every((i: any) => i.status === 'SERVED' || i.status === 'CANCELLED' || i.status === 'CANCELED'));
+
+          knownOrderStatusRef.current.set(order.id, isKitchenServed ? 'SERVED' : (order.status || 'OPEN'));
+          if (isKitchenServed) {
+            notifiedOrdersRef.current.add(order.id);
+          }
+        });
+        return;
+      }
+
+      // EN ACTUALIZACIONES POSTERIORES EN VIVO:
       orders.forEach((order) => {
         const isKitchenServed = 
           (order as any).kitchenStatus === 'SERVED' || 
@@ -143,13 +186,14 @@ export default function OrderNotificationListener() {
         // Si la orden ya fue notificada en esta sesión, no repetir
         if (notifiedOrdersRef.current.has(order.id)) return;
 
-        // Validar si es un despacho reciente (ocurrido durante la sesión o en los últimos 60 segundos)
+        // Validar si es un cambio en tiempo real a SERVED ocurrido mientras la app está abierta
         const dispatchTime = order.dispatchedAt ? new Date(order.dispatchedAt).getTime() : 0;
         const updateTime = order.updatedAt ? new Date(order.updatedAt).getTime() : 0;
         const eventTime = dispatchTime || updateTime;
-        const isRecent = eventTime >= mountedAtRef.current - 60000 || prevStatus === 'OPEN' || !prevStatus;
+        const isJustDispatched = eventTime >= mountedAtRef.current - 15000;
+        const transitionedToServed = prevStatus && prevStatus !== 'SERVED';
 
-        if (isRecent && userRole !== 'COOK') {
+        if ((transitionedToServed || isJustDispatched) && userRole !== 'COOK') {
           notifiedOrdersRef.current.add(order.id);
           try {
             sessionStorage.setItem(
@@ -168,7 +212,7 @@ export default function OrderNotificationListener() {
       window.removeEventListener('pos:order_served', handleLocalServed);
       if (typeof unsubscribe === 'function') unsubscribe();
     };
-  }, [router]);
+  }, [pathname, router]);
 
   return null;
 }
