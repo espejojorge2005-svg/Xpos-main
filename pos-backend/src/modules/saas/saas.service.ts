@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { IsString, IsOptional, IsDateString, IsEnum, IsNumber } from 'class-validator';
 
 export class CreateRestaurantSaaS {
