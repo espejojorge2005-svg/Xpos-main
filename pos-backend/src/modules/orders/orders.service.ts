@@ -634,11 +634,7 @@ export class OrdersService {
         where: {
           ...(restaurantId ? { restaurantId } : {}),
           createdAt: { gte: twelveHoursAgo },
-          status: { not: 'CANCELLED' },
-          items: {
-            some: {}, // Has at least one item
-            every: { status: { in: ['SERVED', 'CANCELED'] } }
-          }
+          status: 'CLOSED'
         }
       })
     ]);

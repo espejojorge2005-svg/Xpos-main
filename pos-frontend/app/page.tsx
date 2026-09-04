@@ -218,9 +218,12 @@ const getInitialZones = (): Zone[] => {
 export default function Home() {
   const router = useRouter();
   useGuardedRoute('pos');
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return !!localStorage.getItem('pos_token');
+  });
   const [zones, setZones] = useState<Zone[]>(() => (typeof window !== 'undefined' ? getInitialZones() : []));
-  const [loading, setLoading] = useState(() => (typeof window !== 'undefined' ? getInitialZones().length === 0 : true));
+  const [loading, setLoading] = useState(() => (typeof window !== 'undefined' ? getInitialZones().length === 0 : false));
   const [isEditMode, setIsEditMode] = useState(false);
   const [viewMode, setViewMode] = useState<'map' | 'grid'>('grid');
 
@@ -229,7 +232,9 @@ export default function Home() {
   const [isShiftOpen, setIsShiftOpen] = useState<boolean | null>(() => {
     if (typeof window === 'undefined') return null;
     const s = getScopedStorage<any>('mock_cash_shift', null);
-    return s ? true : null;
+    if (s) return true;
+    const token = localStorage.getItem('pos_token');
+    return token ? true : null;
   });
   const [restaurantName, setRestaurantName] = useState<string>('');
 
@@ -578,8 +583,9 @@ export default function Home() {
     }
   };
 
-  // Mostrar pantalla de carga limpia mientras se verifica autenticación y estado de sala
-  if (!isAuthenticated || loading || isShiftOpen === null) return (
+  // Mostrar pantalla de carga solo si no está autenticado o si las zonas aún no se han cargado
+  if (isAuthenticated === false) return null;
+  if (!isAuthenticated || (loading && zones.length === 0)) return (
     <div className="flex h-screen w-full items-center justify-center bg-white">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
     </div>

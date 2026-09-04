@@ -107,13 +107,7 @@ export default function CocinaPage() {
       return Array.isArray(cached) ? cached : [];
     } catch { return []; }
   });
-  const [loading, setLoading] = useState(() => {
-    if (typeof window === 'undefined') return true;
-    try {
-      const cached = getScopedStorage<KitchenOrder[]>('pos_local_kitchen_orders', []);
-      return !Array.isArray(cached) || cached.length === 0;
-    } catch { return true; }
-  });
+  const [loading, setLoading] = useState(false);
   const [ackedOrders, setAckedOrders] = useState<string[]>([]);
   const isUpdatingRef = useRef(false);
 
@@ -520,13 +514,7 @@ export default function CocinaPage() {
     };
   }, [router]);
 
-  if (loading) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center bg-slate-900">
-        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-emerald-500"></div>
-      </div>
-    );
-  }
+
 
   return (
     <div className="min-h-screen bg-slate-900 p-3 sm:p-4 md:p-6 font-sans pb-16">

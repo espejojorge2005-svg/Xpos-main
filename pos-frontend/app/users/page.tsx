@@ -60,48 +60,90 @@ const emptyForm = {
   allowedViews: ['pos', 'cocina', 'caja'] as string[],
 };
 
+const getInitialUsers = (): User[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const currentRestId = getRestaurantId();
+    const cachedStaffStr = localStorage.getItem('pos_registered_staff');
+    const cachedStaff: any[] = cachedStaffStr ? JSON.parse(cachedStaffStr) : [];
+
+    const scopedKey = currentRestId ? `pos_registered_staff_${currentRestId}` : null;
+    const scopedStr = scopedKey ? localStorage.getItem(scopedKey) : null;
+    const scopedStaff: any[] = scopedStr ? JSON.parse(scopedStr) : [];
+
+    const combinedLocal = [...scopedStaff, ...cachedStaff];
+
+    const localUsers: User[] = combinedLocal
+      .filter((s: any) => currentRestId ? s.restaurantId === currentRestId : true)
+      .map((s: any) => ({
+        id: s.id || `staff-${Date.now()}`,
+        name: s.name,
+        email: s.email || `${s.name.toLowerCase().replace(/\s+/g, '')}@restaurante.com`,
+        role: s.role || 'CASHIER',
+        pin: s.pin,
+        isActive: s.isActive ?? true,
+        allowedViews: s.allowedViews || ['pos', 'cocina', 'caja'],
+      }));
+
+    const deduped = deduplicateStaffList(localUsers) as User[];
+    if (deduped.length > 0) return deduped;
+
+    const currentUserStr = localStorage.getItem('pos_user');
+    const currentUser = currentUserStr ? JSON.parse(currentUserStr) : null;
+    if (currentUser && currentUser.role === 'ADMIN') {
+      return [{
+        id: currentUser.id || 'admin-1',
+        name: currentUser.name || 'Administrador',
+        email: currentUser.email || 'admin@restaurante.com',
+        role: 'ADMIN',
+        isActive: true,
+        allowedViews: ['*'],
+      }];
+    }
+  } catch {}
+  return [];
+};
+
 export default function UsersPage() {
   const router = useRouter();
   useGuardedRoute('usuarios');
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [users, setUsers] = useState<User[]>(() => getInitialUsers());
+  const [loading, setLoading] = useState(() => getInitialUsers().length === 0);
   const [showModal, setShowModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [form, setForm] = useState({ ...emptyForm });
 
   const fetchUsers = async () => {
-    setLoading(true);
     let serverUsers: User[] = [];
     try {
-      const res = await apiFetch('/users');
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          serverUsers = data;
-        }
-      }
-    } catch { /* ignore network error */ }
+      const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
+      const currentRestId = getRestaurantId();
 
-    // Sincronizar silenciosamente la configuración y plan del restaurante desde el servidor
-    if (typeof window !== 'undefined') {
-      try {
-        const token = localStorage.getItem('pos_token');
-        const currentRestId = getRestaurantId();
-        const configRes = await fetch(getApiUrl('/restaurant-config'), { 
+      const [resUsers, resConfig] = await Promise.all([
+        apiFetch('/users').catch(() => null),
+        fetch(getApiUrl('/restaurant-config'), { 
           headers: { 
             'Authorization': `Bearer ${token}`,
             'x-restaurant-id': currentRestId || ''
           } 
-        });
-        if (configRes.ok) {
-          const configData = await configRes.json();
-          if (configData) {
-            localStorage.setItem('pos_restaurant_config', JSON.stringify(configData));
-            setSubInfo(getSubscriptionInfo());
-          }
+        }).catch(() => null)
+      ]);
+
+      if (resUsers && resUsers.ok) {
+        const data = await resUsers.json().catch(() => null);
+        if (Array.isArray(data) && data.length > 0) {
+          serverUsers = data;
         }
-      } catch {}
-    }
+      }
+
+      if (resConfig && resConfig.ok) {
+        const configData = await resConfig.json().catch(() => null);
+        if (configData) {
+          localStorage.setItem('pos_restaurant_config', JSON.stringify(configData));
+          setSubInfo(getSubscriptionInfo());
+        }
+      }
+    } catch { /* ignore network error */ }
 
     // Merge with registered staff from localStorage for standalone/offline support
     if (typeof window !== 'undefined') {
@@ -567,7 +609,7 @@ export default function UsersPage() {
   };
 
 
-  if (loading) return (
+  if (loading && users.length === 0) return (
     <div className="flex h-screen w-full items-center justify-center bg-slate-50">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-violet-600"></div>
     </div>

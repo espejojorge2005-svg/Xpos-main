@@ -46,14 +46,12 @@ interface PastOpening {
 export default function CashRegisterPage() {
   const router = useRouter();
   useGuardedRoute('caja');
-  const [loading, setLoading] = useState(() => {
-    if (typeof window === 'undefined') return true;
-    const shift = getScopedStorage<any>('mock_cash_shift', null);
-    const history = getScopedStorage<any[]>('pos_shift_history', []);
-    return !shift && (!history || history.length === 0);
-  });
+  const [loading, setLoading] = useState(false);
 
-  const [isShiftOpen, setIsShiftOpen] = useState(false);
+  const [isShiftOpen, setIsShiftOpen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return !!getScopedStorage<any>('mock_cash_shift', null);
+  });
   const [report, setReport] = useState({
     shiftId: null as string | null,
     totalSales: 0,
@@ -376,7 +374,7 @@ export default function CashRegisterPage() {
   };
 
   useEffect(() => { 
-    fetchDailyReport(); 
+    fetchDailyReport(true); 
     fetchPendingTables();
 
     const restId = getRestaurantId() || 'main';
