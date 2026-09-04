@@ -1,6 +1,6 @@
 'use client';
 import { getApiUrl, apiFetch } from '@/utils/api';
-import { getRestaurantId } from '@/utils/storage';
+import { getRestaurantId, deduplicateStaffList } from '@/utils/storage';
 import { syncStaffMemberToFirebase, deleteStaffMemberFromFirebase, subscribeToStaff } from '@/utils/firebaseSync';
 
 
@@ -110,7 +110,13 @@ export default function UsersPage() {
         const cachedStaffStr = localStorage.getItem('pos_registered_staff');
         const cachedStaff: any[] = cachedStaffStr ? JSON.parse(cachedStaffStr) : [];
 
-        const localUsers: User[] = cachedStaff
+        const scopedKey = currentRestId ? `pos_registered_staff_${currentRestId}` : null;
+        const scopedStr = scopedKey ? localStorage.getItem(scopedKey) : null;
+        const scopedStaff: any[] = scopedStr ? JSON.parse(scopedStr) : [];
+
+        const combinedLocal = [...scopedStaff, ...cachedStaff];
+
+        const localUsers: User[] = combinedLocal
           .filter((s: any) => currentRestId ? s.restaurantId === currentRestId : true)
           .map((s: any) => ({
             id: s.id || `staff-${Date.now()}`,
@@ -122,15 +128,7 @@ export default function UsersPage() {
             allowedViews: s.allowedViews || ['pos', 'cocina', 'caja'],
           }));
 
-        const mergedMap = new Map<string, User>();
-        serverUsers.forEach(u => mergedMap.set(u.email.toLowerCase(), u));
-        localUsers.forEach(u => {
-          if (!mergedMap.has(u.email.toLowerCase())) {
-            mergedMap.set(u.email.toLowerCase(), u);
-          }
-        });
-
-        const finalUsers = Array.from(mergedMap.values());
+        const finalUsers = deduplicateStaffList([...serverUsers, ...localUsers]) as User[];
         if (finalUsers.length > 0) {
           setUsers(finalUsers);
         } else {
@@ -302,20 +300,7 @@ export default function UsersPage() {
       unsubStaff = subscribeToStaff(currentRestId, (cloudStaff) => {
         if (Array.isArray(cloudStaff) && cloudStaff.length > 0) {
           setUsers(prev => {
-            const map = new Map<string, User>();
-            prev.forEach(u => map.set(u.email.toLowerCase(), u));
-            cloudStaff.forEach((s: any) => {
-              map.set(s.email.toLowerCase(), {
-                id: s.id,
-                name: s.name,
-                email: s.email,
-                role: s.role,
-                pin: s.pin,
-                isActive: s.isActive ?? true,
-                allowedViews: s.allowedViews || ['cocina'],
-              });
-            });
-            return Array.from(map.values());
+            return deduplicateStaffList([...prev, ...cloudStaff]) as User[];
           });
         }
       });
@@ -433,27 +418,16 @@ export default function UsersPage() {
 
     // 2. Persistencia local inmediata para login con PIN y funcionamiento offline
     try {
+      const newStaffEntry = { ...staffMember, password: body.password || '123456', restaurantId: userRestaurantId };
       const existingStaffStr = localStorage.getItem('pos_registered_staff');
       const existingStaff: any[] = existingStaffStr ? JSON.parse(existingStaffStr) : [];
-      const idx = existingStaff.findIndex(s => (form.id && s.id === form.id) || s.email === cleanEmail);
-      if (idx !== -1) {
-        existingStaff[idx] = { ...existingStaff[idx], ...staffMember, password: body.password || '123456' };
-      } else {
-        existingStaff.push({ ...staffMember, password: body.password || '123456', restaurantId: userRestaurantId });
-      }
-      localStorage.setItem('pos_registered_staff', JSON.stringify(existingStaff));
+      localStorage.setItem('pos_registered_staff', JSON.stringify(deduplicateStaffList([...existingStaff, newStaffEntry])));
 
       if (userRestaurantId) {
         const scopedKey = `pos_registered_staff_${userRestaurantId}`;
         const scopedStr = localStorage.getItem(scopedKey);
         const scopedList: any[] = scopedStr ? JSON.parse(scopedStr) : [];
-        const sIdx = scopedList.findIndex(s => (form.id && s.id === form.id) || s.email === cleanEmail);
-        if (sIdx !== -1) {
-          scopedList[sIdx] = { ...scopedList[sIdx], ...staffMember, password: body.password || '123456' };
-        } else {
-          scopedList.push({ ...staffMember, password: body.password || '123456', restaurantId: userRestaurantId });
-        }
-        localStorage.setItem(scopedKey, JSON.stringify(scopedList));
+        localStorage.setItem(scopedKey, JSON.stringify(deduplicateStaffList([...scopedList, newStaffEntry])));
       }
       window.dispatchEvent(new Event('storage'));
     } catch {}
@@ -480,13 +454,28 @@ export default function UsersPage() {
         const serverUser = await res.json().catch(() => null);
         if (serverUser && serverUser.id && serverUser.id !== tempId) {
           // Reemplazar ID temporal con ID definitivo de PostgreSQL
-          setUsers(prev => prev.map(u => u.id === tempId ? { ...u, id: serverUser.id } : u));
+          setUsers(prev => deduplicateStaffList(prev.map(u => (u.id === tempId || u.email?.toLowerCase() === cleanEmail) ? { ...u, id: serverUser.id } : u)) as User[]);
           try {
+            const replaceIdAndDedup = (list: any[]) => {
+              const updated = list.map((s: any) => 
+                (s.id === tempId || s.email?.toLowerCase() === cleanEmail) ? { ...s, id: serverUser.id } : s
+              );
+              return deduplicateStaffList(updated);
+            };
+
             const existingStaffStr = localStorage.getItem('pos_registered_staff');
             if (existingStaffStr) {
               const existingStaff = JSON.parse(existingStaffStr);
-              const updated = existingStaff.map((s: any) => s.id === tempId ? { ...s, id: serverUser.id } : s);
-              localStorage.setItem('pos_registered_staff', JSON.stringify(updated));
+              localStorage.setItem('pos_registered_staff', JSON.stringify(replaceIdAndDedup(existingStaff)));
+            }
+
+            if (userRestaurantId) {
+              const scopedKey = `pos_registered_staff_${userRestaurantId}`;
+              const scopedStr = localStorage.getItem(scopedKey);
+              if (scopedStr) {
+                const scoped = JSON.parse(scopedStr);
+                localStorage.setItem(scopedKey, JSON.stringify(replaceIdAndDedup(scoped)));
+              }
             }
           } catch {}
         }
@@ -544,11 +533,18 @@ export default function UsersPage() {
 
       // Remover de la caché local de personal (scoped y general)
       try {
+        const filterOutUser = (list: any[]) => {
+          return list.filter(s => 
+            s.id !== u.id && 
+            s.email?.toLowerCase() !== u.email?.toLowerCase() &&
+            s.name?.toLowerCase() !== u.name?.toLowerCase()
+          );
+        };
+
         const cachedStr = localStorage.getItem('pos_registered_staff');
         if (cachedStr) {
           const cached: any[] = JSON.parse(cachedStr);
-          const filtered = cached.filter(s => s.id !== u.id && s.email?.toLowerCase() !== u.email?.toLowerCase());
-          localStorage.setItem('pos_registered_staff', JSON.stringify(filtered));
+          localStorage.setItem('pos_registered_staff', JSON.stringify(filterOutUser(cached)));
         }
         const currentRestId = getRestaurantId();
         if (currentRestId) {
@@ -557,8 +553,7 @@ export default function UsersPage() {
           const scopedStr = localStorage.getItem(scopedKey);
           if (scopedStr) {
             const scoped: any[] = JSON.parse(scopedStr);
-            const filtered = scoped.filter(s => s.id !== u.id && s.email?.toLowerCase() !== u.email?.toLowerCase());
-            localStorage.setItem(scopedKey, JSON.stringify(filtered));
+            localStorage.setItem(scopedKey, JSON.stringify(filterOutUser(scoped)));
           }
         }
         window.dispatchEvent(new Event('storage'));

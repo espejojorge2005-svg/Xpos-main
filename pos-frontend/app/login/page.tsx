@@ -1,5 +1,6 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
+import { deduplicateStaffList } from '@/utils/storage';
 import Link from 'next/link';
 
 import { useState, useEffect } from 'react';
@@ -67,35 +68,31 @@ export default function LoginPage() {
       const localStaff: any[] = localStaffStr ? JSON.parse(localStaffStr) : [];
       const combinedLocal = [...scopedStaff, ...localStaff];
 
-      if (combinedLocal.length > 0 && restId) {
-        const filteredStaff = combinedLocal.filter(s => s.restaurantId === restId && s.isActive !== false);
+      const filteredStaff = combinedLocal.filter(s => {
+        if (restId && s.restaurantId && s.restaurantId !== restId) return false;
+        return s.isActive !== false;
+      });
 
-        const map = new Map<string, StaffMember>();
-        loadedStaff.forEach(s => map.set(s.id || s.email?.toLowerCase() || s.name.toLowerCase(), s));
-        filteredStaff.forEach(s => {
-          const key = s.id || s.email?.toLowerCase() || s.name.toLowerCase();
-          if (!map.has(key)) {
-            map.set(key, {
-              id: s.id || `staff-${Date.now()}`,
-              name: s.name,
-              email: s.email,
-              role: s.role || 'CASHIER',
-              pin: s.pin,
-              allowedViews: s.allowedViews || ['pos', 'cocina', 'caja'],
-              restaurantId: s.restaurantId || restId,
-            });
-          } else {
-            const existing = map.get(key)!;
-            if (s.pin) existing.pin = s.pin;
-            if (s.restaurantId) existing.restaurantId = s.restaurantId;
-          }
-        });
-        loadedStaff = Array.from(map.values());
+      // DEDUPLICACIÓN ESTRICTA Y DEFINITIVA
+      // Fusiona el personal del servidor con las copias locales garantizando unicidad total por ID, correo o nombre.
+      const allCandidates = [...loadedStaff, ...filteredStaff];
+      const uniqueStaff = deduplicateStaffList<StaffMember>(allCandidates);
+      loadedStaff = uniqueStaff;
+
+      // Auto-limpieza en segundo plano de localStorage para erradicar cualquier duplicado anterior
+      if (restId) {
+        const scopedKey = `pos_registered_staff_${restId}`;
+        localStorage.setItem(scopedKey, JSON.stringify(uniqueStaff));
       }
-    } catch {}
+      if (localStaffStr) {
+        const cleanedGlobal = deduplicateStaffList(localStaff);
+        localStorage.setItem('pos_registered_staff', JSON.stringify(cleanedGlobal));
+      }
+    } catch (e) {
+      console.warn('Error syncing staff cache in login:', e);
+    }
 
-
-    setStaff(loadedStaff);
+    setStaff(deduplicateStaffList<StaffMember>(loadedStaff));
     setIsStaffLoading(false);
   };
 
@@ -161,9 +158,6 @@ export default function LoginPage() {
     // Registrar y actualizar inmediatamente en el Personal PIN de la terminal
     if (updatedUser.restaurantId) {
       try {
-        const staffStr = localStorage.getItem('pos_registered_staff');
-        const staffList: any[] = staffStr ? JSON.parse(staffStr) : [];
-        const idx = staffList.findIndex(s => s.id === updatedUser.id || s.email?.toLowerCase() === updatedUser.email?.toLowerCase());
         const staffObj = {
           id: updatedUser.id,
           name: updatedUser.name,
@@ -174,23 +168,15 @@ export default function LoginPage() {
           restaurantId: updatedUser.restaurantId,
           isActive: true,
         };
-        if (idx !== -1) {
-          staffList[idx] = { ...staffList[idx], ...staffObj };
-        } else {
-          staffList.push(staffObj);
-        }
-        localStorage.setItem('pos_registered_staff', JSON.stringify(staffList));
+
+        const staffStr = localStorage.getItem('pos_registered_staff');
+        const staffList: any[] = staffStr ? JSON.parse(staffStr) : [];
+        localStorage.setItem('pos_registered_staff', JSON.stringify(deduplicateStaffList([...staffList, staffObj])));
 
         const scopedKey = `pos_registered_staff_${updatedUser.restaurantId}`;
         const scopedStr = localStorage.getItem(scopedKey);
         const scopedList: any[] = scopedStr ? JSON.parse(scopedStr) : [];
-        const sIdx = scopedList.findIndex(s => s.id === updatedUser.id || s.email?.toLowerCase() === updatedUser.email?.toLowerCase());
-        if (sIdx !== -1) {
-          scopedList[sIdx] = { ...scopedList[sIdx], ...staffObj };
-        } else {
-          scopedList.push(staffObj);
-        }
-        localStorage.setItem(scopedKey, JSON.stringify(scopedList));
+        localStorage.setItem(scopedKey, JSON.stringify(deduplicateStaffList([...scopedList, staffObj])));
         window.dispatchEvent(new Event('storage'));
       } catch {}
     }
@@ -255,9 +241,6 @@ export default function LoginPage() {
         // Si es un trabajador (mesero, cajero, cocinero o admin) con restaurantId, registrarlo en el Personal PIN de la terminal
         if (data.user.restaurantId && data.user.role !== 'SUPER_ADMIN') {
           try {
-            const staffStr = localStorage.getItem('pos_registered_staff');
-            const staffList: any[] = staffStr ? JSON.parse(staffStr) : [];
-            const idx = staffList.findIndex(s => s.id === data.user.id || s.email?.toLowerCase() === data.user.email?.toLowerCase());
             const staffObj = {
               id: data.user.id,
               name: data.user.name,
@@ -268,23 +251,15 @@ export default function LoginPage() {
               restaurantId: data.user.restaurantId,
               isActive: true,
             };
-            if (idx !== -1) {
-              staffList[idx] = { ...staffList[idx], ...staffObj };
-            } else {
-              staffList.push(staffObj);
-            }
-            localStorage.setItem('pos_registered_staff', JSON.stringify(staffList));
+
+            const staffStr = localStorage.getItem('pos_registered_staff');
+            const staffList: any[] = staffStr ? JSON.parse(staffStr) : [];
+            localStorage.setItem('pos_registered_staff', JSON.stringify(deduplicateStaffList([...staffList, staffObj])));
 
             const scopedKey = `pos_registered_staff_${data.user.restaurantId}`;
             const scopedStr = localStorage.getItem(scopedKey);
             const scopedList: any[] = scopedStr ? JSON.parse(scopedStr) : [];
-            const sIdx = scopedList.findIndex(s => s.id === data.user.id || s.email?.toLowerCase() === data.user.email?.toLowerCase());
-            if (sIdx !== -1) {
-              scopedList[sIdx] = { ...scopedList[sIdx], ...staffObj };
-            } else {
-              scopedList.push(staffObj);
-            }
-            localStorage.setItem(scopedKey, JSON.stringify(scopedList));
+            localStorage.setItem(scopedKey, JSON.stringify(deduplicateStaffList([...scopedList, staffObj])));
             window.dispatchEvent(new Event('storage'));
           } catch {}
         }
@@ -379,13 +354,8 @@ export default function LoginPage() {
               const scopedKey = `pos_registered_staff_${loggedStaffUser.restaurantId}`;
               const scopedStr = localStorage.getItem(scopedKey);
               const scopedList: any[] = scopedStr ? JSON.parse(scopedStr) : [];
-              const sIdx = scopedList.findIndex(s => s.id === loggedStaffUser.id || s.email?.toLowerCase() === cleanEmail);
-              if (sIdx !== -1) {
-                scopedList[sIdx] = { ...scopedList[sIdx], ...loggedStaffUser, isActive: true };
-              } else {
-                scopedList.push({ ...loggedStaffUser, isActive: true });
-              }
-              localStorage.setItem(scopedKey, JSON.stringify(scopedList));
+              const staffObj = { ...loggedStaffUser, isActive: true };
+              localStorage.setItem(scopedKey, JSON.stringify(deduplicateStaffList([...scopedList, staffObj])));
               window.dispatchEvent(new Event('storage'));
             } catch {}
           }
@@ -649,7 +619,7 @@ export default function LoginPage() {
 
               ) : (
                 <div className="grid grid-cols-2 gap-3 max-h-[350px] overflow-y-auto pr-1">
-                  {staff.filter(u => u.role !== 'SUPER_ADMIN').map((user) => (
+                  {deduplicateStaffList<StaffMember>(staff).filter(u => u.role !== 'SUPER_ADMIN').map((user) => (
                     <button
                       key={user.id}
                       onClick={() => {

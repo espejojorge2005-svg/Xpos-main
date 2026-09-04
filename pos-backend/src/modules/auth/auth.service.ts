@@ -265,7 +265,7 @@ export class AuthService {
   }
 
   async getStaffByRestaurant(restaurantId: string) {
-    return this.prisma.user.findMany({
+    const staff = await this.prisma.user.findMany({
       where: {
         restaurantId,
         isActive: true,
@@ -282,5 +282,17 @@ export class AuthService {
         name: 'asc'
       }
     });
+
+    // Deduplicación defensiva en backend por email, nombre e ID
+    const uniqueMap = new Map<string, typeof staff[0]>();
+    for (const u of staff) {
+      const emailKey = u.email ? u.email.trim().toLowerCase() : null;
+      const nameKey = u.name ? u.name.trim().toLowerCase() : null;
+      const key = emailKey || nameKey || u.id;
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, u);
+      }
+    }
+    return Array.from(uniqueMap.values());
   }
 }
