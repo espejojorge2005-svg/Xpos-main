@@ -52,26 +52,89 @@ export default function CashRegisterPage() {
     if (typeof window === 'undefined') return false;
     return !!getScopedStorage<any>('mock_cash_shift', null);
   });
-  const [report, setReport] = useState({
-    shiftId: null as string | null,
-    totalSales: 0,
-    cash: 0,
-    card: 0,
-    yapePlin: 0,
-    ticketCount: 0,
-    openingCash: 0,
-    totalExpenses: 0,
-    expectedCashInDrawer: 0,
-    totalTips: 0,
-    tipsDetail: [] as TipDetail[],
-    ordersDetail: [] as OrderDetail[],
-    soldProducts: [] as SoldProduct[],
-    tipsBreakdown: { CASH: 0, CARD: 0, TRANSFER: 0 } as Record<string, number>
+
+  // Inicialización síncrona instantánea desde almacenamiento local para evitar parpadeos de S/ 0.00
+  const [report, setReport] = useState(() => {
+    const emptyReport = {
+      shiftId: null as string | null,
+      totalSales: 0,
+      cash: 0,
+      card: 0,
+      yapePlin: 0,
+      ticketCount: 0,
+      openingCash: 0,
+      totalExpenses: 0,
+      expectedCashInDrawer: 0,
+      totalTips: 0,
+      tipsDetail: [] as TipDetail[],
+      ordersDetail: [] as OrderDetail[],
+      soldProducts: [] as SoldProduct[],
+      tipsBreakdown: { CASH: 0, CARD: 0, TRANSFER: 0 } as Record<string, number>
+    };
+
+    if (typeof window === 'undefined') return emptyReport;
+    try {
+      const cached = getScopedStorage<any>('mock_cash_shift', null);
+      if (!cached || !cached.isOpen) return emptyReport;
+
+      const opening = Number(cached.openingCash || cached.openingAmount || 0);
+      const expensesList = Array.isArray(cached.expenses) ? cached.expenses : [];
+      const totalExp = expensesList.reduce((s: number, e: any) => s + (Number(e.amount) || 0), 0);
+      const payments = Array.isArray(cached.payments) ? cached.payments : [];
+
+      let cashSales = 0;
+      let cardSales = 0;
+      let transferSales = 0;
+      for (const p of payments) {
+        const m = String(p.method || 'CASH').toUpperCase();
+        const amt = Number(p.amount) || 0;
+        if (m === 'CASH') cashSales += amt;
+        else if (m === 'CARD') cardSales += amt;
+        else transferSales += amt;
+      }
+
+      return {
+        ...emptyReport,
+        shiftId: cached.shiftId || 'mock-id',
+        totalSales: cashSales + cardSales + transferSales,
+        cash: cashSales,
+        card: cardSales,
+        yapePlin: transferSales,
+        ticketCount: payments.length,
+        openingCash: opening,
+        totalExpenses: totalExp,
+        expectedCashInDrawer: Math.max(0, opening + cashSales - totalExp),
+      };
+    } catch {
+      return emptyReport;
+    }
   });
 
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [pastClosures, setPastClosures] = useState<PastClosure[]>([]);
-  const [pastOpenings, setPastOpenings] = useState<PastOpening[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const cached = getScopedStorage<any>('mock_cash_shift', null);
+      return Array.isArray(cached?.expenses) ? cached.expenses : [];
+    } catch {
+      return [];
+    }
+  });
+  const [pastClosures, setPastClosures] = useState<PastClosure[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      return getScopedStorage<PastClosure[]>('pos_shift_history', []);
+    } catch {
+      return [];
+    }
+  });
+  const [pastOpenings, setPastOpenings] = useState<PastOpening[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      return getScopedStorage<PastOpening[]>('pos_opening_history', []);
+    } catch {
+      return [];
+    }
+  });
   const [historyTab, setHistoryTab] = useState<'closures' | 'openings'>('closures');
 
   // Modales
@@ -460,15 +523,28 @@ export default function CashRegisterPage() {
 
         setIsShiftOpen(true);
         const currentMock = getScopedStorage<any>('mock_cash_shift', {}) || {};
+        const opening = Number(cloudShift.openingAmount || currentMock.openingCash || 0);
         const mergedMock = {
           ...currentMock,
           isOpen: true,
-          openingCash: cloudShift.openingAmount || currentMock.openingCash || 0,
+          openingCash: opening,
           shiftId: cloudShift.shiftId || currentMock.shiftId,
           expenses: cloudShift.expenses || currentMock.expenses || [],
           payments: cloudShift.payments || currentMock.payments || []
         };
         setScopedStorage('mock_cash_shift', mergedMock);
+
+        // Actualizar de inmediato el estado del reporte si hay discrepancia de fondo inicial
+        setReport(prev => {
+          if (prev.openingCash === opening && prev.shiftId) return prev;
+          return {
+            ...prev,
+            shiftId: cloudShift.shiftId || prev.shiftId || 'mock-id',
+            openingCash: opening,
+            expectedCashInDrawer: Math.max(0, opening + prev.cash - prev.totalExpenses),
+          };
+        });
+
         if (isInitialShiftSnapshot) {
           isInitialShiftSnapshot = false;
           return;

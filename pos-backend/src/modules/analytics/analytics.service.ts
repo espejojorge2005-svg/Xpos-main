@@ -17,7 +17,7 @@ export class AnalyticsService {
     private cls: ClsService,
   ) {}
 
-  async getAnalytics(fromString?: string, toString?: string) {
+  async getAnalytics(fromString?: string, toString?: string, restaurantIdParam?: string | null) {
     const now = new Date();
     let from: Date;
     let to: Date;
@@ -48,21 +48,21 @@ export class AnalyticsService {
       to.setHours(23, 59, 59, 999);
     }
 
-    const restaurantId = this.cls.get('restaurantId');
+    const clsId = this.cls.get('restaurantId');
+    const restaurantId = (restaurantIdParam && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(restaurantIdParam))
+      ? restaurantIdParam
+      : (clsId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clsId) ? clsId : null);
+
     const orderWhere: any = {
       status: 'CLOSED',
       updatedAt: { gte: from, lte: to },
+      ...(restaurantId ? { restaurantId } : { restaurantId: '00000000-0000-0000-0000-000000000000' }),
     };
-    if (restaurantId) {
-      orderWhere.restaurantId = restaurantId;
-    }
 
     const paymentWhere: any = {
       createdAt: { gte: from, lte: to },
+      ...(restaurantId ? { order: { restaurantId } } : { order: { restaurantId: '00000000-0000-0000-0000-000000000000' } }),
     };
-    if (restaurantId) {
-      paymentWhere.order = { restaurantId };
-    }
 
     // ── 1. PAYMENTS & 2. ORDERS in range (Ejecutados concurrentemente con Promise.all) ────
     const [payments, orders] = await Promise.all([

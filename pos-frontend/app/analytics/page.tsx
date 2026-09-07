@@ -13,7 +13,7 @@ import {
 import { toast } from 'sonner';
 import { useGuardedRoute } from '@/hooks/useGuardedRoute';
 import { getApiUrl } from '@/utils/api';
-import { getScopedStorage } from '@/utils/storage';
+import { getScopedStorage, getRestaurantId } from '@/utils/storage';
 
 interface KPI {
   totalRevenue: number;
@@ -242,8 +242,12 @@ export default function AnalyticsPage() {
     let serverData: AnalyticsData | null = null;
     try {
       const token = localStorage.getItem('pos_token') || '';
+      const restId = getRestaurantId();
       const res = await fetch(getApiUrl(`/analytics?from=${from}&to=${to}`), {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'x-restaurant-id': restId || ''
+        }
       });
       if (res.ok) {
         serverData = await res.json();

@@ -158,8 +158,12 @@ export default function KardexPage() {
     // 1. Intentar consultar el backend si hay token disponible
     if (token) {
       try {
+        const currentRestId = getRestaurantId();
         const res = await fetch(getApiUrl('/products/kardex'), {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'x-restaurant-id': currentRestId || ''
+          },
         });
         if (res.ok) {
           const json = await res.json();

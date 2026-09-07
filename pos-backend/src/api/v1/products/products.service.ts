@@ -279,10 +279,10 @@ export class ProductsService {
       since.setDate(since.getDate() - (days - 1));
       since.setHours(0, 0, 0, 0);
 
-      const whereProductClause: any = { isActive: true };
-      if (restaurantId && reqUser?.role !== 'SUPER_ADMIN') {
-        whereProductClause.restaurantId = restaurantId;
-      }
+      const whereProductClause: any = { 
+        isActive: true,
+        ...(restaurantId ? { restaurantId } : { restaurantId: '00000000-0000-0000-0000-000000000000' })
+      };
 
       const allProducts = await this.prisma.product.findMany({
         where: whereProductClause,
