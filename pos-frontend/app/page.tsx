@@ -19,7 +19,7 @@ interface TableOrder {
 interface Table { 
   id: string; 
   name: string; 
-  number: number; 
+  number: string | number; 
   capacity: number; 
   status: string; 
   posX: number;
