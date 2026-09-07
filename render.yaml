@@ -4,7 +4,7 @@ services:
     env: node
     plan: free
     rootDir: pos-backend
-    buildCommand: npm install --no-audit --no-fund && npm run build
+    buildCommand: npm install --no-audit --no-fund && npx prisma migrate deploy && npm run build
     startCommand: npm run start:prod
     envVars:
       - key: NODE_VERSION
@@ -12,6 +12,14 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: DIRECT_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: CORS_ORIGIN
         sync: false
       - key: TZ
         value: America/Lima

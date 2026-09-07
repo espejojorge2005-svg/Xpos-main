@@ -23,7 +23,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const headerRestId = req.headers['x-restaurant-id'] as string;
     let tenantId = payload.restaurantId;
     
-    if (headerRestId) {
+    // Solo SUPER_ADMIN puede utilizar x-restaurant-id para inspeccionar un restaurante específico.
+    // Los usuarios regulares deben operar de forma inmutable sobre su propio payload.restaurantId
+    if (payload.role === 'SUPER_ADMIN' && headerRestId) {
       tenantId = headerRestId;
     }
     

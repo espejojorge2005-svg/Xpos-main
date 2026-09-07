@@ -139,7 +139,10 @@ export const isTableMatchingOrder = (
 export const subscribeToKitchenOrders = (restaurantId: string, onUpdate: (orders: FirebaseOrder[]) => void) => {
   try {
     const ordersRef = collection(db, 'orders');
-    return onSnapshot(ordersRef, (snapshot) => {
+    const q = restaurantId && restaurantId !== 'all'
+      ? query(ordersRef, where('restaurantId', '==', restaurantId))
+      : ordersRef;
+    return onSnapshot(q, (snapshot) => {
       const ordersData: FirebaseOrder[] = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as FirebaseOrder))
         .filter(order => 
@@ -164,7 +167,10 @@ export const subscribeToKitchenOrders = (restaurantId: string, onUpdate: (orders
 export const subscribeToTables = (restaurantId: string | null | undefined, onUpdate: (tables: FirebaseTable[]) => void) => {
   try {
     const tablesRef = collection(db, 'tables');
-    return onSnapshot(tablesRef, (snapshot) => {
+    const q = restaurantId && restaurantId !== 'all'
+      ? query(tablesRef, where('restaurantId', '==', restaurantId))
+      : tablesRef;
+    return onSnapshot(q, (snapshot) => {
       const tablesData: FirebaseTable[] = snapshot.docs
         .map(doc => ({
           id: doc.id,
@@ -440,7 +446,10 @@ export const getProductsFromFirebase = async (restaurantId: string): Promise<any
 export const subscribeToCategories = (restaurantId: string, onUpdate: (categories: any[]) => void) => {
   try {
     const ref = collection(db, 'categories');
-    return onSnapshot(ref, (snapshot) => {
+    const q = restaurantId && restaurantId !== 'all'
+      ? query(ref, where('restaurantId', '==', restaurantId))
+      : ref;
+    return onSnapshot(q, (snapshot) => {
       const cats = snapshot.docs
         .map(d => ({ id: d.id, ...(d.data() as any) }))
         .filter((c: any) => !restaurantId || !c.restaurantId || c.restaurantId === restaurantId);
@@ -457,7 +466,10 @@ export const subscribeToCategories = (restaurantId: string, onUpdate: (categorie
 export const subscribeToKitchenStations = (restaurantId: string, onUpdate: (stations: any[]) => void) => {
   try {
     const ref = collection(db, 'kitchen_stations');
-    return onSnapshot(ref, (snapshot) => {
+    const q = restaurantId && restaurantId !== 'all'
+      ? query(ref, where('restaurantId', '==', restaurantId))
+      : ref;
+    return onSnapshot(q, (snapshot) => {
       const stations = snapshot.docs
         .map(d => ({ id: d.id, ...(d.data() as any) }))
         .filter((s: any) => !restaurantId || !s.restaurantId || s.restaurantId === restaurantId);
@@ -474,7 +486,10 @@ export const subscribeToKitchenStations = (restaurantId: string, onUpdate: (stat
 export const subscribeToProducts = (restaurantId: string, onUpdate: (products: any[]) => void) => {
   try {
     const ref = collection(db, 'products');
-    return onSnapshot(ref, (snapshot) => {
+    const q = restaurantId && restaurantId !== 'all'
+      ? query(ref, where('restaurantId', '==', restaurantId))
+      : ref;
+    return onSnapshot(q, (snapshot) => {
       const products = snapshot.docs
         .map(d => ({ id: d.id, ...(d.data() as any) }))
         .filter((p: any) => !restaurantId || !p.restaurantId || p.restaurantId === restaurantId);
@@ -735,7 +750,10 @@ export const serveKitchenItemInFirebase = async (orderId: string, itemId: string
 export const subscribeToOrders = (restaurantId: string | null | undefined, onUpdate: (orders: FirebaseOrder[]) => void) => {
   try {
     const ordersRef = collection(db, 'orders');
-    return onSnapshot(ordersRef, (snapshot) => {
+    const q = restaurantId && restaurantId !== 'all'
+      ? query(ordersRef, where('restaurantId', '==', restaurantId))
+      : ordersRef;
+    return onSnapshot(q, (snapshot) => {
       const ordersData: FirebaseOrder[] = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as FirebaseOrder))
         .filter(order => isMatchingTenant(order.restaurantId, restaurantId));

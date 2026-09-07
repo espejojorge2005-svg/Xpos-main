@@ -1,7 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { ClsService } from 'nestjs-cls';
+
+export const roundMoney = (val: number): number => Math.round((Number(val || 0) + Number.EPSILON) * 100) / 100;
 
 @Injectable()
 export class OrdersService {
@@ -83,10 +85,12 @@ export class OrdersService {
   }
 
   async createOrder(data: CreateOrderDto, reqUser?: any, restaurantIdParam?: string | null) {
-    const totalAmount = data.items.reduce((total, item) => {
-      const subItemsTotal = item.subItems ? item.subItems.reduce((sTotal: number, sub: any) => sTotal + (sub.quantity * sub.unitPrice), 0) : 0;
-      return total + (item.quantity * item.unitPrice) + subItemsTotal;
-    }, 0);
+    const totalAmount = roundMoney(
+      data.items.reduce((total, item) => {
+        const subItemsTotal = item.subItems ? item.subItems.reduce((sTotal: number, sub: any) => sTotal + (sub.quantity * sub.unitPrice), 0) : 0;
+        return total + (item.quantity * item.unitPrice) + subItemsTotal;
+      }, 0)
+    );
 
     const restaurantId = await this.resolveTenantRestaurantId(reqUser, restaurantIdParam);
 
@@ -114,23 +118,6 @@ export class OrdersService {
           ]
         }
       });
-
-      if (!dbTable) {
-        dbTable = await this.prisma.table.findFirst({
-          where: {
-            OR: [
-              ...(isUuid ? [{ id: data.tableId }] : []),
-              { number: data.tableId },
-              { number: cleanTableId },
-              { number: `Mesa ${cleanTableId}` },
-              ...(cleanTableName ? [
-                { number: cleanTableName },
-                { number: `Mesa ${cleanTableName}` }
-              ] : [])
-            ]
-          }
-        });
-      }
 
       if (dbTable) {
         validTableId = dbTable.id;
@@ -210,35 +197,35 @@ export class OrdersService {
       });
     }, { maxWait: 15000, timeout: 30000 });
 
-    // Descontar inventario de manera asíncrona sin bloquear la transacción interactiva en la nube
-    (async () => {
-      for (const item of data.items) {
-        await this.deductProductStock(this.prisma, item.productId, item.quantity, createdOrder.id, effectiveCustomerName);
-        if ((item as any).subItems && (item as any).subItems.length > 0) {
-          for (const sub of (item as any).subItems) {
-            if (sub.productId) {
-              await this.deductProductStock(this.prisma, sub.productId, sub.quantity, createdOrder.id, effectiveCustomerName);
-            }
+    // Descontar inventario de los items comandados
+    for (const item of data.items) {
+      await this.deductProductStock(this.prisma, item.productId, item.quantity, createdOrder.id, effectiveCustomerName);
+      if ((item as any).subItems && (item as any).subItems.length > 0) {
+        for (const sub of (item as any).subItems) {
+          if (sub.productId) {
+            await this.deductProductStock(this.prisma, sub.productId, sub.quantity, createdOrder.id, effectiveCustomerName);
           }
         }
       }
-    })().catch(err => console.warn('Error asíncrono deduciendo inventario:', err));
+    }
 
     return createdOrder;
   }
 
-  async getOpenOrderForTable(tableId: string) {
+  async getOpenOrderForTable(tableId: string, restaurantIdParam?: string | null) {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tableId);
     const cleanTableId = tableId.replace(/^t-/i, '').trim();
+    const restaurantId = await this.resolveTenantRestaurantId(null, restaurantIdParam);
 
     const order = await this.prisma.order.findFirst({
       where: {
         status: 'OPEN',
+        ...(restaurantId ? { restaurantId } : {}),
         OR: [
           ...(isUuid ? [{ tableId: tableId }] : []),
-          { table: { id: tableId } },
-          { table: { number: tableId } },
-          { table: { number: cleanTableId } },
+          { table: { id: tableId, ...(restaurantId ? { zone: { restaurantId } } : {}) } },
+          { table: { number: tableId, ...(restaurantId ? { zone: { restaurantId } } : {}) } },
+          { table: { number: cleanTableId, ...(restaurantId ? { zone: { restaurantId } } : {}) } },
           { customerName: { equals: `Mesa ${cleanTableId}`, mode: 'insensitive' as const } },
           { customerName: { equals: tableId, mode: 'insensitive' as const } }
         ],
@@ -261,16 +248,25 @@ export class OrdersService {
       throw new NotFoundException(`No open order found for table ${tableId}`);
     }
 
+    if (restaurantId && order.restaurantId && order.restaurantId !== restaurantId) {
+      throw new ForbiddenException('No tienes permiso para ver órdenes de otro restaurante');
+    }
+
     return order;
   }
 
-  async addItemsToOrder(orderId: string, data: { items: any[] }) {
+  async addItemsToOrder(orderId: string, data: { items: any[] }, restaurantIdParam?: string | null) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId }
     });
 
     if (!order) {
       throw new NotFoundException(`Order ${orderId} not found`);
+    }
+
+    const restaurantId = await this.resolveTenantRestaurantId(null, restaurantIdParam);
+    if (restaurantId && order.restaurantId && order.restaurantId !== restaurantId) {
+      throw new ForbiddenException('No tienes permiso para modificar órdenes de otro restaurante');
     }
 
     if (order.status !== 'OPEN') {
@@ -281,7 +277,7 @@ export class OrdersService {
       const subItemsTotal = item.subItems ? item.subItems.reduce((sTotal: number, sub: any) => sTotal + (sub.quantity * sub.unitPrice), 0) : 0;
       return total + (item.quantity * item.unitPrice) + subItemsTotal;
     }, 0);
-    const newTotalAmount = Number(order.totalAmount) + newItemsTotal;
+    const newTotalAmount = roundMoney(Number(order.totalAmount) + newItemsTotal);
 
     const updatedOrder = await this.prisma.$transaction(async (tx) => {
       // 1. Agregar los nuevos items jerárquicos
@@ -292,9 +288,9 @@ export class OrdersService {
             productId: item.productId,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
-            subtotal: item.quantity * item.unitPrice,
+            subtotal: roundMoney(item.quantity * item.unitPrice),
             notes: item.notes,
-            status: 'ACTIVE', // Los nuevos ítems nacen activos
+            status: 'ACTIVE',
           }
         });
 
@@ -306,7 +302,7 @@ export class OrdersService {
               productId: sub.productId,
               quantity: sub.quantity,
               unitPrice: sub.unitPrice,
-              subtotal: sub.quantity * sub.unitPrice,
+              subtotal: roundMoney(sub.quantity * sub.unitPrice),
               notes: sub.notes,
               status: 'ACTIVE'
             }))
@@ -329,24 +325,22 @@ export class OrdersService {
       });
     }, { maxWait: 15000, timeout: 30000 });
 
-    // Descontar inventario de los nuevos items de forma asíncrona
-    (async () => {
-      for (const item of data.items) {
-        await this.deductProductStock(this.prisma, item.productId, item.quantity, orderId, order.customerName || 'Mesa');
-        if (item.subItems) {
-          for (const sub of item.subItems) {
-            if (sub.productId) {
-              await this.deductProductStock(this.prisma, sub.productId, sub.quantity, orderId, order.customerName || 'Mesa');
-            }
+    // Descontar inventario de los nuevos items de forma segura
+    for (const item of data.items) {
+      await this.deductProductStock(this.prisma, item.productId, item.quantity, orderId, order.customerName || 'Mesa');
+      if (item.subItems) {
+        for (const sub of item.subItems) {
+          if (sub.productId) {
+            await this.deductProductStock(this.prisma, sub.productId, sub.quantity, orderId, order.customerName || 'Mesa');
           }
         }
       }
-    })().catch(err => console.warn('Error asíncrono deduciendo inventario en adición:', err));
+    }
 
     return updatedOrder;
   }
 
-  async cancelOrder(orderId: string) {
+  async cancelOrder(orderId: string, restaurantIdParam?: string | null) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: { items: { include: { subItems: true } } }
@@ -354,6 +348,11 @@ export class OrdersService {
 
     if (!order) {
       throw new NotFoundException(`Order ${orderId} not found`);
+    }
+
+    const restaurantId = await this.resolveTenantRestaurantId(null, restaurantIdParam);
+    if (restaurantId && order.restaurantId && order.restaurantId !== restaurantId) {
+      throw new ForbiddenException('No tienes permiso para cancelar órdenes de otro restaurante');
     }
 
     const updatedOrder = await this.prisma.$transaction(async (tx) => {
@@ -392,13 +391,19 @@ export class OrdersService {
     return updatedOrder;
   }
 
-  async changeTable(orderId: string, newTableId: string) {
+  async changeTable(orderId: string, newTableId: string, restaurantIdParam?: string | null) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: { table: true }
     });
 
     if (!order) throw new NotFoundException(`Order ${orderId} not found`);
+
+    const restaurantId = await this.resolveTenantRestaurantId(null, restaurantIdParam);
+    if (restaurantId && order.restaurantId && order.restaurantId !== restaurantId) {
+      throw new ForbiddenException('No tienes permiso para mover mesas de otro restaurante');
+    }
+
     if (order.status !== 'OPEN') throw new BadRequestException(`Order ${orderId} is not open`);
 
     const newTable = await this.prisma.table.findUnique({

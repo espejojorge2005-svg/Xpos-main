@@ -266,6 +266,63 @@ function MessageList({
   );
 }
 
+function FormattedAiContent({ content }: { content: string }) {
+  const lines = (content || '').split('\n');
+  return (
+    <div className="space-y-1.5 text-xs sm:text-sm leading-relaxed">
+      {lines.map((line, idx) => {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          return <div key={idx} className="h-1.5" />;
+        }
+
+        const isBullet = /^[•\-*]\s+/.test(trimmed);
+        const isNumbered = /^\d+\.\s+/.test(trimmed);
+
+        const cleanLine = isBullet
+          ? trimmed.replace(/^[•\-*]\s+/, '')
+          : isNumbered
+          ? trimmed.replace(/^\d+\.\s+/, '')
+          : trimmed;
+
+        const parts = cleanLine.split(/(\*\*[^*]+\*\*)/g);
+        const renderedText = parts.map((part, pIdx) => {
+          if (part.startsWith('**') && part.endsWith('**')) {
+            return (
+              <strong key={pIdx} className="font-black text-violet-200">
+                {part.slice(2, -2)}
+              </strong>
+            );
+          }
+          return part;
+        });
+
+        if (isBullet) {
+          return (
+            <div key={idx} className="flex items-start gap-2 pl-1">
+              <span className="text-violet-400 font-bold shrink-0 mt-0.5">•</span>
+              <span className="flex-1 text-slate-200">{renderedText}</span>
+            </div>
+          );
+        }
+
+        if (isNumbered) {
+          const numMatch = trimmed.match(/^(\d+)\./);
+          const num = numMatch ? numMatch[1] : '';
+          return (
+            <div key={idx} className="flex items-start gap-2 pl-1">
+              <span className="text-amber-400 font-bold shrink-0 text-xs mt-0.5">{num}.</span>
+              <span className="flex-1 text-slate-200">{renderedText}</span>
+            </div>
+          );
+        }
+
+        return <p key={idx} className="text-slate-200">{renderedText}</p>;
+      })}
+    </div>
+  );
+}
+
 function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === 'user';
 
@@ -284,9 +341,11 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             : 'bg-slate-800 border border-slate-700 text-slate-200 rounded-bl-none'
         }`}
       >
-        <div className="whitespace-pre-line prose prose-invert prose-sm max-w-none">
-          {message.content}
-        </div>
+        {isUser ? (
+          <div className="whitespace-pre-line text-sm">{message.content}</div>
+        ) : (
+          <FormattedAiContent content={message.content} />
+        )}
         <span
           className={`block text-[10px] mt-1.5 font-bold ${
             isUser ? 'text-violet-200 text-right' : 'text-slate-400'

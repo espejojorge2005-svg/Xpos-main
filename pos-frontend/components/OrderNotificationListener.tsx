@@ -6,6 +6,24 @@ import { subscribeToOrders, FirebaseOrder } from '@/utils/firebaseSync';
 import { getRestaurantId, getScopedStorage, setScopedStorage } from '@/utils/storage';
 import { toast } from 'sonner';
 
+let sharedAudioCtx: AudioContext | null = null;
+const getSharedAudioContext = (): AudioContext | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return null;
+    if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
+      sharedAudioCtx = new AudioCtx();
+    }
+    if (sharedAudioCtx.state === 'suspended') {
+      sharedAudioCtx.resume().catch(() => {});
+    }
+    return sharedAudioCtx;
+  } catch {
+    return null;
+  }
+};
+
 export default function OrderNotificationListener() {
   const router = useRouter();
   const pathname = usePathname();
@@ -15,13 +33,13 @@ export default function OrderNotificationListener() {
   const mountedAtRef = useRef<number>(Date.now());
   const knownOrderStatusRef = useRef<Map<string, string>>(new Map());
   const notifiedOrdersRef = useRef<Set<string>>(new Set());
+  const currentRestId = getRestaurantId() || 'main';
 
-  // Campanilla sonora suave (tipo campana de cocina "ding!") con Web Audio API
+  // Campanilla sonora suave (tipo campana de cocina "ding!") con Web Audio API reutilizable
   const playBellChime = () => {
     try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
+      const ctx = getSharedAudioContext();
+      if (!ctx) return;
       const now = ctx.currentTime;
       
       const osc1 = ctx.createOscillator();
@@ -45,11 +63,6 @@ export default function OrderNotificationListener() {
       gain2.connect(ctx.destination);
       osc2.start(now + 0.08);
       osc2.stop(now + 0.7);
-
-      // Cerrar el contexto de audio para evitar fugas de memoria
-      setTimeout(() => {
-        ctx.close().catch(() => {});
-      }, 800);
     } catch {}
   };
 
@@ -97,7 +110,7 @@ export default function OrderNotificationListener() {
       }
     } catch {}
 
-    const restaurantId = getRestaurantId() || 'main';
+    const restaurantId = currentRestId;
 
     // 1. Escuchar evento local en tiempo real inmediato (mismo navegador / red local)
     const handleLocalServed = (e: any) => {
@@ -217,7 +230,7 @@ export default function OrderNotificationListener() {
       window.removeEventListener('pos:order_served', handleLocalServed);
       if (typeof unsubscribe === 'function') unsubscribe();
     };
-  }, []);
+  }, [currentRestId]);
 
   return null;
 }

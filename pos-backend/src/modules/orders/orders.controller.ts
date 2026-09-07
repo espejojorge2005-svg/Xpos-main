@@ -35,31 +35,45 @@ export class OrdersController {
   }
 
   @Get('table/:tableId/active') // GET /api/v1/orders/table/:tableId/active
-  async getActiveOrderForTable(@Param('tableId') tableId: string) {
-    return this.ordersService.getOpenOrderForTable(tableId);
+  async getActiveOrderForTable(
+    @Param('tableId') tableId: string,
+    @Req() req: any,
+    @Headers('x-restaurant-id') restHeader?: string
+  ) {
+    const restaurantId = req.user?.restaurantId || restHeader || null;
+    return this.ordersService.getOpenOrderForTable(tableId, restaurantId);
   }
 
   @Post(':orderId/items') // POST /api/v1/orders/:orderId/items
   async addItemsToOrder(
     @Param('orderId') orderId: string,
-    @Body() data: { items: any[] }
+    @Body() data: { items: any[] },
+    @Req() req: any,
+    @Headers('x-restaurant-id') restHeader?: string
   ) {
-    return this.ordersService.addItemsToOrder(orderId, data);
+    const restaurantId = req.user?.restaurantId || restHeader || null;
+    return this.ordersService.addItemsToOrder(orderId, data, restaurantId);
   }
 
   @Delete(':orderId') // DELETE /api/v1/orders/:orderId
   async cancelOrder(
-    @Param('orderId') orderId: string
+    @Param('orderId') orderId: string,
+    @Req() req: any,
+    @Headers('x-restaurant-id') restHeader?: string
   ) {
-    return this.ordersService.cancelOrder(orderId);
+    const restaurantId = req.user?.restaurantId || restHeader || null;
+    return this.ordersService.cancelOrder(orderId, restaurantId);
   }
 
   @Patch(':orderId/table') // PATCH /api/v1/orders/:orderId/table
   async changeTable(
     @Param('orderId') orderId: string,
-    @Body('newTableId') newTableId: string
+    @Body('newTableId') newTableId: string,
+    @Req() req: any,
+    @Headers('x-restaurant-id') restHeader?: string
   ) {
-    return this.ordersService.changeTable(orderId, newTableId);
+    const restaurantId = req.user?.restaurantId || restHeader || null;
+    return this.ordersService.changeTable(orderId, newTableId, restaurantId);
   }
 
   @Delete(':orderId/items/:itemId') // DELETE /api/v1/orders/:orderId/items/:itemId

@@ -89,30 +89,36 @@ export class PaymentsService {
         });
       }
 
-      const totalPaid = order.payments.reduce((sum, p) => sum + Number(p.amount), 0) + data.amount;
+      const previousPaid = order.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+      const totalPaid = Math.round((previousPaid + Number(data.amount) + Number.EPSILON) * 100) / 100;
+      const expectedTotal = Math.round((Number(order.totalAmount) + Number.EPSILON) * 100) / 100;
+      const isOrderFullyPaid = totalPaid >= expectedTotal - 0.005;
 
-      if (totalPaid >= Number(order.totalAmount)) {
-        // 1. Cerramos la orden y liberamos la mesa
+      // ==========================================
+      // MOTOR DE INVENTARIO: Descuenta materias primas (Recetas)
+      // Para cuentas separadas, descuenta los ítems cobrados en este pago.
+      // Si la cuenta se cierra completamente, descuenta todos los ítems restantes no pagados previamente.
+      // ==========================================
+      const itemsToDeduct = (data.itemIds && data.itemIds.length > 0)
+        ? order.items.filter(it => data.itemIds!.includes(it.id))
+        : (isOrderFullyPaid ? order.items.filter(it => !it.isPaid) : []);
+
+      for (const item of itemsToDeduct) {
+        if (!item.product) continue;
+        for (const recipeItem of item.product.recipeItems) {
+          const totalDeduction = Number(recipeItem.quantityRequired) * item.quantity;
+          await tx.inventoryItem.update({
+            where: { id: recipeItem.inventoryItemId },
+            data: { stockQuantity: { decrement: totalDeduction } },
+          });
+        }
+      }
+
+      if (isOrderFullyPaid) {
+        // Cerramos la orden y liberamos la mesa
         await tx.order.update({ where: { id: order.id }, data: { status: 'CLOSED' } });
         if (order.tableId) {
           await tx.table.update({ where: { id: order.tableId }, data: { status: 'FREE' } });
-        }
-
-        // ==========================================
-        // 2. MOTOR DE INVENTARIO: Descuenta materias primas (Recetas)
-        // NOTA: El stock del producto directo ya fue descontado al comandar en orders.service.ts
-        // Para evitar el DOBLE DESCUENTO, aquí SOLO se descuentan los insumos de receta.
-        // ==========================================
-        for (const item of order.items) {
-          if (!item.product) continue;
-
-          for (const recipeItem of item.product.recipeItems) {
-            const totalDeduction = Number(recipeItem.quantityRequired) * item.quantity;
-            await tx.inventoryItem.update({
-              where: { id: recipeItem.inventoryItemId },
-              data: { stockQuantity: { decrement: totalDeduction } },
-            });
-          }
         }
       }
 

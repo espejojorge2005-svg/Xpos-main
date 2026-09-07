@@ -24,10 +24,22 @@ export class AiService {
   /**
    * Resuelve el ID del restaurante autenticado con aislamiento multi-tenant estricto
    */
-  private async resolveTenantRestaurantId(reqUser?: any): Promise<string | null> {
+  private async resolveTenantRestaurantId(reqUser?: any, restHeader?: string): Promise<string | null> {
+    const isUuid = (val: any) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
+    if (reqUser?.role === 'SUPER_ADMIN') {
+      if (isUuid(restHeader)) return restHeader;
+      const clsId = this.cls.get('restaurantId');
+      if (isUuid(clsId)) return clsId;
+    }
+
+    if (isUuid(reqUser?.restaurantId)) return reqUser.restaurantId;
+
     const clsRestId = this.cls.get('restaurantId');
-    if (clsRestId) return clsRestId;
-    if (reqUser?.restaurantId) return reqUser.restaurantId;
+    if (isUuid(clsRestId)) return clsRestId;
+
+    if (isUuid(restHeader)) return restHeader;
+
     return null;
   }
 
@@ -38,8 +50,9 @@ export class AiService {
     message: string,
     history: ChatMessageDto[] = [],
     reqUser?: any,
+    restHeader?: string,
   ): Promise<{ reply: string; data?: any }> {
-    const restaurantId = await this.resolveTenantRestaurantId(reqUser);
+    const restaurantId = await this.resolveTenantRestaurantId(reqUser, restHeader);
     if (!restaurantId) {
       throw new UnauthorizedException('No se pudo determinar el restaurante para esta sesión.');
     }
