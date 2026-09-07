@@ -364,6 +364,8 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
       try {
         const activeTableOrders = getScopedStorage<any>('pos_active_table_orders', {});
         const tableObj = { id: tableId, name: queryTableName || tableName, number: queryTableNumber };
+        const twelveHoursMs = 12 * 60 * 60 * 1000;
+        const now = Date.now();
 
         const tableOrder = activeTableOrders[tableId] || 
           Object.values(activeTableOrders).find((o: any) => 
@@ -371,7 +373,10 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
             isTableMatchingOrder(tableObj, o)
           );
 
-        if (tableOrder) {
+        // Validar que la orden sea reciente (< 12 horas)
+        const isOrderRecent = tableOrder?.createdAt && (now - new Date(tableOrder.createdAt).getTime() < twelveHoursMs);
+
+        if (tableOrder && isOrderRecent) {
           if (!activeOrderId && tableOrder.orderId) setActiveOrderId(tableOrder.orderId);
           if (tableOrder.tableName) setTableName(tableOrder.tableName);
           if (tableOrder.payments && Array.isArray(tableOrder.payments) && tableOrder.payments.length > 0) {
@@ -380,6 +385,10 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
           if (tableOrder.items && Array.isArray(tableOrder.items) && tableOrder.items.length > 0) {
             setExistingItems(tableOrder.items);
           }
+        } else if (tableOrder && !isOrderRecent) {
+          // Purgar orden huérfana / expirada
+          delete activeTableOrders[tableId];
+          setScopedStorage('pos_active_table_orders', activeTableOrders);
         }
       } catch {}
 
@@ -1144,12 +1153,15 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
           ];
         }
 
-        // Filtrar solo las mesas que NO sean la mesa actual y que NO tengan pedido activo
+        // Filtrar solo las mesas que NO sean la mesa actual y que NO tengan pedido activo reciente (< 12h)
+        const twelveHoursMs = 12 * 60 * 60 * 1000;
+        const now = Date.now();
         available = allTables.filter((t: any) => {
           if (t.id === tableId) return false;
           const order = activeTableOrders[t.id];
-          const isOccupied = order && (order.status === 'OCCUPIED' || (Array.isArray(order.items) && order.items.length > 0));
-          return !isOccupied && t.status !== 'OCCUPIED';
+          const isRecent = order?.createdAt && (now - new Date(order.createdAt).getTime() < twelveHoursMs);
+          const isOccupied = isRecent && order && (order.status === 'OCCUPIED' || (Array.isArray(order.items) && order.items.length > 0));
+          return !isOccupied;
         });
       } catch (err) {
         console.warn('Error resolviendo mesas libres locales:', err);

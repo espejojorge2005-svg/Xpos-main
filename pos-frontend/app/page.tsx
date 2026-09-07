@@ -196,19 +196,54 @@ const getInitialZones = (): Zone[] => {
   try {
     const savedZones = getScopedStorage<any[]>('pos_registered_zones', []);
     if (Array.isArray(savedZones) && savedZones.length > 0) {
+      const activeTableOrders = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
+      const twelveHoursMs = 12 * 60 * 60 * 1000;
+      const now = Date.now();
+      let hasExpired = false;
+
+      // Purgar órdenes locales expiradas de inmediato
+      Object.entries(activeTableOrders).forEach(([key, ord]: [string, any]) => {
+        if (ord?.createdAt) {
+          const age = now - new Date(ord.createdAt).getTime();
+          if (age >= twelveHoursMs) {
+            delete activeTableOrders[key];
+            hasExpired = true;
+          }
+        }
+      });
+      if (hasExpired) {
+        setScopedStorage('pos_active_table_orders', activeTableOrders);
+      }
+
       return savedZones.map(z => ({
         ...z,
-        tables: (z.tables || []).map((t: any, idx: number) => ({
-          ...t,
-          id: t.id || `t-${idx + 1}`,
-          name: t.name || `Mesa ${t.number}`,
-          number: t.number,
-          capacity: t.capacity || 4,
-          status: t.status || 'FREE',
-          posX: t.posX ?? (40 + (idx % 3) * 160),
-          posY: t.posY ?? (40 + Math.floor(idx / 3) * 160),
-          zoneId: z.id
-        }))
+        tables: (z.tables || []).map((t: any, idx: number) => {
+          // Una mesa solo inicia ocupada si existe una comanda local legítima y reciente (< 12h)
+          const orderInfo = activeTableOrders[t.id] || 
+            Object.values(activeTableOrders).find((o: any) => 
+              o && (o.status === 'OCCUPIED' || o.status === 'OPEN') && isTableMatchingOrder(t, o)
+            );
+          const isRecent = orderInfo?.createdAt && (now - new Date(orderInfo.createdAt).getTime() < twelveHoursMs);
+          const isOccupied = Boolean(isRecent && (orderInfo.status === 'OCCUPIED' || (Array.isArray(orderInfo.items) && orderInfo.items.length > 0)));
+
+          return {
+            ...t,
+            id: t.id || `t-${idx + 1}`,
+            name: t.name || `Mesa ${t.number}`,
+            number: t.number,
+            capacity: t.capacity || 4,
+            status: isOccupied ? 'OCCUPIED' : 'FREE',
+            billRequested: isOccupied ? Boolean(orderInfo?.billRequested) : false,
+            orders: isOccupied ? [{
+              id: orderInfo?.orderId || orderInfo?.id || `ord-${t.id}`,
+              createdAt: orderInfo.createdAt,
+              totalAmount: orderInfo.total || orderInfo.totalAmount || 0,
+            }] : [],
+            posX: t.posX ?? (40 + (idx % 3) * 160),
+            posY: t.posY ?? (40 + Math.floor(idx / 3) * 160),
+            zoneId: z.id
+          };
+        })
       }));
     }
   } catch {}
@@ -255,7 +290,16 @@ export default function Home() {
         const data = await response.json();
         if (Array.isArray(data) && data.length > 0) {
           loadedZones = data;
-          setScopedStorage('pos_registered_zones', data);
+          // Guardar estructura física limpia en caché (las mesas inician en FREE, sin contaminar la plantilla)
+          const cleanLayoutTemplate = data.map((z: any) => ({
+            ...z,
+            tables: (z.tables || []).map((t: any) => ({
+              ...t,
+              status: 'FREE',
+              orders: []
+            }))
+          }));
+          setScopedStorage('pos_registered_zones', cleanLayoutTemplate);
         }
       }
     } catch (error) {
@@ -273,7 +317,8 @@ export default function Home() {
             name: t.name || `Mesa ${t.number}`,
             number: t.number,
             capacity: t.capacity || 4,
-            status: t.status || 'FREE',
+            status: 'FREE',
+            orders: [],
             posX: t.posX ?? (40 + (idx % 3) * 160),
             posY: t.posY ?? (40 + Math.floor(idx / 3) * 160),
             zoneId: z.id
@@ -309,6 +354,21 @@ export default function Home() {
       const twelveHoursMs = 12 * 60 * 60 * 1000;
       const now = Date.now();
 
+      // Purgar del almacenamiento local aquellas órdenes expiradas
+      let hasExpired = false;
+      Object.entries(activeTableOrders).forEach(([key, ord]: [string, any]) => {
+        if (ord?.createdAt) {
+          const age = now - new Date(ord.createdAt).getTime();
+          if (age >= twelveHoursMs) {
+            delete activeTableOrders[key];
+            hasExpired = true;
+          }
+        }
+      });
+      if (hasExpired) {
+        setScopedStorage('pos_active_table_orders', activeTableOrders);
+      }
+
       loadedZones = loadedZones.map(zone => ({
         ...zone,
         tables: zone.tables.map(table => {
@@ -319,10 +379,10 @@ export default function Home() {
 
           // Verificar si la orden local es reciente (menos de 12 horas)
           const orderAge = orderInfo?.createdAt ? (now - new Date(orderInfo.createdAt).getTime()) : 0;
-          const isOrderRecent = orderAge < twelveHoursMs;
+          const isOrderRecent = orderInfo?.createdAt && orderAge < twelveHoursMs;
 
           const isOrderActive = isOrderRecent && orderInfo && (orderInfo.status === 'OCCUPIED' || (Array.isArray(orderInfo.items) && orderInfo.items.length > 0));
-          const hasServerOrder = (table.orders && table.orders.length > 0) || table.status === 'OCCUPIED' || table.status === 'WAITING_FOOD';
+          const hasServerOrder = (table.orders && table.orders.length > 0);
 
           if (isOrderActive || hasServerOrder) {
             const serverOrder = table.orders && table.orders.length > 0 ? table.orders[0] : null;
@@ -481,8 +541,10 @@ export default function Home() {
                 o && (o.status === 'OCCUPIED' || o.status === 'OPEN' || o.status === 'SERVED') && isTableMatchingOrder(table, o)
               );
 
-            // Una mesa SOLO está ocupada si tiene una orden abierta activa real
-            const hasActiveOrder = Boolean(matchedOrder || (localOrder && (localOrder.status === 'OCCUPIED' || localOrder.status === 'OPEN')));
+            // Una mesa SOLO está ocupada si tiene una comanda abierta activa real y reciente (< 12h)
+            const twelveHoursMs = 12 * 60 * 60 * 1000;
+            const isLocalRecent = localOrder?.createdAt && (Date.now() - new Date(localOrder.createdAt).getTime() < twelveHoursMs);
+            const hasActiveOrder = Boolean(matchedOrder || (isLocalRecent && (localOrder.status === 'OCCUPIED' || localOrder.status === 'OPEN')));
 
             if (hasActiveOrder) {
               const activeSource = matchedOrder || localOrder;
@@ -512,7 +574,15 @@ export default function Home() {
     // 2. Escucha en tiempo real de plano de sala (Zonas y Mesas creadas)
     const unsubscribeZones = subscribeToZones(currentRestId, (cloudZones) => {
       if (Array.isArray(cloudZones) && cloudZones.length > 0) {
-        setScopedStorage('pos_registered_zones', cloudZones);
+        const cleanZones = cloudZones.map((z: any) => ({
+          ...z,
+          tables: (z.tables || []).map((t: any) => ({
+            ...t,
+            status: 'FREE',
+            orders: []
+          }))
+        }));
+        setScopedStorage('pos_registered_zones', cleanZones);
         fetchZonas();
       }
     });

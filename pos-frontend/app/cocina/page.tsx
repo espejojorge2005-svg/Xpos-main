@@ -104,7 +104,20 @@ export default function CocinaPage() {
     if (typeof window === 'undefined') return [];
     try {
       const cached = getScopedStorage<KitchenOrder[]>('pos_local_kitchen_orders', []);
-      return Array.isArray(cached) ? cached : [];
+      if (!Array.isArray(cached)) return [];
+      const twelveHoursMs = 12 * 60 * 60 * 1000;
+      const now = Date.now();
+      const valid = cached.filter(lo => {
+        if (!lo || lo.status === 'SERVED' || lo.status === 'CANCELLED') return false;
+        const age = lo.createdAt ? (now - new Date(lo.createdAt).getTime()) : 0;
+        if (age >= twelveHoursMs) return false;
+        return Array.isArray(lo.items) && lo.items.some(it => it.status === 'ACTIVE');
+      });
+      // Purgar inmediatamente comandas obsoletas de local storage
+      if (valid.length !== cached.length) {
+        setScopedStorage('pos_local_kitchen_orders', valid);
+      }
+      return valid;
     } catch { return []; }
   });
   const [loading, setLoading] = useState(false);
@@ -182,15 +195,29 @@ export default function CocinaPage() {
     // Merge with local kitchen orders for standalone / local mode
     try {
       const localOrders = getScopedStorage<KitchenOrder[]>('pos_local_kitchen_orders', []);
+      const twelveHoursMs = 12 * 60 * 60 * 1000;
+      const now = Date.now();
+
       if (Array.isArray(localOrders) && localOrders.length > 0) {
-        // Filtrar solo las órdenes locales que sigan activas y tengan platos activos
-        const activeLocalOrders = localOrders.filter(lo => 
-          lo.status !== 'SERVED' && 
-          lo.status !== 'CANCELLED' && 
-          !servedOrderIdsRef.current.has(lo.id) &&
-          Array.isArray(lo.items) && 
-          lo.items.some(it => it.status === 'ACTIVE' && !servedItemIdsRef.current.has(it.id))
-        );
+        // Filtrar solo las órdenes locales que sigan activas, no despachadas y recientes (< 12h)
+        const activeLocalOrders = localOrders.filter(lo => {
+          if (!lo || lo.status === 'SERVED' || lo.status === 'CANCELLED') return false;
+          if (servedOrderIdsRef.current.has(lo.id)) return false;
+          const age = lo.createdAt ? (now - new Date(lo.createdAt).getTime()) : 0;
+          if (age >= twelveHoursMs) return false;
+          return Array.isArray(lo.items) && lo.items.some(it => it.status === 'ACTIVE' && !servedItemIdsRef.current.has(it.id));
+        });
+
+        // Purgar órdenes locales expiradas de pos_local_kitchen_orders
+        const validStorageOrders = localOrders.filter(lo => {
+          if (!lo) return false;
+          const age = lo.createdAt ? (now - new Date(lo.createdAt).getTime()) : 0;
+          return age < twelveHoursMs;
+        });
+        if (validStorageOrders.length !== localOrders.length) {
+          setScopedStorage('pos_local_kitchen_orders', validStorageOrders);
+        }
+
         const map = new Map<string, KitchenOrder>();
         serverOrders.forEach(o => map.set(o.id, o));
         activeLocalOrders.forEach(lo => {
@@ -435,25 +462,41 @@ export default function CocinaPage() {
     const unsubscribeFirebase = subscribeToKitchenOrders(currentRestId, (firebaseOrders) => {
       if (isUpdatingRef.current) return;
       
+      const twelveHoursMs = 12 * 60 * 60 * 1000;
+      const now = Date.now();
+
       // Si no hay órdenes abiertas en Firebase, limpiar pantalla y caché local
       if (!firebaseOrders || firebaseOrders.length === 0) {
-        setOrders(prev => prev.filter(o => o.id.startsWith('local-') && o.status === 'OPEN'));
+        setOrders(prev => prev.filter(o => 
+          o.id.startsWith('local-') && 
+          o.status === 'OPEN' && 
+          o.createdAt && 
+          (now - new Date(o.createdAt).getTime() < twelveHoursMs)
+        ));
         try {
           let localOrders = getScopedStorage<KitchenOrder[]>('pos_local_kitchen_orders', []);
           if (Array.isArray(localOrders) && localOrders.length > 0) {
-            const cleaned = localOrders.filter(lo => lo.id.startsWith('local-'));
+            const cleaned = localOrders.filter(lo => 
+              lo.id.startsWith('local-') && 
+              lo.createdAt && 
+              (now - new Date(lo.createdAt).getTime() < twelveHoursMs)
+            );
             setScopedStorage('pos_local_kitchen_orders', cleaned);
           }
         } catch {}
         return;
       }
 
-      // Limpiar de la caché local aquellas órdenes que ya no están abiertas en Firebase
+      // Limpiar de la caché local aquellas órdenes que ya no están abiertas en Firebase o que expiraron
       const openFirebaseIds = new Set(firebaseOrders.map(fo => fo.id));
       try {
         let localOrders = getScopedStorage<KitchenOrder[]>('pos_local_kitchen_orders', []);
         if (Array.isArray(localOrders) && localOrders.length > 0) {
-          const cleaned = localOrders.filter(lo => openFirebaseIds.has(lo.id) || lo.id.startsWith('local-'));
+          const cleaned = localOrders.filter(lo => {
+            const age = lo.createdAt ? (now - new Date(lo.createdAt).getTime()) : 0;
+            if (age >= twelveHoursMs) return false;
+            return openFirebaseIds.has(lo.id) || lo.id.startsWith('local-');
+          });
           setScopedStorage('pos_local_kitchen_orders', cleaned);
         }
       } catch {}

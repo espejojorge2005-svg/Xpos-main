@@ -37,9 +37,20 @@ export interface FirebaseTable {
 }
 
 export const isMatchingTenant = (itemRestId?: string | null, currentRestId?: string | null): boolean => {
-  if (!currentRestId || currentRestId === 'main') return true;
-  if (!itemRestId || itemRestId === 'main') return true;
-  return itemRestId === currentRestId;
+  const normItem = (itemRestId || '').trim();
+  const normCurrent = (currentRestId || '').trim();
+
+  // 1. Si ambos tienen ID asignado, deben ser exactamente idénticos
+  if (normItem && normCurrent) {
+    return normItem === normCurrent;
+  }
+
+  // 2. Si ambos están en contexto no asignado o por defecto 'main'
+  if (!normItem && (!normCurrent || normCurrent === 'main')) return true;
+  if (normItem === 'main' && (!normCurrent || normCurrent === 'main')) return true;
+
+  // 3. Aislamiento estricto: Si uno tiene un UUID de inquilino específico y el otro no (o es diferente), JAMÁS coinciden
+  return false;
 };
 
 /**

@@ -149,13 +149,18 @@ export class FloorService {
     const restaurantId = await this.resolveRestaurantId(reqUser, restaurantIdParam);
     if (!restaurantId) return [];
 
+    const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+
     let zones = await this.prisma.zone.findMany({
       where: { restaurantId },
       include: {
         tables: {
           include: {
             orders: {
-              where: { status: 'OPEN' },
+              where: { 
+                status: 'OPEN',
+                createdAt: { gte: twelveHoursAgo }
+              },
               select: { id: true, createdAt: true, totalAmount: true, customerName: true },
               orderBy: { createdAt: 'desc' },
               take: 1,
@@ -203,7 +208,10 @@ export class FloorService {
             tables: {
               include: {
                 orders: {
-                  where: { status: 'OPEN' },
+                  where: { 
+                    status: 'OPEN',
+                    createdAt: { gte: twelveHoursAgo }
+                  },
                   select: { id: true, createdAt: true, totalAmount: true, customerName: true },
                   orderBy: { createdAt: 'desc' },
                   take: 1,
@@ -218,17 +226,33 @@ export class FloorService {
       }
     }
 
-    // Asegurar que si una mesa tiene comanda abierta, su status retornado sea OCCUPIED
-    return zones.map(z => ({
+    // Asegurar que si una mesa tiene comanda abierta activa, su status sea OCCUPIED, de lo contrario FREE
+    const tablesToFree: string[] = [];
+
+    const mappedZones = zones.map(z => ({
       ...z,
       tables: (z.tables || []).map(t => {
         const hasOpenOrder = t.orders && t.orders.length > 0;
+        if (!hasOpenOrder && t.status !== 'FREE') {
+          tablesToFree.push(t.id);
+        }
         return {
           ...t,
-          status: hasOpenOrder ? 'OCCUPIED' : t.status
+          status: (hasOpenOrder ? 'OCCUPIED' : 'FREE') as any,
+          orders: hasOpenOrder ? t.orders : []
         };
       })
     }));
+
+    // Auto-corregir en BD en segundo plano mesas que quedaron marcadas OCCUPIED sin comanda abierta
+    if (tablesToFree.length > 0) {
+      this.prisma.table.updateMany({
+        where: { id: { in: tablesToFree } },
+        data: { status: 'FREE' }
+      }).catch(e => console.warn('Error auto-liberando mesas huérfanas en BD:', e));
+    }
+
+    return mappedZones;
   }
 }
 
