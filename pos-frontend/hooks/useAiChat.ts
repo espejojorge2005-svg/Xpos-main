@@ -97,10 +97,11 @@ export function evaluateProactiveAlerts(): AiAlert[] {
     }
   } catch {}
 
-  // 3. ALERTAS DE VENTAS Y CAJA
+  // 3. ALERTAS DE VENTAS Y CAJA (Turno actual registrado para este restaurante)
   try {
-    const shift = getScopedStorage<any>('mock_cash_shift', null);
-    if (shift && shift.isOpen) {
+    const shift = getScopedStorage<any>('pos_cash_shift', null) || getScopedStorage<any>('mock_cash_shift', null);
+    const currentRestId = getRestaurantId();
+    if (shift && shift.isOpen && (!shift.restaurantId || shift.restaurantId === currentRestId)) {
       const payments = shift.payments || [];
       const totalCollected = payments.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
       if (totalCollected > 300) {
@@ -233,10 +234,13 @@ export function useAiChat() {
         },
         body: JSON.stringify({
           message: query,
-          history: messages.slice(-6).map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
+          history: messages
+            .filter((m) => m.id !== 'welcome' && !m.id.startsWith('ai-err-'))
+            .slice(-6)
+            .map((m) => ({
+              role: m.role,
+              content: m.content,
+            })),
         }),
       });
 

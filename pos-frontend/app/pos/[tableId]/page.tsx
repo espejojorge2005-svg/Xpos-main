@@ -64,6 +64,15 @@ interface Payment {
   tipAmount: number;
 }
 
+// Cálculo unificado del total de un ítem considerando cantidad y sub-ítems / combos
+export const getItemSubtotal = (item: { quantity: number; unitPrice: number; subItems?: any[] }): number => {
+  const subItemsTotal = (item.subItems || []).reduce(
+    (sum: number, sub: any) => sum + (Number(sub.quantity || 1) * Number(sub.unitPrice || 0)),
+    0
+  );
+  return (Number(item.quantity || 1) * Number(item.unitPrice || 0)) + subItemsTotal;
+};
+
 // Resuelve nombres limpios para mesas evitando siempre códigos UUID cortados como "Mesa AE6E" o números corruptos
 const resolveSafeTableName = (id: string, candidate?: string | null, num?: any): string => {
   const formatted = formatTableName(candidate, num);
@@ -283,7 +292,14 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                   unitPrice: Number(item.unitPrice),
                   notes: item.notes,
                   parentItemId: item.parentItemId,
-                  isPaid: item.isPaid
+                  isPaid: item.isPaid,
+                  subItems: item.subItems ? item.subItems.map((s: any) => ({
+                    id: s.id,
+                    productId: s.productId,
+                    name: s.product?.name || 'Sub-ítem',
+                    quantity: s.quantity,
+                    unitPrice: Number(s.unitPrice),
+                  })) : []
                 }));
                 setExistingItems(mappedItems);
 
@@ -323,7 +339,8 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                   unitPrice: Number(it.unitPrice || 0),
                   notes: it.notes || '',
                   status: it.status || 'ACTIVE',
-                  isPaid: false
+                  isPaid: false,
+                  subItems: it.subItems || []
                 }));
                 setExistingItems(mappedItems);
 
@@ -332,7 +349,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                   orderId: fbOrder.id,
                   tableName: safeName,
                   createdAt: fbOrder.createdAt || new Date().toISOString(),
-                  total: fbOrder.totalAmount || mappedItems.reduce((s: number, i: any) => s + i.quantity * i.unitPrice, 0),
+                  total: fbOrder.totalAmount || mappedItems.reduce((s: number, i: any) => s + getItemSubtotal(i), 0),
                   status: 'OCCUPIED',
                   items: mappedItems,
                   payments: []
@@ -531,10 +548,10 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
   };
 
   // Cálculos dinámicos
-  const existingSubtotal = existingItems.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+  const existingSubtotal = existingItems.reduce((sum, item) => sum + getItemSubtotal(item), 0);
   const paidAmount = payments.reduce((sum, p) => sum + p.amount, 0);
   const remainingAmount = Math.max(0, existingSubtotal - paidAmount);
-  const cartSubtotal = cart.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+  const cartSubtotal = cart.reduce((sum, item) => sum + getItemSubtotal(item), 0);
   const totalAmount = existingSubtotal + cartSubtotal;
 
   const submitOrder = async () => {
@@ -710,7 +727,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
       }))
     ];
     
-    const newTotal = combinedExistingItems.reduce((sum, it) => sum + it.quantity * it.unitPrice, 0);
+    const newTotal = combinedExistingItems.reduce((sum, it) => sum + getItemSubtotal(it), 0);
 
     try {
       const activeTableOrders = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
@@ -816,7 +833,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
           productName: item.name,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
-          subtotal: item.quantity * item.unitPrice,
+          subtotal: getItemSubtotal(item),
           notes: item.notes || '',
           status: item.status || 'ACTIVE'
         })),
@@ -1541,7 +1558,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                       ))}
                   </td>
                   <td className="align-top text-right py-0.5">{item.unitPrice.toFixed(2)}</td>
-                  <td className="align-top text-right py-0.5">{(item.quantity * item.unitPrice).toFixed(2)}</td>
+                  <td className="align-top text-right py-0.5">{getItemSubtotal(item).toFixed(2)}</td>
                 </tr>
             ))}
           </tbody>
@@ -1555,7 +1572,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
           <span>S/ {showSplitBillModal
             ? selectedSplitItems.reduce((sum, id) => {
                 const it = existingItems.find(i => i.id === id);
-                return sum + (it ? it.quantity * it.unitPrice : 0);
+                return sum + (it ? getItemSubtotal(it) : 0);
               }, 0).toFixed(2)
             : existingSubtotal.toFixed(2)}
           </span>
@@ -1803,7 +1820,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                         </span>
                         <div className="flex items-center gap-3">
                           <span className="font-black text-slate-700 text-sm">
-                            S/ {(item.quantity * item.unitPrice).toFixed(2)}
+                            S/ {getItemSubtotal(item).toFixed(2)}
                           </span>
                           {!item.isPaid && (
                             <button 
@@ -1885,7 +1902,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                           {item.name}
                         </span>
                         <span className="font-black text-slate-900 text-sm">
-                          S/ {(item.quantity * item.unitPrice).toFixed(2)}
+                          S/ {getItemSubtotal(item).toFixed(2)}
                         </span>
                       </div>
                       
@@ -2505,7 +2522,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                            {item.notes && <p className="text-xs text-slate-500 italic mt-0.5">"{item.notes}"</p>}
                          </div>
                          <span className={`font-black ${isSelected ? 'text-blue-700' : 'text-slate-600'}`}>
-                           S/ {(item.quantity * item.unitPrice).toFixed(2)}
+                           S/ {getItemSubtotal(item).toFixed(2)}
                          </span>
                        </div>
                      );
@@ -2520,7 +2537,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                  <span className="text-2xl font-black text-blue-600">
                    S/ {selectedSplitItems.reduce((sum, id) => {
                      const it = existingItems.find(i => i.id === id);
-                     return sum + (it ? (it.quantity * it.unitPrice) : 0);
+                     return sum + (it ? getItemSubtotal(it) : 0);
                    }, 0).toFixed(2)}
                  </span>
                </div>
@@ -2545,7 +2562,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                       setCheckoutMode('SPLIT');
                       const splitSum = selectedSplitItems.reduce((sum, id) => {
                         const it = existingItems.find(i => i.id === id);
-                        return sum + (it ? (it.quantity * it.unitPrice) : 0);
+                        return sum + (it ? getItemSubtotal(it) : 0);
                       }, 0);
                       setPaymentAmount(splitSum);
                       setTipAmount(0);

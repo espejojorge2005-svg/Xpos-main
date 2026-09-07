@@ -3,7 +3,7 @@ import { getApiUrl } from '@/utils/api';
 import { subscribeToKitchenOrders, serveKitchenItemInFirebase, updateKitchenOrderStatusInFirebase } from '@/utils/firebaseSync';
 import { getScopedStorage, setScopedStorage, getRestaurantId } from '@/utils/storage';
 
-import { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChefHat, Clock, AlertTriangle, ArrowLeft, UtensilsCrossed, XCircle, Undo2, Check, ArrowRightLeft } from 'lucide-react';
 import { toast } from 'sonner';
@@ -45,39 +45,30 @@ interface KitchenOrder {
   items: KitchenItem[];
 }
 
-// Componente inteligente para el Cronómetro sincronizado con horario de Perú
-const OrderTimer = ({ createdAt }: { createdAt: string }) => {
-  const [timeText, setTimeText] = useState('');
-  const [isDelayed, setIsDelayed] = useState(false);
-  const [isVeryDelayed, setIsVeryDelayed] = useState(false);
+// Componente memoizado para el Cronómetro sincronizado con reloj central de cocina
+const OrderTimer = React.memo(({ createdAt, now }: { createdAt: string; now: number }) => {
+  const formatted = useMemo(() => formatWaitTime(createdAt, now), [createdAt, now]);
+  const minutes = useMemo(() => {
+    const orderDate = new Date(createdAt).getTime();
+    const diffMs = now - (isNaN(orderDate) ? now : orderDate);
+    return Math.floor(diffMs / 60000);
+  }, [createdAt, now]);
 
-  useEffect(() => {
-    const updateTimer = () => {
-      const formatted = formatWaitTime(createdAt);
-      setTimeText(formatted);
-
-      const orderDate = new Date(createdAt).getTime();
-      const diffMs = Date.now() - (isNaN(orderDate) ? Date.now() : orderDate);
-      const minutes = Math.floor(diffMs / 60000);
-      if (minutes >= 20) setIsVeryDelayed(true);
-      else if (minutes >= 10) setIsDelayed(true);
-    };
-    updateTimer();
-    const interval = setInterval(updateTimer, 1000);
-    return () => clearInterval(interval);
-  }, [createdAt]);
+  const isVeryDelayed = minutes >= 20;
+  const isDelayed = minutes >= 10;
 
   return (
     <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-black shadow-inner transition-colors
       ${isVeryDelayed ? 'bg-rose-100 text-rose-700 border border-rose-200 animate-pulse' : 
         isDelayed ? 'bg-orange-100 text-orange-700 border border-orange-200' : 
         'bg-emerald-100 text-emerald-700 border border-emerald-200'}`}
-  >
-    <Clock className="w-4 h-4" />
-    {timeText}
-  </div>
+    >
+      <Clock className="w-4 h-4" />
+      {formatted}
+    </div>
   );
-};
+});
+OrderTimer.displayName = 'OrderTimer';
 
 const getCleanWaiterName = (order: KitchenOrder) => {
   const w = (order.waiterName || '').trim();
@@ -138,15 +129,39 @@ export default function CocinaPage() {
   });
   const [selectedStation, setSelectedStation] = useState<string | null>(null);
   const [finishedCount, setFinishedCount] = useState<number>(0);
+  const [now, setNow] = useState<number>(() => Date.now());
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  // Reloj central unificado para evitar múltiples setInterval concurrentes en cada tarjeta
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Limpieza del contexto de audio al desmontar
+  useEffect(() => {
+    return () => {
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        audioCtxRef.current.close().catch(() => {});
+      }
+    };
+  }, []);
 
   // Referencia para comparar estados anteriores y lanzar alertas
   const prevOrdersRef = useRef<KitchenOrder[]>([]);
 
-  // Simple sonido de alerta de error/cancelación
+  // Simple sonido de alerta de error/cancelación (AudioContext Singleton)
   const playAlertSound = () => {
     try {
-      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-      const ctx = new AudioContext();
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+        audioCtxRef.current = new AudioContextClass();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
       const oscillator = ctx.createOscillator();
       const gainNode = ctx.createGain();
       
@@ -719,7 +734,7 @@ export default function CocinaPage() {
                       <span>El cliente fue trasladado de <span className="line-through font-black">{prevTableName}</span> a <span className="underline font-black text-amber-950">{tableName}</span>. Entregar aquí.</span>
                     </div>
                   ) : (
-                    <OrderTimer createdAt={order.createdAt} />
+                    <OrderTimer createdAt={order.createdAt} now={now} />
                   )}
                 </div>
 

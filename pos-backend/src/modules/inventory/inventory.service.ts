@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClsService } from 'nestjs-cls';
 import { CreateCategoryDto } from './dto/create-category.dto';
@@ -63,22 +63,42 @@ export class InventoryService {
 
 
 
-  async updateCategory(id: string, data: Partial<CreateCategoryDto>) {
+  async updateCategory(id: string, data: Partial<CreateCategoryDto>, restaurantId?: string | null) {
+    const category = await this.prisma.category.findUnique({ where: { id } });
+    if (!category) {
+      throw new NotFoundException('Categoría no encontrada');
+    }
+
+    const targetRestId = await this.resolveTenantId(restaurantId);
+    if (targetRestId && category.restaurantId && category.restaurantId !== targetRestId) {
+      throw new ForbiddenException('No tienes permiso para modificar categorías de otro restaurante');
+    }
+
     return this.prisma.category.update({
       where: { id },
       data: {
-        name: data.name,
+        name: data.name?.trim(),
       },
     });
   }
 
-  async deleteCategory(id: string) {
+  async deleteCategory(id: string, restaurantId?: string | null) {
+    const category = await this.prisma.category.findUnique({ where: { id } });
+    if (!category) {
+      throw new NotFoundException('Categoría no encontrada');
+    }
+
+    const targetRestId = await this.resolveTenantId(restaurantId);
+    if (targetRestId && category.restaurantId && category.restaurantId !== targetRestId) {
+      throw new ForbiddenException('No tienes permiso para eliminar categorías de otro restaurante');
+    }
+
     const productsCount = await this.prisma.product.count({
       where: { categoryId: id }
     });
 
     if (productsCount > 0) {
-      throw new Error('No se puede eliminar la categoría porque tiene productos asignados. Mueve o elimina los productos primero.');
+      throw new BadRequestException('No se puede eliminar la categoría porque tiene productos asignados. Mueve o elimina los productos primero.');
     }
 
     return this.prisma.category.delete({
@@ -107,12 +127,14 @@ export class InventoryService {
   }
 
   // 1. Ingresar materia prima al almacén
-  async createInventoryItem(data: CreateInventoryItemDto) {
+  async createInventoryItem(data: CreateInventoryItemDto, restaurantId?: string | null) {
+    const targetRestId = await this.resolveTenantId(restaurantId);
     return this.prisma.inventoryItem.create({
       data: {
         name: data.name,
         stockQuantity: data.stockQuantity,
         unitOfMeasure: data.unitOfMeasure,
+        restaurantId: targetRestId,
       },
     });
   }

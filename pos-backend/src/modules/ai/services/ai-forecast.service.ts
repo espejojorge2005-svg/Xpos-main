@@ -81,17 +81,19 @@ export class AiForecastService {
         const orderSum = stats.orderCounts.reduce((a, b) => a + b, 0);
         projectedOrders = Math.round(orderSum / stats.orderCounts.length);
       } else {
-        projectedRevenue = 350.0;
-        projectedOrders = 8;
+        projectedRevenue = 0;
+        projectedOrders = 0;
       }
 
-      const topDishes = Object.entries(stats.dishCounts)
-        .map(([name, totalQty]) => ({
-          name,
-          estimatedQuantity: Math.max(1, Math.round(totalQty / Math.max(1, stats.revenues.length))),
-        }))
-        .sort((a, b) => b.estimatedQuantity - a.estimatedQuantity)
-        .slice(0, 4);
+      const topDishes = stats.revenues.length > 0
+        ? Object.entries(stats.dishCounts)
+            .map(([name, totalQty]) => ({
+              name,
+              estimatedQuantity: Math.max(1, Math.round(totalQty / Math.max(1, stats.revenues.length))),
+            }))
+            .sort((a, b) => b.estimatedQuantity - a.estimatedQuantity)
+            .slice(0, 4)
+        : [];
 
       forecast.push({
         date: targetDate.toISOString().slice(0, 10),

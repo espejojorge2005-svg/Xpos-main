@@ -28,8 +28,13 @@ export class InventoryController {
   }
 
   @Post('stock') // POST /api/v1/inventory/stock
-  async createInventoryItem(@Body() createInventoryItemDto: CreateInventoryItemDto) {
-    return this.inventoryService.createInventoryItem(createInventoryItemDto);
+  async createInventoryItem(
+    @Body() createInventoryItemDto: CreateInventoryItemDto,
+    @Req() req?: any,
+    @Headers('x-restaurant-id') restHeader?: string
+  ) {
+    const restaurantId = req?.user?.restaurantId || restHeader || null;
+    return this.inventoryService.createInventoryItem(createInventoryItemDto, restaurantId);
   }
 
   @Post('recipe') // POST /api/v1/inventory/recipe
@@ -52,22 +57,34 @@ export class InventoryController {
   }
 
   @Patch('category/:id') // PATCH /api/v1/inventory/category/:id
-  async updateCategory(@Param('id') id: string, @Body() updateCategoryDto: UpdateCategoryDto) {
+  async updateCategory(
+    @Param('id') id: string, 
+    @Body() updateCategoryDto: UpdateCategoryDto,
+    @Req() req?: any,
+    @Headers('x-restaurant-id') restHeader?: string
+  ) {
     try {
-      return await this.inventoryService.updateCategory(id, updateCategoryDto);
+      const restaurantId = req?.user?.restaurantId || restHeader || null;
+      return await this.inventoryService.updateCategory(id, updateCategoryDto, restaurantId);
     } catch (e: any) {
       console.error('Error updating category:', e);
-      return { error: e.message || 'Unknown error' };
+      if (e instanceof HttpException) throw e;
+      throw new HttpException(e.message || 'Error al actualizar categoría', HttpStatus.BAD_REQUEST);
     }
   }
 
   @Delete('category/:id') // DELETE /api/v1/inventory/category/:id
-  async deleteCategory(@Param('id') id: string) {
+  async deleteCategory(
+    @Param('id') id: string,
+    @Req() req?: any,
+    @Headers('x-restaurant-id') restHeader?: string
+  ) {
     try {
-      return await this.inventoryService.deleteCategory(id);
+      const restaurantId = req?.user?.restaurantId || restHeader || null;
+      return await this.inventoryService.deleteCategory(id, restaurantId);
     } catch (e: any) {
       console.error('Error deleting category:', e);
-      // Retornar un error manejado en lugar de 500
+      if (e instanceof HttpException) throw e;
       throw new HttpException(
         e.message || 'No se puede eliminar la categoría',
         HttpStatus.BAD_REQUEST,

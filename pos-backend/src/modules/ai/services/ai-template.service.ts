@@ -166,8 +166,18 @@ ${!outList && !lowList ? '✅ **¡Excelente!** Todos los productos cuentan con s
   }
 
   private renderForecast(forecast: DailyForecast[]): string {
+    const hasData = forecast.some((f) => f.projectedRevenue > 0);
+    if (!hasData) {
+      return `### 🔮 Proyección Predictiva de Ventas (Próximos Días)
+
+ℹ️ *(Aún no se cuenta con suficientes ventas históricas cerradas en las últimas 4 semanas para calcular una proyección confiable. A medida que registres y cierres pedidos en caja, ChefAI generará pronósticos de ventas y demanda).*`;
+    }
+
     const forecastList = forecast.slice(0, 5)
       .map((f) => {
+        if (f.projectedRevenue === 0 && f.projectedOrders === 0) {
+          return `📅 **${f.dayName} (${f.date}):**\n  - *(Sin ventas históricas registradas para este día de la semana)*`;
+        }
         const dishesStr = f.topExpectedDishes.map((d) => `${d.name} (~${d.estimatedQuantity} uds)`).join(', ');
         return `📅 **${f.dayName} (${f.date}):**
   - **Venta Proyectada:** \`S/ ${f.projectedRevenue.toFixed(2)}\` (~${f.projectedOrders} pedidos)

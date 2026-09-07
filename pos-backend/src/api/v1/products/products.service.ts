@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { PrismaService } from '../../../prisma/prisma.service'; 
@@ -28,9 +28,8 @@ export class ProductsService {
 
   async create(createProductDto: any, reqUser?: any, restaurantIdParam?: string | null) {
     let restaurantId = this.getTenantRestaurantId(reqUser, restaurantIdParam) || createProductDto.restaurantId;
-    if (!restaurantId) {
-      const defaultRest = await this.prisma.restaurant.findFirst({ orderBy: { createdAt: 'asc' } });
-      if (defaultRest) restaurantId = defaultRest.id;
+    if (!restaurantId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(restaurantId)) {
+      throw new BadRequestException('El ID del restaurante es obligatorio para registrar un producto');
     }
 
     const { modifierGroups, stationIds, categoryId, ...productData } = createProductDto;
@@ -108,11 +107,8 @@ export class ProductsService {
       const u = await this.prisma.user.findUnique({ where: { id: reqUser.id } }).catch(() => null);
       if (u?.restaurantId) restaurantId = u.restaurantId;
     }
-    if (!restaurantId) {
-      const defaultRest = await this.prisma.restaurant.findFirst({ orderBy: { createdAt: 'asc' } }).catch(() => null);
-      if (defaultRest) restaurantId = defaultRest.id;
-    }
 
+    // Aislamiento Multi-Tenant: Si no hay tenant identificado, sólo listar productos globales (restaurantId: null)
     const whereClause: any = { 
       isActive: true,
       ...(restaurantId ? {
@@ -120,7 +116,9 @@ export class ProductsService {
           { restaurantId },
           { restaurantId: null }
         ]
-      } : {})
+      } : {
+        restaurantId: null
+      })
     };
 
     const products = await this.prisma.product.findMany({

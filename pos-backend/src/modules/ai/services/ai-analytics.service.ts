@@ -103,11 +103,21 @@ export class AiAnalyticsService {
         },
         parentItemId: null,
       },
-      include: {
+      select: {
+        productId: true,
+        quantity: true,
+        unitPrice: true,
+        subtotal: true,
         product: {
-          include: { category: true },
+          select: {
+            name: true,
+            category: {
+              select: { name: true },
+            },
+          },
         },
       },
+      take: 2500,
     });
 
     const productSalesMap: Record<string, { name: string; category: string; quantity: number; revenue: number }> = {};
