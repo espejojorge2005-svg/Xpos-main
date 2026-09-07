@@ -1,7 +1,7 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
 import { getScopedStorage, setScopedStorage, getRestaurantId } from '@/utils/storage';
-import { syncZonesToFirebase, subscribeToZones } from '@/utils/firebaseSync';
+import { syncZonesToFirebase, subscribeToZones, formatTableName } from '@/utils/firebaseSync';
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -22,6 +22,17 @@ interface Zone {
   tables: Table[];
 }
 
+const sanitizeZonesList = (rawList: any[]): Zone[] => {
+  if (!Array.isArray(rawList)) return [];
+  return rawList.map((z: any) => ({
+    ...z,
+    tables: (z.tables || []).map((t: any) => ({
+      ...t,
+      number: String(t.number || '').replace(/^(mesa\s+)+/i, '').trim() || String(t.number || '')
+    }))
+  }));
+};
+
 interface RestaurantConfig {
   id: string;
   name: string;
@@ -39,7 +50,7 @@ export default function SettingsPage() {
     if (typeof window === 'undefined') return [];
     try {
       const cached = getScopedStorage<Zone[]>('pos_registered_zones', []);
-      return Array.isArray(cached) ? cached : [];
+      return Array.isArray(cached) ? sanitizeZonesList(cached) : [];
     } catch { return []; }
   });
   const [loading, setLoading] = useState(false);
@@ -87,8 +98,9 @@ export default function SettingsPage() {
     if (currentRestId) {
       unsubscribe = subscribeToZones(currentRestId, (cloudZones) => {
         if (Array.isArray(cloudZones) && cloudZones.length > 0) {
-          setZones(cloudZones);
-          setScopedStorage('pos_registered_zones', cloudZones);
+          const sanitized = sanitizeZonesList(cloudZones);
+          setZones(sanitized);
+          setScopedStorage('pos_registered_zones', sanitized);
         }
       });
     }
@@ -109,11 +121,12 @@ export default function SettingsPage() {
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data) && data.length > 0) {
-          serverZones = data;
-          setZones(data);
-          setScopedStorage('pos_registered_zones', data);
+          const sanitized = sanitizeZonesList(data);
+          serverZones = sanitized;
+          setZones(sanitized);
+          setScopedStorage('pos_registered_zones', sanitized);
           if (currentRestId) {
-            syncZonesToFirebase(currentRestId, data).catch(() => {});
+            syncZonesToFirebase(currentRestId, sanitized).catch(() => {});
           }
         }
       }
@@ -307,7 +320,8 @@ export default function SettingsPage() {
 
   const handleSaveTable = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanNumber = String(tableForm.number).trim().toUpperCase();
+    const rawNumber = String(tableForm.number).trim();
+    const cleanNumber = rawNumber.replace(/^(mesa\s+)+/i, '').trim().toUpperCase() || rawNumber.toUpperCase();
     if (!cleanNumber) {
       toast.error('Por favor ingresa un número o identificador de mesa');
       return;
@@ -384,7 +398,8 @@ export default function SettingsPage() {
   };
 
   const handleDeleteTable = async (id: string, number: string) => {
-    if (!window.confirm(`¿Estás seguro de eliminar la Mesa ${number}?`)) return;
+    const rawNum = String(number).replace(/^(mesa\s+)+/i, '').trim();
+    if (!window.confirm(`¿Estás seguro de eliminar la Mesa ${rawNum}?`)) return;
 
     const token = localStorage.getItem('pos_token') || '';
     try {
@@ -414,7 +429,9 @@ export default function SettingsPage() {
 
   const openTableModal = (zoneId: string, table?: Table) => {
     if (table) {
-      setTableForm({ id: table.id, zoneId, number: String(table.number), capacity: table.capacity });
+      const rawNum = String(table.number || '');
+      const cleanNum = rawNum.replace(/^(mesa\s+)+/i, '').trim() || rawNum;
+      setTableForm({ id: table.id, zoneId, number: cleanNum, capacity: table.capacity });
     } else {
       setTableForm({ id: '', zoneId, number: '', capacity: 4 });
     }
@@ -649,7 +666,7 @@ export default function SettingsPage() {
 
                         <Square className="w-8 h-8 text-slate-300 mb-2 mt-2" />
                         <span className="text-lg font-black text-slate-800 mb-1">
-                          Mesa {table.number}
+                          {formatTableName('', table.number)}
                         </span>
                         <div className="flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 uppercase tracking-widest">
                           <Users className="w-3 h-3" />

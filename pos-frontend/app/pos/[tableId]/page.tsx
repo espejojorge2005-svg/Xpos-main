@@ -15,7 +15,8 @@ import {
   subscribeToCategories, 
   getActiveTableOrderFromFirebase,
   closeTableOrdersInFirebase,
-  isTableMatchingOrder
+  isTableMatchingOrder,
+  formatTableName
 } from '@/utils/firebaseSync';
 import { ArrowLeft, Search, Plus, Minus, Trash2, ShoppingCart, UtensilsCrossed, ReceiptText, ChefHat, CheckCircle2, AlertTriangle, X, Printer, CreditCard, Banknote, Smartphone, Edit2, Heart, ArrowRightLeft, Scissors } from 'lucide-react';
 import { toast } from 'sonner';
@@ -65,19 +66,9 @@ interface Payment {
 
 // Resuelve nombres limpios para mesas evitando siempre códigos UUID cortados como "Mesa AE6E" o números corruptos
 const resolveSafeTableName = (id: string, candidate?: string | null, num?: any): string => {
-  if (
-    candidate && 
-    !/^Mesa\s+[0-9a-f]{4,}/i.test(candidate.trim()) && 
-    !/^Mesa\s+\d{5,}/i.test(candidate.trim()) && 
-    candidate.trim() !== '' &&
-    candidate.trim().toLowerCase() !== 'mesa'
-  ) {
-    return candidate.trim();
-  }
-
-  if (num !== undefined && num !== null && String(num).trim() !== '') {
-    const s = String(num).trim();
-    return s.toUpperCase().startsWith('MESA') ? s : `Mesa ${s}`;
+  const formatted = formatTableName(candidate, num);
+  if (formatted && formatted !== 'Mesa') {
+    return formatted;
   }
 
   if (!id || id === 'takeout') return 'Mostrador';
@@ -93,11 +84,8 @@ const resolveSafeTableName = (id: string, candidate?: string | null, num?: any):
         (id.startsWith('t-') && String(tbl.number) === id.replace('t-', ''))
       );
       if (found) {
-        if (found.name && !/^Mesa\s+[0-9a-f]{4,}/i.test(found.name)) return found.name;
-        if (found.number) {
-          const s = String(found.number).trim();
-          return s.toUpperCase().startsWith('MESA') ? s : `Mesa ${s}`;
-        }
+        const foundFormatted = formatTableName(found.name, found.number);
+        if (foundFormatted && foundFormatted !== 'Mesa') return foundFormatted;
       }
     }
   } catch {}
@@ -1119,7 +1107,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         if (Array.isArray(zonesData) && zonesData.length > 0) {
           available = zonesData.flatMap((z: any) => (z.tables || []).map((tbl: any) => ({
             ...tbl,
-            name: tbl.name || (tbl.number ? (String(tbl.number).toUpperCase().startsWith('MESA') ? String(tbl.number) : `Mesa ${tbl.number}`) : resolveSafeTableName(tbl.id, tbl.name, tbl.number)),
+            name: formatTableName(tbl.name, tbl.number) || resolveSafeTableName(tbl.id, tbl.name, tbl.number),
             zoneName: z.name
           }))).filter((t: any) => t.status === 'FREE');
         }
@@ -1138,7 +1126,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         if (Array.isArray(registeredZones) && registeredZones.length > 0) {
           allTables = registeredZones.flatMap(z => (z.tables || []).map((t: any) => ({
             ...t,
-            name: t.name || (t.number ? (String(t.number).toUpperCase().startsWith('MESA') ? String(t.number) : `Mesa ${t.number}`) : resolveSafeTableName(t.id, t.name, t.number)),
+            name: formatTableName(t.name, t.number) || resolveSafeTableName(t.id, t.name, t.number),
             zoneName: z.name
           })));
         } else {
@@ -2433,7 +2421,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                      key={t.id}
                      onClick={() => {
                         setSelectedNewTableId(t.id);
-                        const cleanName = t.name || (t.number ? (String(t.number).toUpperCase().startsWith('MESA') ? String(t.number) : `Mesa ${t.number}`) : resolveSafeTableName(t.id, t.name, t.number));
+                        const cleanName = formatTableName(t.name, t.number) || resolveSafeTableName(t.id, t.name, t.number);
                         setSelectedNewTable({ ...t, name: cleanName });
                       }}
                      className={`py-3 px-2 rounded-xl text-sm font-bold border-2 transition-all ${selectedNewTableId === t.id ? 'bg-emerald-50 border-emerald-500 text-emerald-700 cursor-default' : 'bg-slate-50 border-slate-200 text-slate-700 hover:border-emerald-300'}`}

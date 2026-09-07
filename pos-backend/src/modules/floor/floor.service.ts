@@ -102,10 +102,13 @@ export class FloorService {
     const zone = await this.prisma.zone.findUnique({ where: { id: data.zoneId } });
     if (!zone) throw new NotFoundException('La zona especificada no existe');
 
+    const rawNumber = String(data.number).trim();
+    const cleanNumber = rawNumber.replace(/^(mesa\s+)+/i, '').trim() || rawNumber;
+
     return this.prisma.table.create({
       data: {
         zoneId: data.zoneId,
-        number: String(data.number).trim(),
+        number: cleanNumber,
         capacity: Number(data.capacity),
         posX: data.posX ?? 0,
         posY: data.posY ?? 0,
@@ -118,7 +121,10 @@ export class FloorService {
     if (!table) throw new NotFoundException('Mesa no encontrada');
 
     const updateData: any = {};
-    if (data.number !== undefined) updateData.number = String(data.number).trim();
+    if (data.number !== undefined) {
+      const rawNumber = String(data.number).trim();
+      updateData.number = rawNumber.replace(/^(mesa\s+)+/i, '').trim() || rawNumber;
+    }
     if (data.capacity !== undefined) updateData.capacity = Number(data.capacity);
     const anyData = data as any;
     if (anyData.status !== undefined) updateData.status = anyData.status;
@@ -236,8 +242,14 @@ export class FloorService {
         if (!hasOpenOrder && t.status !== 'FREE') {
           tablesToFree.push(t.id);
         }
+        const rawNum = String(t.number || '').trim();
+        const cleanNum = rawNum.replace(/^(mesa\s+)+/i, '').trim() || rawNum;
+        const formattedName = cleanNum ? `Mesa ${cleanNum}` : 'Mesa';
+
         return {
           ...t,
+          number: cleanNum,
+          name: formattedName,
           status: (hasOpenOrder ? 'OCCUPIED' : 'FREE') as any,
           orders: hasOpenOrder ? t.orders : []
         };

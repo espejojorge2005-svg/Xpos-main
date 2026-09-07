@@ -54,6 +54,41 @@ export const isMatchingTenant = (itemRestId?: string | null, currentRestId?: str
 };
 
 /**
+ * Normaliza y formatea nombres de mesa de forma limpia y consistente en toda la app.
+ * Previene bugs de nombres truncados como "Mesa MES..." o caídas a solo números ("1").
+ */
+export const formatTableName = (candidate?: string | null, num?: string | number | null): string => {
+  const rawCand = (candidate || '').trim();
+  const rawNum = num !== undefined && num !== null ? String(num).trim() : '';
+
+  // Si candidate contiene "..." o "…" (residuo de truncado previo en caché), descartar candidate
+  const safeCand = (rawCand.includes('...') || rawCand.endsWith('…')) ? '' : rawCand;
+
+  // 1. Si hay un nombre candidato válido
+  if (safeCand && !/^Mesa\s+[0-9a-f]{4,}/i.test(safeCand) && safeCand.toLowerCase() !== 'mesa') {
+    // Si ya empieza con "Mesa " (o variantes repetidas "Mesa Mesa")
+    if (/^mesa\s+/i.test(safeCand)) {
+      const withoutMesa = safeCand.replace(/^(mesa\s+)+/i, '').trim();
+      return withoutMesa ? `Mesa ${withoutMesa}` : 'Mesa';
+    }
+    // Si es solo un número o código corto (ej: "1", "2", "T1", "B2")
+    if (/^\d+$/.test(safeCand) || /^[a-zA-Z]\d+$/.test(safeCand)) {
+      return `Mesa ${safeCand}`;
+    }
+    // Si es un nombre personalizado completo (ej: "Terraza 1", "Barra")
+    return safeCand;
+  }
+
+  // 2. Si tenemos número o código identificador
+  if (rawNum && rawNum.toLowerCase() !== 'mesa') {
+    const cleanNum = rawNum.replace(/^(mesa\s+)+/i, '').trim();
+    return cleanNum ? `Mesa ${cleanNum}` : 'Mesa';
+  }
+
+  return 'Mesa';
+};
+
+/**
  * Comparador universal y estricto entre Mesa y Comanda
  * Evita colisiones (ej. no confunde Mesa 1 con Mesa T1)
  */

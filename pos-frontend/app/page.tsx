@@ -1,7 +1,7 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
 import { getScopedStorage, getRestaurantId, setScopedStorage, removeScopedStorage } from '@/utils/storage';
-import { subscribeToCashShift, subscribeToZones, subscribeToOrders, isTableMatchingOrder } from '@/utils/firebaseSync';
+import { subscribeToCashShift, subscribeToZones, subscribeToOrders, isTableMatchingOrder, formatTableName } from '@/utils/firebaseSync';
 import { formatWaitTime } from '@/utils/date';
 
 import { useEffect, useState, useRef } from 'react';
@@ -93,7 +93,7 @@ const DraggableTable = ({
         <Square className={`w-6 h-6 mb-1.5 opacity-40 pointer-events-none ${isFree ? 'text-emerald-600' : 'text-rose-600'}`} />
         
         <span className={`text-sm font-black mb-1 truncate w-full text-center pointer-events-none ${isFree ? 'text-slate-700' : 'text-rose-700'}`}>
-          {table.name || table.number || '-'}
+          {formatTableName(table.name, table.number)}
         </span>
         
         <div className="flex gap-1.5 items-center justify-center w-full mt-auto">
@@ -164,7 +164,7 @@ const GridTable = ({
     >
       <Square className={`w-6 h-6 sm:w-8 sm:h-8 mb-1 sm:mb-2 opacity-50 ${isFree ? 'text-emerald-600' : table.billRequested ? 'text-amber-600' : 'text-rose-600'}`} />
       <span className={`text-sm sm:text-base font-black mb-1 truncate w-full ${isFree ? 'text-slate-700' : table.billRequested ? 'text-amber-900' : 'text-rose-800'}`}>
-        {table.name || table.number || '-'}
+        {formatTableName(table.name, table.number)}
       </span>
       <div className={`mt-auto flex items-center gap-1 text-[11px] sm:text-xs font-bold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg
         ${isFree ? 'bg-emerald-50 text-emerald-600' : table.billRequested ? 'bg-amber-100 text-amber-800' : 'bg-rose-200/50 text-rose-800'}`}>
@@ -226,11 +226,14 @@ const getInitialZones = (): Zone[] => {
           const isRecent = orderInfo?.createdAt && (now - new Date(orderInfo.createdAt).getTime() < twelveHoursMs);
           const isOccupied = Boolean(isRecent && (orderInfo.status === 'OCCUPIED' || (Array.isArray(orderInfo.items) && orderInfo.items.length > 0)));
 
+          const tableName = formatTableName(t.name, t.number);
+          const cleanNum = String(t.number || '').replace(/^(mesa\s+)+/i, '').trim() || String(idx + 1);
+
           return {
             ...t,
             id: t.id || `t-${idx + 1}`,
-            name: t.name || `Mesa ${t.number}`,
-            number: t.number,
+            name: tableName,
+            number: cleanNum,
             capacity: t.capacity || 4,
             status: isOccupied ? 'OCCUPIED' : 'FREE',
             billRequested: isOccupied ? Boolean(orderInfo?.billRequested) : false,
@@ -289,17 +292,18 @@ export default function Home() {
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data) && data.length > 0) {
-          loadedZones = data;
-          // Guardar estructura física limpia en caché (las mesas inician en FREE, sin contaminar la plantilla)
+          // Guardar estructura física limpia en caché con nombres formateados
           const cleanLayoutTemplate = data.map((z: any) => ({
             ...z,
             tables: (z.tables || []).map((t: any) => ({
               ...t,
+              name: formatTableName(t.name, t.number),
               status: 'FREE',
               orders: []
             }))
           }));
           setScopedStorage('pos_registered_zones', cleanLayoutTemplate);
+          loadedZones = cleanLayoutTemplate;
         }
       }
     } catch (error) {
@@ -314,7 +318,7 @@ export default function Home() {
           tables: (z.tables || []).map((t: any, idx: number) => ({
             ...t,
             id: t.id || `t-${idx + 1}`,
-            name: t.name || `Mesa ${t.number}`,
+            name: formatTableName(t.name, t.number),
             number: t.number,
             capacity: t.capacity || 4,
             status: 'FREE',
@@ -372,6 +376,8 @@ export default function Home() {
       loadedZones = loadedZones.map(zone => ({
         ...zone,
         tables: zone.tables.map(table => {
+          const tableName = formatTableName(table.name, table.number);
+          const cleanNum = String(table.number || '').replace(/^(mesa\s+)+/i, '').trim() || String(table.number || '');
           const orderInfo = activeTableOrders[table.id] || 
             Object.values(activeTableOrders).find((o: any) => 
               o && (o.status === 'OCCUPIED' || o.status === 'OPEN' || o.status === 'SERVED') && isTableMatchingOrder(table, o)
@@ -389,6 +395,8 @@ export default function Home() {
             const activeData = isOrderActive ? orderInfo : serverOrder;
             return {
               ...table,
+              name: tableName,
+              number: cleanNum,
               status: 'OCCUPIED' as const,
               billRequested: !!(orderInfo?.billRequested || table.billRequested),
               orders: [{
@@ -400,6 +408,8 @@ export default function Home() {
           }
           return {
             ...table,
+            name: tableName,
+            number: cleanNum,
             status: 'FREE' as const,
             orders: []
           };
@@ -534,6 +544,8 @@ export default function Home() {
         setZones(prevZones => prevZones.map(zone => ({
           ...zone,
           tables: zone.tables.map(table => {
+            const tableName = formatTableName(table.name, table.number);
+            const cleanNum = String(table.number || '').replace(/^(mesa\s+)+/i, '').trim() || String(table.number || '');
             const matchedOrder = openOrders.find(o => isTableMatchingOrder(table, o));
 
             const localOrder = mergedActive[table.id] ||
@@ -550,6 +562,8 @@ export default function Home() {
               const activeSource = matchedOrder || localOrder;
               return {
                 ...table,
+                name: tableName,
+                number: cleanNum,
                 status: 'OCCUPIED' as const,
                 billRequested: !!(matchedOrder?.billRequested || localOrder?.billRequested),
                 orders: [{
@@ -562,6 +576,8 @@ export default function Home() {
 
             return {
               ...table,
+              name: tableName,
+              number: cleanNum,
               status: 'FREE' as const,
               billRequested: false,
               orders: []
@@ -578,6 +594,8 @@ export default function Home() {
           ...z,
           tables: (z.tables || []).map((t: any) => ({
             ...t,
+            name: formatTableName(t.name, t.number),
+            number: String(t.number || '').replace(/^(mesa\s+)+/i, '').trim() || String(t.number || ''),
             status: 'FREE',
             orders: []
           }))
@@ -644,8 +662,8 @@ export default function Home() {
     if (!isEditMode && !isDragging) {
       if (typeof tableOrId === 'object' && tableOrId !== null) {
         const tId = tableOrId.id;
-        const tName = tableOrId.name || `Mesa ${tableOrId.number}`;
-        const tNum = tableOrId.number || '';
+        const tName = formatTableName(tableOrId.name, tableOrId.number);
+        const tNum = String(tableOrId.number || '').replace(/^(mesa\s+)+/i, '').trim() || '1';
         router.push(`/pos/${tId}?name=${encodeURIComponent(tName)}&number=${encodeURIComponent(tNum)}`);
       } else {
         router.push(`/pos/${tableOrId}`);
@@ -793,8 +811,8 @@ export default function Home() {
                   </div>
                 )}
                 {[...zone.tables].sort((a, b) => {
-                  const nameA = a.name || String(a.number || '');
-                  const nameB = b.name || String(b.number || '');
+                  const nameA = formatTableName(a.name, a.number);
+                  const nameB = formatTableName(b.name, b.number);
                   return nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
                 }).map(table => (
                   <GridTable 
