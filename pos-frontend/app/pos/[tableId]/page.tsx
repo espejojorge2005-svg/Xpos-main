@@ -1421,6 +1421,34 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
           shiftData.payments.push(newPaymentRecord);
           setScopedStorage('mock_cash_shift', shiftData);
         }
+
+        // Actualizar de inmediato el caché de reporte para que /report muestre la venta al instante
+        const cachedReport = getScopedStorage<any>('pos_daily_closure_cache', null);
+        if (cachedReport) {
+          const m = String(paymentMethod || 'CASH').toUpperCase();
+          const tip = Number(tipAmount || 0);
+          const payTotal = Number(paymentAmount) + tip;
+
+          let newCash = Number(cachedReport.cash || 0);
+          let newCard = Number(cachedReport.card || 0);
+          let newTransfer = Number(cachedReport.yapePlin || 0);
+
+          if (m === 'CASH') newCash += payTotal;
+          else if (m === 'CARD') newCard += payTotal;
+          else newTransfer += payTotal;
+
+          const updatedReport = {
+            ...cachedReport,
+            totalSales: Number(cachedReport.totalSales || 0) + Number(paymentAmount),
+            cash: newCash,
+            card: newCard,
+            yapePlin: newTransfer,
+            ticketCount: Number(cachedReport.ticketCount || 0) + 1,
+            totalTips: Number(cachedReport.totalTips || 0) + tip,
+            expectedCashInDrawer: Number(cachedReport.openingCash || 0) + newCash - Number(cachedReport.totalExpenses || 0),
+          };
+          setScopedStorage('pos_daily_closure_cache', updatedReport);
+        }
       } catch {}
 
       if (restId) {
