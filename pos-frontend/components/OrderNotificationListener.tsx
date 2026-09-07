@@ -9,6 +9,9 @@ import { toast } from 'sonner';
 export default function OrderNotificationListener() {
   const router = useRouter();
   const pathname = usePathname();
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
+
   const mountedAtRef = useRef<number>(Date.now());
   const knownOrderStatusRef = useRef<Map<string, string>>(new Map());
   const notifiedOrdersRef = useRef<Set<string>>(new Set());
@@ -42,12 +45,18 @@ export default function OrderNotificationListener() {
       gain2.connect(ctx.destination);
       osc2.start(now + 0.08);
       osc2.stop(now + 0.7);
+
+      // Cerrar el contexto de audio para evitar fugas de memoria
+      setTimeout(() => {
+        ctx.close().catch(() => {});
+      }, 800);
     } catch {}
   };
 
   const triggerServedNotification = (tableLabel: string, tableId?: string) => {
+    const currentPath = pathnameRef.current;
     const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
-    if (!token || pathname === '/login' || pathname === '/register' || pathname?.startsWith('/superadmin')) {
+    if (!token || currentPath === '/login' || currentPath === '/register' || currentPath?.startsWith('/superadmin')) {
       return;
     }
 
@@ -70,11 +79,6 @@ export default function OrderNotificationListener() {
   };
 
   useEffect(() => {
-    // 1. Desactivar estrictamente en pantallas de login, registro, superadmin o sin sesión
-    if (pathname === '/login' || pathname === '/register' || pathname?.startsWith('/superadmin')) {
-      return;
-    }
-
     const token = typeof window !== 'undefined' ? localStorage.getItem('pos_token') : null;
     if (!token) {
       return;
@@ -95,10 +99,11 @@ export default function OrderNotificationListener() {
 
     const restaurantId = getRestaurantId() || 'main';
 
-    // 2. Escuchar evento local en tiempo real inmediato (mismo navegador / red local)
+    // 1. Escuchar evento local en tiempo real inmediato (mismo navegador / red local)
     const handleLocalServed = (e: any) => {
       const currentToken = localStorage.getItem('pos_token');
-      if (!currentToken || pathname === '/login' || pathname === '/register') return;
+      const currentPath = pathnameRef.current;
+      if (!currentToken || currentPath === '/login' || currentPath === '/register') return;
 
       const detail = e.detail || {};
       const id = detail.id;
@@ -125,13 +130,14 @@ export default function OrderNotificationListener() {
 
     window.addEventListener('pos:order_served', handleLocalServed);
 
-    // 3. Escuchar Firebase Firestore en tiempo real (para celulares y tablets de mozos)
+    // 2. Escuchar Firebase Firestore en tiempo real (persistente entre rutas)
     let isInitialSnapshot = true;
     const unsubscribe = subscribeToOrders(restaurantId, (orders: FirebaseOrder[]) => {
       if (!Array.isArray(orders)) return;
 
       const currentToken = localStorage.getItem('pos_token');
-      if (!currentToken || pathname === '/login' || pathname === '/register') return;
+      const currentPath = pathnameRef.current;
+      if (!currentToken || currentPath === '/login' || currentPath === '/register') return;
 
       let userRole = '';
       try {
@@ -143,7 +149,6 @@ export default function OrderNotificationListener() {
       } catch {}
 
       // EN EL SNAPSHOT INICIAL DE FIREBASE:
-      // Solo registramos el estado actual del historial para no lanzar alertas de pedidos antiguos
       if (isInitialSnapshot) {
         isInitialSnapshot = false;
         orders.forEach((order) => {
@@ -212,7 +217,7 @@ export default function OrderNotificationListener() {
       window.removeEventListener('pos:order_served', handleLocalServed);
       if (typeof unsubscribe === 'function') unsubscribe();
     };
-  }, [pathname, router]);
+  }, []);
 
   return null;
 }

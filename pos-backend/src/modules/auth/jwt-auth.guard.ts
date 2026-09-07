@@ -23,6 +23,8 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     if (user) {
       if (!user.restaurantId && isHeaderUuid) {
         user.restaurantId = headerRestId;
+      } else if (user.role === 'SUPER_ADMIN' && isHeaderUuid) {
+        user.restaurantId = headerRestId;
       }
       return user;
     }
@@ -30,8 +32,9 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     const authHeader = req.headers['authorization'] || '';
     const token = authHeader.replace(/^Bearer\s+/i, '').trim();
 
-    // Si el token es de tipo dev/client/staff específico
-    if (token.startsWith('client-token-') || token.startsWith('staff-token-')) {
+    // Solo permitir tokens sintéticos de desarrollo en ambiente local explícito
+    const isDev = process.env.NODE_ENV === 'development' || process.env.ALLOW_DEV_TOKENS === 'true';
+    if (isDev && (token.startsWith('client-token-') || token.startsWith('staff-token-'))) {
       const restId = token.replace(/^(client|staff)-token-/, '').trim();
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(restId);
       const effectiveRestId = isUuid ? restId : (isHeaderUuid ? headerRestId : null);

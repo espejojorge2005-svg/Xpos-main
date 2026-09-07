@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClsService } from 'nestjs-cls';
 import { CreatePaymentDto } from './dto/create-payment.dto';
@@ -44,7 +44,9 @@ export class PaymentsService {
     return null;
   }
 
-  async processPayment(data: CreatePaymentDto) {
+  async processPayment(data: CreatePaymentDto, reqUser?: any, restaurantIdParam?: string | null) {
+    const restaurantId = await this.resolveRestaurantId(reqUser, restaurantIdParam);
+
     const order = await this.prisma.order.findUnique({
       where: { id: data.orderId },
       include: { 
@@ -63,58 +65,59 @@ export class PaymentsService {
     if (!order) throw new BadRequestException('La orden no existe');
     if (order.status === 'CLOSED') throw new BadRequestException('Esta cuenta ya está cerrada');
 
-    const newPayment = await this.prisma.payment.create({
-      data: {
-        orderId: data.orderId,
-        amount: data.amount,
-        tipAmount: data.tipAmount ?? 0,
-        paymentMethod: data.paymentMethod,
-      },
-    });
-
-    // Marcar items como pagados si vienen en el request (Cuentas separadas)
-    if (data.itemIds && data.itemIds.length > 0) {
-      await this.prisma.orderItem.updateMany({
-        where: { id: { in: data.itemIds } },
-        data: { isPaid: true }
-      });
+    // Validación multi-tenant: La comanda debe pertenecer al restaurante del usuario
+    if (restaurantId && order.restaurantId && order.restaurantId !== restaurantId) {
+      throw new ForbiddenException('No tienes permiso para procesar pagos de otro restaurante');
     }
 
-    const totalPaid = order.payments.reduce((sum, p) => sum + Number(p.amount), 0) + data.amount;
+    // Transacción ACID completa: creación de pago, cierre de orden y descuento de insumos
+    return await this.prisma.$transaction(async (tx) => {
+      const newPayment = await tx.payment.create({
+        data: {
+          orderId: data.orderId,
+          amount: data.amount,
+          tipAmount: data.tipAmount ?? 0,
+          paymentMethod: data.paymentMethod,
+        },
+      });
 
-    if (totalPaid >= Number(order.totalAmount)) {
-      // 1. Cerramos la orden y liberamos la mesa
-      await Promise.all([
-        this.prisma.order.update({ where: { id: order.id }, data: { status: 'CLOSED' } }),
-        ...(order.tableId ? [
-          this.prisma.table.update({ where: { id: order.tableId }, data: { status: 'FREE' } })
-        ] : [])
-      ]);
-
-      // ==========================================
-      // 2. MOTOR DE INVENTARIO: Descuenta stock del producto Y materias primas
-      // ==========================================
-      for (const item of order.items) {
-        if (!item.product) continue;
-
-        // Descontamos del Producto Directo si tiene stock propio
-        await this.prisma.product.update({
-          where: { id: item.productId },
-          data: { stock: { decrement: item.quantity } },
+      // Marcar items como pagados si vienen en el request (Cuentas separadas)
+      if (data.itemIds && data.itemIds.length > 0) {
+        await tx.orderItem.updateMany({
+          where: { id: { in: data.itemIds } },
+          data: { isPaid: true }
         });
+      }
 
-        // Descontamos de los Insumos (Receta)
-        for (const recipeItem of item.product.recipeItems) {
-          const totalDeduction = Number(recipeItem.quantityRequired) * item.quantity;
-          await this.prisma.inventoryItem.update({
-            where: { id: recipeItem.inventoryItemId },
-            data: { stockQuantity: { decrement: totalDeduction } },
-          });
+      const totalPaid = order.payments.reduce((sum, p) => sum + Number(p.amount), 0) + data.amount;
+
+      if (totalPaid >= Number(order.totalAmount)) {
+        // 1. Cerramos la orden y liberamos la mesa
+        await tx.order.update({ where: { id: order.id }, data: { status: 'CLOSED' } });
+        if (order.tableId) {
+          await tx.table.update({ where: { id: order.tableId }, data: { status: 'FREE' } });
+        }
+
+        // ==========================================
+        // 2. MOTOR DE INVENTARIO: Descuenta materias primas (Recetas)
+        // NOTA: El stock del producto directo ya fue descontado al comandar en orders.service.ts
+        // Para evitar el DOBLE DESCUENTO, aquí SOLO se descuentan los insumos de receta.
+        // ==========================================
+        for (const item of order.items) {
+          if (!item.product) continue;
+
+          for (const recipeItem of item.product.recipeItems) {
+            const totalDeduction = Number(recipeItem.quantityRequired) * item.quantity;
+            await tx.inventoryItem.update({
+              where: { id: recipeItem.inventoryItemId },
+              data: { stockQuantity: { decrement: totalDeduction } },
+            });
+          }
         }
       }
-    }
 
-    return newPayment;
+      return newPayment;
+    });
   }
 
   async getCurrentShift(reqUser?: any, restaurantIdParam?: string | null) {

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClsService } from 'nestjs-cls';
 import { ChatMessageDto } from './dto/chat-query.dto';
@@ -22,17 +22,13 @@ export class AiService {
   ) {}
 
   /**
-   * Resuelve el ID del restaurante autenticado con aislamiento multi-tenant
+   * Resuelve el ID del restaurante autenticado con aislamiento multi-tenant estricto
    */
   private async resolveTenantRestaurantId(reqUser?: any): Promise<string | null> {
     const clsRestId = this.cls.get('restaurantId');
     if (clsRestId) return clsRestId;
     if (reqUser?.restaurantId) return reqUser.restaurantId;
-
-    const defaultRest = await this.prisma.restaurant.findFirst({
-      orderBy: { createdAt: 'asc' },
-    });
-    return defaultRest ? defaultRest.id : null;
+    return null;
   }
 
   /**
@@ -44,6 +40,9 @@ export class AiService {
     reqUser?: any,
   ): Promise<{ reply: string; data?: any }> {
     const restaurantId = await this.resolveTenantRestaurantId(reqUser);
+    if (!restaurantId) {
+      throw new UnauthorizedException('No se pudo determinar el restaurante para esta sesión.');
+    }
     const userMsg = (message || '').trim();
 
     // 1. Recopilar datos contextuales de la base de datos

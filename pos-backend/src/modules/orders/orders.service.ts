@@ -19,8 +19,7 @@ export class OrdersService {
     if (userRestId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userRestId)) {
       return userRestId;
     }
-    const defaultRest = await this.prisma.restaurant.findFirst({ orderBy: { createdAt: 'asc' } });
-    return defaultRest ? defaultRest.id : null;
+    return null;
   }
 
   private async deductProductStock(tx: any, productId: string, quantity: number, orderId: string, customerOrTable: string) {
@@ -28,15 +27,15 @@ export class OrdersService {
       return;
     }
     try {
-      const prod = await tx.product.findUnique({ where: { id: productId } });
-      if (!prod) return;
-      const stockBefore = prod.stock ?? 0;
-      const stockAfter = Math.max(0, stockBefore - quantity);
-
-      await tx.product.update({
+      // Actualización atómica para evitar condiciones de carrera (Lost Update)
+      const updated = await tx.product.update({
         where: { id: productId },
-        data: { stock: stockAfter }
+        data: { stock: { decrement: quantity } },
+        select: { stock: true }
       });
+
+      const stockAfter = updated.stock ?? 0;
+      const stockBefore = stockAfter + quantity;
 
       await tx.stockMovement.create({
         data: {
@@ -58,15 +57,15 @@ export class OrdersService {
       return;
     }
     try {
-      const prod = await tx.product.findUnique({ where: { id: productId } });
-      if (!prod) return;
-      const stockBefore = prod.stock ?? 0;
-      const stockAfter = stockBefore + quantity;
-
-      await tx.product.update({
+      // Restauración atómica para evitar condiciones de carrera
+      const updated = await tx.product.update({
         where: { id: productId },
-        data: { stock: stockAfter }
+        data: { stock: { increment: quantity } },
+        select: { stock: true }
       });
+
+      const stockAfter = updated.stock ?? 0;
+      const stockBefore = stockAfter - quantity;
 
       await tx.stockMovement.create({
         data: {

@@ -9,8 +9,12 @@ export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   @Post()
-  async createPayment(@Body() createPaymentDto: CreatePaymentDto) {
-    return this.paymentsService.processPayment(createPaymentDto);
+  async createPayment(
+    @Body() createPaymentDto: CreatePaymentDto,
+    @Req() req: any,
+    @Headers('x-restaurant-id') restHeader?: string
+  ) {
+    return this.paymentsService.processPayment(createPaymentDto, req.user, restHeader);
   }
 
   // ENDPOINTS PARA CONTROL DE CAJA Y TURNOS

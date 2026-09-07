@@ -30,7 +30,8 @@ import { AiModule } from './modules/ai/ai.module';
             const auth = req.headers?.['authorization'] as string | undefined;
             if (auth && auth.startsWith('Bearer ')) {
               const token = auth.substring(7).trim();
-              if (token.startsWith('client-token-') || token.startsWith('staff-token-')) {
+              const isDev = process.env.NODE_ENV === 'development' || process.env.ALLOW_DEV_TOKENS === 'true';
+              if (isDev && (token.startsWith('client-token-') || token.startsWith('staff-token-'))) {
                 restId = token.replace(/^(client|staff)-token-/, '').trim();
               } else if (token.includes('.')) {
                 try {

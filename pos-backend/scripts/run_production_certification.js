@@ -44,6 +44,12 @@ function formatLocalDate(d) {
 }
 
 async function main() {
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PROD_CERTIFICATION !== 'true') {
+    console.error(`\n${RED}${BOLD}[SEGURIDAD] Este script de certificación genera datos ficticios y avance de fechas.`);
+    console.error(`Para ejecutarlo deliberadamente en producción debes definir: ALLOW_PROD_CERTIFICATION=true${RESET}\n`);
+    process.exit(1);
+  }
+
   console.log(`\n${CYAN}${BOLD}======================================================================${RESET}`);
   console.log(`${CYAN}${BOLD}   XPOS SAAS - CERTIFICACIÓN DE PRODUCCIÓN MULTI-TENANT & TIEMPO    ${RESET}`);
   console.log(`${CYAN}${BOLD}======================================================================${RESET}`);
