@@ -6,7 +6,7 @@ import { formatWaitTime } from '@/utils/date';
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Utensils, Users, Square, Save, Move, Clock, LockKeyhole, Wallet, Grid2X2, Map as MapIcon, Search, X, Layers, Building2, MapPin } from 'lucide-react';
+import { Utensils, Users, Square, Save, Move, Clock, LockKeyhole, Wallet, Grid2X2, Map as MapIcon, Layers, Building2, MapPin } from 'lucide-react';
 import Draggable, { DraggableEvent, DraggableData } from 'react-draggable';
 import { toast } from 'sonner';
 import { useGuardedRoute } from '@/hooks/useGuardedRoute';
@@ -263,19 +263,11 @@ export default function Home() {
   const [loading, setLoading] = useState(() => (typeof window !== 'undefined' ? getInitialZones().length === 0 : false));
   const [isEditMode, setIsEditMode] = useState(false);
   const [viewMode, setViewMode] = useState<'map' | 'grid'>('grid');
-  const [zoneSearchQuery, setZoneSearchQuery] = useState('');
   const [selectedZoneId, setSelectedZoneId] = useState<string | 'ALL'>('ALL');
 
-  const filteredZones = zones.filter(zone => {
-    if (selectedZoneId !== 'ALL' && zone.id !== selectedZoneId) {
-      return false;
-    }
-    if (zoneSearchQuery.trim()) {
-      const q = zoneSearchQuery.toLowerCase().trim();
-      return zone.name.toLowerCase().includes(q);
-    }
-    return true;
-  });
+  const filteredZones = selectedZoneId === 'ALL' 
+    ? zones 
+    : zones.filter(zone => zone.id === selectedZoneId);
 
   const totalTables = zones.reduce((acc, z) => acc + (z.tables?.length || 0), 0);
   const totalFreeTables = zones.reduce((acc, z) => acc + (z.tables?.filter(t => t.status === 'FREE').length || 0), 0);
@@ -781,64 +773,22 @@ export default function Home() {
         </div>
       )}
 
-      {/* BARRA DE BÚSQUEDA Y SELECTOR RÁPIDO DE ZONAS (PISOS / SALONES) */}
-      <div className="mb-6 bg-white p-4 sm:p-5 rounded-3xl shadow-sm border border-slate-100 flex flex-col gap-3.5">
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-          <div className="relative flex-1 max-w-xl">
-            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-emerald-600">
-              <Search className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-            <input
-              type="text"
-              value={zoneSearchQuery}
-              onChange={(e) => {
-                setZoneSearchQuery(e.target.value);
-                if (selectedZoneId !== 'ALL') {
-                  setSelectedZoneId('ALL');
-                }
-              }}
-              placeholder="Buscar zona o piso (ej: Piso 1, Piso 2, Terraza)..."
-              className="w-full pl-10 pr-10 py-2.5 sm:py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs sm:text-sm font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
-            />
-            {zoneSearchQuery && (
-              <button
-                type="button"
-                onClick={() => setZoneSearchQuery('')}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
-                title="Limpiar búsqueda"
-              >
-                <X className="w-4 h-4 bg-slate-200 hover:bg-slate-300 rounded-full p-0.5" />
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 self-end md:self-auto text-[11px] sm:text-xs font-bold text-slate-500 bg-slate-50 px-3 py-2 rounded-xl border border-slate-100">
-            <Layers className="w-3.5 h-3.5 text-emerald-600" />
-            <span>{filteredZones.length} {filteredZones.length === 1 ? 'zona' : 'zonas'}</span>
-            <span className="text-slate-300">•</span>
-            <span className="text-emerald-600">{totalFreeTables} libres</span>
-            <span className="text-slate-300">•</span>
-            <span className="text-rose-600">{totalOccupiedTables} ocupadas</span>
-          </div>
-        </div>
-
-        {zones.length > 0 && (
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-none">
+      {/* SELECTOR RÁPIDO DE ZONAS (PISOS / SALONES) */}
+      {zones.length > 0 && (
+        <div className="mb-6 bg-white p-3.5 sm:p-4 rounded-3xl shadow-sm border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 pt-0.5 scrollbar-none">
             <button
-              onClick={() => {
-                setSelectedZoneId('ALL');
-                setZoneSearchQuery('');
-              }}
-              className={`shrink-0 px-3.5 sm:px-4 py-2 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-2 transition-all active:scale-95 ${
-                selectedZoneId === 'ALL' && !zoneSearchQuery
+              onClick={() => setSelectedZoneId('ALL')}
+              className={`shrink-0 px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm flex items-center gap-2 transition-all active:scale-95 ${
+                selectedZoneId === 'ALL'
                   ? 'bg-emerald-600 text-white shadow-md shadow-emerald-200'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
               }`}
             >
-              <Building2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <Building2 className="w-4 h-4" />
               <span>Todas las Zonas</span>
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-extrabold ${
-                selectedZoneId === 'ALL' && !zoneSearchQuery ? 'bg-white/20 text-white' : 'bg-white text-slate-600'
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${
+                selectedZoneId === 'ALL' ? 'bg-white/20 text-white' : 'bg-white text-slate-600'
               }`}>
                 {totalTables}
               </span>
@@ -851,19 +801,16 @@ export default function Home() {
               return (
                 <button
                   key={zone.id}
-                  onClick={() => {
-                    setSelectedZoneId(zone.id);
-                    setZoneSearchQuery('');
-                  }}
-                  className={`shrink-0 px-3.5 sm:px-4 py-2 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-2 transition-all active:scale-95 ${
+                  onClick={() => setSelectedZoneId(zone.id)}
+                  className={`shrink-0 px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm flex items-center gap-2 transition-all active:scale-95 ${
                     isSelected
-                      ? 'bg-slate-900 text-white shadow-md shadow-slate-300'
+                      ? 'bg-emerald-600 text-white shadow-md shadow-emerald-200'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
                   }`}
                 >
                   <MapPin className="w-3.5 h-3.5" />
                   <span className="capitalize">{zone.name}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-extrabold ${
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${
                     isSelected ? 'bg-white/20 text-white' : 'bg-white text-slate-600'
                   }`}>
                     {zone.tables.length}
@@ -875,39 +822,24 @@ export default function Home() {
               );
             })}
           </div>
-        )}
-      </div>
+
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto text-[11px] sm:text-xs font-bold text-slate-500 bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-100">
+            <Layers className="w-3.5 h-3.5 text-emerald-600" />
+            <span>{totalFreeTables} libres</span>
+            <span className="text-slate-300">•</span>
+            <span className="text-rose-600">{totalOccupiedTables} ocupadas</span>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-6">
-        {filteredZones.length === 0 ? (
-          <div className="bg-white rounded-3xl p-8 sm:p-12 text-center border border-slate-100 shadow-sm flex flex-col items-center justify-center animate-in fade-in duration-300">
-            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mb-3">
-              <Search className="w-7 h-7 text-slate-300" />
-            </div>
-            <h3 className="text-base sm:text-lg font-black text-slate-800 mb-1">
-              No se encontró ninguna zona
-            </h3>
-            <p className="text-slate-400 text-xs sm:text-sm max-w-sm mb-4 leading-relaxed">
-              No encontramos pisos o zonas que coincidan con &ldquo;<span className="text-slate-700 font-semibold">{zoneSearchQuery}</span>&rdquo;. Intenta con otro término (ej: Piso 1, Terraza).
-            </p>
-            <button
-              onClick={() => {
-                setZoneSearchQuery('');
-                setSelectedZoneId('ALL');
-              }}
-              className="px-4 py-2 sm:px-5 sm:py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold rounded-xl transition-all shadow-md shadow-emerald-200 active:scale-95"
-            >
-              Ver todas las zonas
-            </button>
-          </div>
-        ) : (
-          filteredZones.map(zone => (
-            <section key={zone.id} className="bg-white p-3 md:p-5 rounded-3xl shadow-sm border border-slate-100">
-              <div className="flex justify-between items-center mb-4 md:mb-5">
-                <div className="flex items-center gap-3 border-l-4 border-emerald-500 pl-3">
-                  <h2 className="text-base md:text-lg font-bold text-slate-800 uppercase tracking-widest">
-                    {zone.name}
-                  </h2>
+        {filteredZones.map(zone => (
+          <section key={zone.id} className="bg-white p-3 md:p-5 rounded-3xl shadow-sm border border-slate-100">
+            <div className="flex justify-between items-center mb-4 md:mb-5">
+              <div className="flex items-center gap-3 border-l-4 border-emerald-500 pl-3">
+                <h2 className="text-base md:text-lg font-bold text-slate-800 uppercase tracking-widest">
+                  {zone.name}
+                </h2>
                   <span className="text-xs font-bold px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md">
                     {zone.tables.length} {zone.tables.length === 1 ? 'mesa' : 'mesas'}
                   </span>
@@ -965,8 +897,7 @@ export default function Home() {
             )}
 
           </section>
-        ))
-      )}
+        ))}
       </div>
     </div>
   );
