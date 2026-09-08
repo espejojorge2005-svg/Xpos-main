@@ -179,7 +179,13 @@ function computeLocalAnalytics(fromStr: string, toStr: string): AnalyticsData {
   if (Array.isArray(pastClosures)) {
     for (const closure of pastClosures) {
       const cDate = parseLocalDate(closure.date) || parseLocalDate(closure.id) || new Date();
-      if (cDate >= fromDate && cDate <= toDate) {
+      // Si el cierre ocurrió en la madrugada (ej: 00:00 a 05:59), las ventas del turno corresponden al día anterior
+      const effectiveDate = new Date(cDate);
+      if (cDate.getHours() < 6) {
+        effectiveDate.setDate(effectiveDate.getDate() - 1);
+      }
+
+      if (effectiveDate >= fromDate && effectiveDate <= toDate) {
         const rep = closure.report || {};
         const orders = rep.ordersDetail || [];
 
@@ -192,7 +198,7 @@ function computeLocalAnalytics(fromStr: string, toStr: string): AnalyticsData {
           totalRevenue += amt;
           totalOrders += 1;
 
-          const dayStr = formatLocalDate(cDate);
+          const dayStr = formatLocalDate(effectiveDate);
           if (byDay[dayStr]) {
             byDay[dayStr].revenue += amt;
             byDay[dayStr].orders += 1;
@@ -264,20 +270,13 @@ export default function AnalyticsPage() {
   const [fromDate, setFromDate] = useState(() => formatLocalDate(new Date()));
   const [toDate, setToDate] = useState(() => formatLocalDate(new Date()));
 
-  const [data, setData] = useState<AnalyticsData | null>(() => {
-    if (typeof window === 'undefined') return null;
-    try {
-      const today = formatLocalDate(new Date());
-      return computeLocalAnalytics(today, today);
-    } catch {
-      return null;
-    }
-  });
-  const [loading, setLoading] = useState(false);
+  // Iniciar data en null y loading en true para evitar el parpadeo de datos locales provisionales
+  const [data, setData] = useState<AnalyticsData | null>(null);
+  const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState<'TODAY' | 'LAST_7_DAYS' | 'LAST_30_DAYS' | 'CUSTOM'>('TODAY');
 
   const fetchAnalytics = async (from: string, to: string) => {
-    if (!data) setLoading(true);
+    setLoading(true);
     let serverData: AnalyticsData | null = null;
     try {
       const token = localStorage.getItem('pos_token') || '';
@@ -305,6 +304,7 @@ export default function AnalyticsPage() {
       setLoading(false);
     }
   };
+
 
   useEffect(() => {
     const today = new Date();
