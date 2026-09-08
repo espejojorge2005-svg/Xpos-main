@@ -477,10 +477,11 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
     const inCart = cart
       .filter(item => item.productId === productId)
       .reduce((sum, item) => sum + item.quantity, 0);
-    const inExisting = existingItems
-      .filter(item => item.productId === productId)
-      .reduce((sum, item) => sum + item.quantity, 0);
-    return inCart + inExisting;
+    const inCartSubItems = cart
+      .flatMap(item => item.subItems || [])
+      .filter(sub => sub.productId === productId)
+      .reduce((sum, sub) => sum + sub.quantity, 0);
+    return inCart + inCartSubItems;
   };
 
   const getAvailableStock = (product: Product) => {
@@ -575,6 +576,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
       return;
     }
 
+    const itemsToSubmit = [...cart];
     setSubmitting(true);
     const token = localStorage.getItem('pos_token') || '';
     const restaurantId = getRestaurantId() || '';
@@ -605,7 +607,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
     } catch {}
 
     // 1. SINCRONIZACIÓN LOCAL GARANTIZADA PARA COCINA (KDS)
-    const newKitchenItems = cart.map((cartItem, idx) => {
+    const newKitchenItems = itemsToSubmit.map((cartItem, idx) => {
       const prod = products.find(p => p.id === cartItem.productId);
       const cat = categories.find(c => c.id === prod?.categoryId);
       return {
@@ -683,8 +685,8 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
       if (Array.isArray(baseProducts) && baseProducts.length > 0) {
         const updatedProducts = baseProducts.map(p => {
-          const cartItems = cart.filter(c => c.productId === p.id);
-          const subItemsQty = cart.flatMap(c => c.subItems || []).filter(sub => sub.productId === p.id).reduce((sum, sub) => sum + sub.quantity, 0);
+          const cartItems = itemsToSubmit.filter(c => c.productId === p.id);
+          const subItemsQty = itemsToSubmit.flatMap(c => c.subItems || []).filter(sub => sub.productId === p.id).reduce((sum, sub) => sum + sub.quantity, 0);
           const totalDeduction = cartItems.reduce((sum, it) => sum + it.quantity, 0) + subItemsQty;
 
           if (totalDeduction > 0) {
@@ -730,7 +732,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
     // 2. SINCRONIZACIÓN LOCAL GARANTIZADA PARA MESAS ACTIVAS (PLANO DE SALA)
     const combinedExistingItems: ExistingItem[] = [
       ...existingItems,
-      ...cart.map((c, idx) => ({
+      ...itemsToSubmit.map((c, idx) => ({
         id: `item-${Date.now()}-${idx}`,
         productId: c.productId,
         name: c.name,
@@ -741,6 +743,10 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         isPaid: false
       }))
     ];
+    
+    // Inmediatamente transicionar el carrito a comandado para evitar cálculos duplicados en UI
+    setExistingItems(combinedExistingItems);
+    setCart([]);
     
     const newTotal = combinedExistingItems.reduce((sum, it) => sum + getItemSubtotal(it), 0);
 
@@ -776,7 +782,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
           method: 'POST',
           headers,
           body: JSON.stringify({
-            items: cart.map(item => ({
+            items: itemsToSubmit.map(item => ({
               productId: item.productId,
               quantity: item.quantity,
               unitPrice: Number(item.unitPrice),
@@ -797,7 +803,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
           body: JSON.stringify({
             tableId,
             tableName: effectiveTableName,
-            items: cart.map(item => ({
+            items: itemsToSubmit.map(item => ({
               productId: item.productId,
               quantity: item.quantity,
               unitPrice: Number(item.unitPrice),
@@ -869,7 +875,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
     // 4. IMPRESIÓN EN COMANDERAS DE COCINA
     try {
       const printJobs = new Map<string, any[]>();
-      cart.forEach(cartItem => {
+      itemsToSubmit.forEach(cartItem => {
         const product = products.find(p => p.id === cartItem.productId);
         if (product && product.stations && product.stations.length > 0) {
           product.stations.forEach(station => {
@@ -938,13 +944,32 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         const removedItem = existingItems.find(item => item.id === confirmAction.itemId);
         if (removedItem) {
           try {
+            const restId = getRestaurantId() || 'main';
             let storedProducts = getScopedStorage<Product[]>('pos_registered_products', []);
+            let stockMovements = getScopedStorage<any[]>('pos_stock_movements', []);
             storedProducts = storedProducts.map(p => {
               if (p.id === removedItem.productId && typeof p.stock === 'number') {
-                return { ...p, stock: p.stock + removedItem.quantity };
+                const oldStock = p.stock;
+                const newStock = oldStock + removedItem.quantity;
+                const movement = {
+                  id: `mov-${Date.now()}-${p.id}`,
+                  productId: p.id,
+                  productName: p.name,
+                  delta: removedItem.quantity,
+                  reason: `Devolución/Cancelación Mesa ${tableName || tableId}`,
+                  stockBefore: oldStock,
+                  stockAfter: newStock,
+                  type: 'ADJUSTMENT',
+                  createdAt: new Date().toISOString(),
+                };
+                stockMovements.unshift(movement);
+                syncStockMovementToFirebase(restId, movement).catch(() => {});
+                syncProductToFirebase({ ...p, stock: newStock, restaurantId: restId }).catch(() => {});
+                return { ...p, stock: newStock };
               }
               return p;
             });
+            setScopedStorage('pos_stock_movements', stockMovements);
             setScopedStorage('pos_registered_products', storedProducts);
             setProducts(storedProducts);
           } catch {}
@@ -1067,14 +1092,33 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
   const executeCancelOrder = async () => {
     // Restaurar stock de los productos no cobrados
     try {
+      const restId = getRestaurantId() || 'main';
       let storedProducts = getScopedStorage<Product[]>('pos_registered_products', []);
+      let stockMovements = getScopedStorage<any[]>('pos_stock_movements', []);
       storedProducts = storedProducts.map(p => {
         const found = existingItems.find(it => it.productId === p.id && !it.isPaid);
         if (found && typeof p.stock === 'number') {
-          return { ...p, stock: p.stock + found.quantity };
+          const oldStock = p.stock;
+          const newStock = oldStock + found.quantity;
+          const movement = {
+            id: `mov-${Date.now()}-${p.id}`,
+            productId: p.id,
+            productName: p.name,
+            delta: found.quantity,
+            reason: `Anulación de pedido Mesa ${tableName || tableId}`,
+            stockBefore: oldStock,
+            stockAfter: newStock,
+            type: 'ADJUSTMENT',
+            createdAt: new Date().toISOString(),
+          };
+          stockMovements.unshift(movement);
+          syncStockMovementToFirebase(restId, movement).catch(() => {});
+          syncProductToFirebase({ ...p, stock: newStock, restaurantId: restId }).catch(() => {});
+          return { ...p, stock: newStock };
         }
         return p;
       });
+      setScopedStorage('pos_stock_movements', stockMovements);
       setScopedStorage('pos_registered_products', storedProducts);
       setProducts(storedProducts);
     } catch {}
