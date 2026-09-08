@@ -221,6 +221,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
       let loadedCats: Category[] = [];
       let loadedProds: Product[] = [];
+      let foundActiveOrder = false;
 
       const currentRestId = getRestaurantId();
       const queryTableName = searchParams.get('name') || searchParams.get('tableName') || '';
@@ -262,7 +263,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
           } catch {}
         }
 
-        let foundActiveOrder = false;
+        foundActiveOrder = false;
 
         if (activeOrderRes && activeOrderRes.ok) {
           try {
