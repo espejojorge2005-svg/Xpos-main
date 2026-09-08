@@ -2,12 +2,79 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClsService } from 'nestjs-cls';
 
-function formatLocalDate(d: Date): string {
-  const date = new Date(d);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+function getTzDateBoundaries(fromString: string, toString: string, timeZone = 'America/Lima') {
+  const parsePart = (str: string, isEnd = false) => {
+    const parts = str.split('-').map(Number);
+    const y = parts[0] || new Date().getFullYear();
+    const m = parts[1] || 1;
+    const d = parts[2] || 1;
+    const startUtc = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
+    const invUtc = new Date(startUtc.toLocaleString('en-US', { timeZone: 'UTC' }));
+    const localInTz = new Date(startUtc.toLocaleString('en-US', { timeZone }));
+    const offsetMs = invUtc.getTime() - localInTz.getTime();
+
+    if (isEnd) {
+      return new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999) + offsetMs);
+    }
+    return new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0) + offsetMs);
+  };
+
+  const from = parsePart(fromString, false);
+  const to = parsePart(toString, true);
+  return { from, to };
+}
+
+function formatDateInTz(date: Date, timeZone = 'America/Lima'): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(date);
+  } catch {
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+}
+
+function formatHourInTz(date: Date, timeZone = 'America/Lima'): number {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: 'numeric',
+      hour12: false,
+    }).formatToParts(date);
+    const hourPart = parts.find((p) => p.type === 'hour');
+    const h = hourPart ? parseInt(hourPart.value, 10) : date.getUTCHours();
+    return h === 24 ? 0 : h;
+  } catch {
+    return date.getHours();
+  }
+}
+
+function enumerateDatesInRange(fromString: string, toString: string): string[] {
+  let [startStr, endStr] = [fromString, toString];
+  if (startStr > endStr) {
+    [startStr, endStr] = [endStr, startStr];
+  }
+  const dates: string[] = [];
+  const [y1, m1, d1] = startStr.split('-').map(Number);
+  const [y2, m2, d2] = endStr.split('-').map(Number);
+  const cur = new Date(Date.UTC(y1, m1 - 1, d1));
+  const end = new Date(Date.UTC(y2, m2 - 1, d2));
+
+  while (cur <= end) {
+    const y = cur.getUTCFullYear();
+    const m = String(cur.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(cur.getUTCDate()).padStart(2, '0');
+    dates.push(`${y}-${m}-${d}`);
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return dates;
 }
 
 @Injectable()
@@ -17,59 +84,55 @@ export class AnalyticsService {
     private cls: ClsService,
   ) {}
 
-  async getAnalytics(fromString?: string, toString?: string, restaurantIdParam?: string | null) {
+  async getAnalytics(
+    fromString?: string,
+    toString?: string,
+    restaurantIdParam?: string | null,
+    clientTimezone = 'America/Lima',
+  ) {
+    let timeZone = clientTimezone || 'America/Lima';
+    try {
+      Intl.DateTimeFormat(undefined, { timeZone });
+    } catch {
+      timeZone = 'America/Lima';
+    }
+
     const now = new Date();
-    let from: Date;
-    let to: Date;
+    const todayStr = formatDateInTz(now, timeZone);
+    const fromStr = fromString || todayStr;
+    const toStr = toString || todayStr;
 
-    if (fromString) {
-      const parts = fromString.split('-').map(Number);
-      if (parts.length === 3) {
-        from = new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0);
-      } else {
-        from = new Date(fromString);
-        from.setHours(0, 0, 0, 0);
-      }
-    } else {
-      from = new Date(now);
-      from.setHours(0, 0, 0, 0);
-    }
-
-    if (toString) {
-      const parts = toString.split('-').map(Number);
-      if (parts.length === 3) {
-        to = new Date(parts[0], parts[1] - 1, parts[2], 23, 59, 59, 999);
-      } else {
-        to = new Date(toString);
-        to.setHours(23, 59, 59, 999);
-      }
-    } else {
-      to = new Date(now);
-      to.setHours(23, 59, 59, 999);
-    }
+    const { from, to } = getTzDateBoundaries(fromStr, toStr, timeZone);
 
     const clsId = this.cls.get('restaurantId');
     const restaurantId = (restaurantIdParam && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(restaurantIdParam))
       ? restaurantIdParam
       : (clsId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clsId) ? clsId : null);
 
-    const orderWhere: any = {
-      status: 'CLOSED',
-      updatedAt: { gte: from, lte: to },
-      ...(restaurantId ? { restaurantId } : { restaurantId: '00000000-0000-0000-0000-000000000000' }),
-    };
-
+    // 1. Pagos del rango en la zona horaria del cliente
     const paymentWhere: any = {
       createdAt: { gte: from, lte: to },
       ...(restaurantId ? { order: { restaurantId } } : { order: { restaurantId: '00000000-0000-0000-0000-000000000000' } }),
     };
 
-    // ── 1. PAYMENTS & 2. ORDERS in range (Ejecutados concurrentemente con Promise.all) ────
+    // 2. Órdenes cerradas que tengan pagos en el rango O hayan sido creadas en el rango
+    // (Evita incluir órdenes huérfanas de días pasados editadas hoy vía updatedAt)
+    const orderWhere: any = {
+      status: 'CLOSED',
+      OR: [
+        { payments: { some: { createdAt: { gte: from, lte: to } } } },
+        { createdAt: { gte: from, lte: to } },
+      ],
+      ...(restaurantId ? { restaurantId } : { restaurantId: '00000000-0000-0000-0000-000000000000' }),
+    };
+
+    // Consultas concurrentes
     const [payments, orders] = await Promise.all([
       this.prisma.payment.findMany({
         where: paymentWhere,
         select: {
           id: true,
+          orderId: true,
           amount: true,
           tipAmount: true,
           paymentMethod: true,
@@ -82,6 +145,13 @@ export class AnalyticsService {
           id: true,
           createdAt: true,
           updatedAt: true,
+          payments: {
+            select: {
+              id: true,
+              createdAt: true,
+              amount: true,
+            },
+          },
           items: {
             where: { parentItemId: null },
             select: {
@@ -103,9 +173,9 @@ export class AnalyticsService {
 
     // ── KPIs ─────────────────────────────────────────────────────────────────
     const totalRevenue = payments.reduce((s, p) => s + Number(p.amount || 0), 0);
-    const totalTips    = payments.reduce((s, p) => s + Number(p.tipAmount || 0), 0);
-    const totalOrders  = orders.length;
-    const avgTicket    = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+    const totalTips = payments.reduce((s, p) => s + Number(p.tipAmount || 0), 0);
+    const totalOrders = orders.length;
+    const avgTicket = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
     // Top payment method
     const methodTotals: Record<string, number> = {};
@@ -115,18 +185,29 @@ export class AnalyticsService {
     }
     const topPaymentMethod = Object.entries(methodTotals).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'N/A';
 
-    // ── Revenue by day (Zona Horaria Local) ──────────────────────────────────
+    // ── Revenue by day (Inicialización exhaustiva de todos los días del rango) ──
+    const dateList = enumerateDatesInRange(fromStr, toStr);
     const byDay: Record<string, { date: string; revenue: number; orders: number }> = {};
+    for (const d of dateList) {
+      byDay[d] = { date: d, revenue: 0, orders: 0 };
+    }
+
     for (const p of payments) {
-      const day = p.createdAt ? formatLocalDate(p.createdAt) : formatLocalDate(from);
-      if (!byDay[day]) byDay[day] = { date: day, revenue: 0, orders: 0 };
-      byDay[day].revenue += Number(p.amount || 0);
+      const day = formatDateInTz(p.createdAt, timeZone);
+      if (byDay[day]) {
+        byDay[day].revenue += Number(p.amount || 0);
+      }
     }
+
     for (const o of orders) {
-      const day = o.createdAt ? formatLocalDate(o.createdAt) : (o.updatedAt ? formatLocalDate(o.updatedAt) : formatLocalDate(from));
-      if (byDay[day]) byDay[day].orders += 1;
-      else byDay[day] = { date: day, revenue: 0, orders: 1 };
+      const pInRange = o.payments?.find((p) => p.createdAt >= from && p.createdAt <= to);
+      const dateToUse = pInRange ? pInRange.createdAt : o.createdAt;
+      const day = formatDateInTz(dateToUse, timeZone);
+      if (byDay[day]) {
+        byDay[day].orders += 1;
+      }
     }
+
     const revenueByDay = Object.values(byDay).sort((a, b) => a.date.localeCompare(b.date));
 
     // ── Top products ──────────────────────────────────────────────────────────
@@ -138,7 +219,7 @@ export class AnalyticsService {
         const catName = item.product?.category?.name || 'General';
         if (!prodMap[pid]) prodMap[pid] = { name: prodName, category: catName, quantity: 0, revenue: 0 };
         prodMap[pid].quantity += Number(item.quantity || 0);
-        prodMap[pid].revenue  += Number(item.unitPrice || 0) * Number(item.quantity || 0);
+        prodMap[pid].revenue += Number(item.unitPrice || 0) * Number(item.quantity || 0);
       }
     }
     const topProducts = Object.values(prodMap)
@@ -151,29 +232,34 @@ export class AnalyticsService {
       const m = String(p.paymentMethod || 'CASH');
       if (!methodMap[m]) methodMap[m] = { method: m, amount: 0, count: 0 };
       methodMap[m].amount += Number(p.amount || 0);
-      methodMap[m].count  += 1;
+      methodMap[m].count += 1;
     }
     const paymentMethods = Object.values(methodMap);
 
-    // ── Hourly heatmap ────────────────────────────────────────────────────────
+    // ── Hourly heatmap (0 a 23 en la zona horaria del restaurante) ────────────
     const hourlyMap: Record<number, { hour: number; orders: number; revenue: number }> = {};
     for (let h = 0; h < 24; h++) hourlyMap[h] = { hour: h, orders: 0, revenue: 0 };
+
     for (const p of payments) {
       if (p.createdAt) {
-        const h = p.createdAt.getHours();
+        const h = formatHourInTz(p.createdAt, timeZone);
         if (hourlyMap[h]) {
           hourlyMap[h].revenue += Number(p.amount || 0);
         }
       }
     }
+
     for (const o of orders) {
-      if (o.updatedAt) {
-        const h = o.updatedAt.getHours();
+      const pInRange = o.payments?.find((p) => p.createdAt >= from && p.createdAt <= to);
+      const dateToUse = pInRange ? pInRange.createdAt : o.createdAt;
+      if (dateToUse) {
+        const h = formatHourInTz(dateToUse, timeZone);
         if (hourlyMap[h]) {
           hourlyMap[h].orders += 1;
         }
       }
     }
+
     const hourlyHeatmap = Object.values(hourlyMap);
 
     return {

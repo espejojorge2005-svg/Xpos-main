@@ -59,6 +59,44 @@ function parseLocalDate(dateInput: any): Date | null {
   return null;
 }
 
+function enumerateDatesInRange(fromString: string, toString: string): string[] {
+  let [startStr, endStr] = [fromString, toString];
+  if (startStr > endStr) {
+    [startStr, endStr] = [endStr, startStr];
+  }
+  const dates: string[] = [];
+  const [y1, m1, d1] = startStr.split('-').map(Number);
+  const [y2, m2, d2] = endStr.split('-').map(Number);
+  const cur = new Date(Date.UTC(y1, m1 - 1, d1));
+  const end = new Date(Date.UTC(y2, m2 - 1, d2));
+
+  while (cur <= end) {
+    const y = cur.getUTCFullYear();
+    const m = String(cur.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(cur.getUTCDate()).padStart(2, '0');
+    dates.push(`${y}-${m}-${d}`);
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+function formatLocalDate(d: Date): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Lima',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d);
+  } catch {
+    const date = new Date(d);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+}
+
 function computeLocalAnalytics(fromStr: string, toStr: string): AnalyticsData {
   const fromParts = fromStr.split('-');
   const fromDate = new Date(Number(fromParts[0]), Number(fromParts[1]) - 1, Number(fromParts[2]), 0, 0, 0, 0);
@@ -72,7 +110,14 @@ function computeLocalAnalytics(fromStr: string, toStr: string): AnalyticsData {
   let totalTips = 0;
   let totalOrders = 0;
   const methodTotals: Record<string, { amount: number; count: number }> = {};
+  
+  // Pre-poblar todas las fechas del rango
+  const dateList = enumerateDatesInRange(fromStr, toStr);
   const byDay: Record<string, { date: string; revenue: number; orders: number }> = {};
+  for (const d of dateList) {
+    byDay[d] = { date: d, revenue: 0, orders: 0 };
+  }
+
   const prodMap: Record<string, { name: string; category: string; quantity: number; revenue: number }> = {};
   const hourlyMap: Record<number, { hour: number; orders: number; revenue: number }> = {};
   for (let h = 0; h < 24; h++) hourlyMap[h] = { hour: h, orders: 0, revenue: 0 };
@@ -103,10 +148,11 @@ function computeLocalAnalytics(fromStr: string, toStr: string): AnalyticsData {
         methodTotals[method].amount += amt;
         methodTotals[method].count += 1;
 
-        const dayStr = pDate.toISOString().slice(0, 10);
-        if (!byDay[dayStr]) byDay[dayStr] = { date: dayStr, revenue: 0, orders: 0 };
-        byDay[dayStr].revenue += amt;
-        byDay[dayStr].orders += 1;
+        const dayStr = formatLocalDate(pDate);
+        if (byDay[dayStr]) {
+          byDay[dayStr].revenue += amt;
+          byDay[dayStr].orders += 1;
+        }
 
         const h = pDate.getHours();
         if (hourlyMap[h]) {
@@ -146,10 +192,11 @@ function computeLocalAnalytics(fromStr: string, toStr: string): AnalyticsData {
           totalRevenue += amt;
           totalOrders += 1;
 
-          const dayStr = cDate.toISOString().slice(0, 10);
-          if (!byDay[dayStr]) byDay[dayStr] = { date: dayStr, revenue: 0, orders: 0 };
-          byDay[dayStr].revenue += amt;
-          byDay[dayStr].orders += 1;
+          const dayStr = formatLocalDate(cDate);
+          if (byDay[dayStr]) {
+            byDay[dayStr].revenue += amt;
+            byDay[dayStr].orders += 1;
+          }
 
           if (Array.isArray(order.payments)) {
             for (const p of order.payments) {
@@ -209,14 +256,6 @@ function computeLocalAnalytics(fromStr: string, toStr: string): AnalyticsData {
   };
 }
 
-function formatLocalDate(d: Date): string {
-  const date = new Date(d);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
 export default function AnalyticsPage() {
   const router = useRouter();
   useGuardedRoute('analytics');
@@ -243,10 +282,12 @@ export default function AnalyticsPage() {
     try {
       const token = localStorage.getItem('pos_token') || '';
       const restId = getRestaurantId();
-      const res = await fetch(getApiUrl(`/analytics?from=${from}&to=${to}`), {
+      const clientTz = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'America/Lima';
+      const res = await fetch(getApiUrl(`/analytics?from=${from}&to=${to}&timezone=${encodeURIComponent(clientTz)}`), {
         headers: { 
           Authorization: `Bearer ${token}`,
-          'x-restaurant-id': restId || ''
+          'x-restaurant-id': restId || '',
+          'x-timezone': clientTz,
         }
       });
       if (res.ok) {
@@ -354,15 +395,19 @@ export default function AnalyticsPage() {
         </form>
       )}
 
-      {/* No Data State */}
-      {data?.kpis.totalOrders === 0 ? (
-        <div className="bg-white p-8 sm:p-12 rounded-3xl border border-slate-100 shadow-sm text-center">
-          <AlertTriangle className="w-12 h-12 sm:w-16 sm:h-16 text-slate-300 mx-auto mb-4" />
-          <h2 className="text-lg sm:text-xl font-bold text-slate-800 mb-2">Sin datos de ventas</h2>
-          <p className="text-slate-500 text-sm">No hay ventas registradas en el rango de fechas seleccionado.</p>
-        </div>
-      ) : data ? (
+      {/* Dashboard Content */}
+      {data ? (
         <div className="space-y-6">
+          {/* Informative Notice when 0 orders in range */}
+          {data.kpis.totalOrders === 0 && (
+            <div className="bg-amber-50 border border-amber-200/80 p-4 sm:p-5 rounded-2xl flex items-center gap-3 text-amber-800 text-sm font-medium shadow-sm">
+              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+              <div>
+                <span className="font-bold">Sin ventas registradas en este período: </span>
+                <span>No se encontraron ventas para {fromDate === toDate ? fromDate : `${fromDate} al ${toDate}`}.</span>
+              </div>
+            </div>
+          )}
           
           {/* ── KPI CARDS ── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -428,8 +473,12 @@ export default function AnalyticsPage() {
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
                     <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748B' }} dy={10} 
                       tickFormatter={(val) => {
-                        const [, m, d] = val.split('-');
-                        return `${d}/${m}`;
+                        if (!val || typeof val !== 'string') return '';
+                        const parts = val.split('-');
+                        if (parts.length >= 3) {
+                          return `${parts[2]}/${parts[1]}`;
+                        }
+                        return val;
                       }}
                     />
                     <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748B' }} tickFormatter={(val) => `S/ ${val}`} />
@@ -450,43 +499,50 @@ export default function AnalyticsPage() {
                 <h3 className="text-lg font-black text-slate-800 tracking-tight">Métodos de Pago</h3>
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Distribución de Ingresos</p>
               </div>
-              <div className="flex-1 flex flex-col items-center justify-center -mt-4">
-                <ResponsiveContainer width="100%" height={260}>
-                  <PieChart>
-                    <Pie
-                      data={data.paymentMethods}
-                      cx="50%" cy="50%"
-                      innerRadius={65} outerRadius={90}
-                      paddingAngle={5}
-                      dataKey="amount"
-                      nameKey="method"
-                      stroke="none"
-                    >
-                      {data.paymentMethods.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip 
-                      formatter={(val: any) => `S/ ${Number(val).toFixed(2)}`}
-                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}
-                    />
-                    <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', fontWeight: 'bold' }} />
-                  </PieChart>
-                </ResponsiveContainer>
-                
-                {/* Custom list summary under chart */}
-                <div className="w-full space-y-2 mt-2">
-                  {data.paymentMethods.map((pm, i) => (
-                    <div key={pm.method} className="flex justify-between items-center text-sm">
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length]}}></div>
-                        <span className="font-bold text-slate-600">{pm.method}</span>
-                      </div>
-                      <span className="font-black text-slate-800">S/ {pm.amount.toFixed(2)}</span>
-                    </div>
-                  ))}
+              {data.paymentMethods.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-slate-400 py-12">
+                  <CreditCard className="w-12 h-12 text-slate-200 mb-2" />
+                  <p className="text-xs font-bold uppercase tracking-wider">Sin métodos de pago en este rango</p>
                 </div>
-              </div>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center -mt-4">
+                  <ResponsiveContainer width="100%" height={260}>
+                    <PieChart>
+                      <Pie
+                        data={data.paymentMethods}
+                        cx="50%" cy="50%"
+                        innerRadius={65} outerRadius={90}
+                        paddingAngle={5}
+                        dataKey="amount"
+                        nameKey="method"
+                        stroke="none"
+                      >
+                        {data.paymentMethods.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip 
+                        formatter={(val: any) => `S/ ${Number(val).toFixed(2)}`}
+                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}
+                      />
+                      <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', fontWeight: 'bold' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  
+                  {/* Custom list summary under chart */}
+                  <div className="w-full space-y-2 mt-2">
+                    {data.paymentMethods.map((pm, i) => (
+                      <div key={pm.method} className="flex justify-between items-center text-sm">
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length]}}></div>
+                          <span className="font-bold text-slate-600">{pm.method}</span>
+                        </div>
+                        <span className="font-black text-slate-800">S/ {pm.amount.toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             
           </div>
@@ -505,28 +561,35 @@ export default function AnalyticsPage() {
                   <ChefHat className="w-5 h-5" />
                 </div>
               </div>
-              <div className="flex-1 mt-2 space-y-5">
-                {data.topProducts.map((p, idx) => (
-                  <div key={idx} className="flex items-center gap-4">
-                    <div className="w-8 font-black text-slate-300 text-xl shrink-0 text-center">#{idx + 1}</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex justify-between items-end mb-1">
-                        <p className="font-bold text-sm text-slate-800 truncate pr-2">{p.name}</p>
-                        <p className="font-black text-sm text-slate-900 shrink-0">S/ {p.revenue.toFixed(2)}</p>
+              {data.topProducts.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-slate-400 py-12">
+                  <ChefHat className="w-12 h-12 text-slate-200 mb-2" />
+                  <p className="text-xs font-bold uppercase tracking-wider">Sin productos vendidos en este rango</p>
+                </div>
+              ) : (
+                <div className="flex-1 mt-2 space-y-5">
+                  {data.topProducts.map((p, idx) => (
+                    <div key={idx} className="flex items-center gap-4">
+                      <div className="w-8 font-black text-slate-300 text-xl shrink-0 text-center">#{idx + 1}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-end mb-1">
+                          <p className="font-bold text-sm text-slate-800 truncate pr-2">{p.name}</p>
+                          <p className="font-black text-sm text-slate-900 shrink-0">S/ {p.revenue.toFixed(2)}</p>
+                        </div>
+                        <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                          <div 
+                            className="bg-violet-500 h-full rounded-full" 
+                            style={{ width: `${Math.max(5, (p.revenue / (data.topProducts[0]?.revenue || 1)) * 100)}%`}}
+                          ></div>
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
+                          {p.quantity} unid. vendidos
+                        </p>
                       </div>
-                      <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                        <div 
-                          className="bg-violet-500 h-full rounded-full" 
-                          style={{ width: `${Math.max(5, (p.revenue / data.topProducts[0].revenue) * 100)}%`}}
-                        ></div>
-                      </div>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
-                        {p.quantity} unid. vendidos
-                      </p>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Hourly Heatmap (Simplified as Bar Chart for easier reading) */}
@@ -558,6 +621,7 @@ export default function AnalyticsPage() {
           </div>
         </div>
       ) : null}
+
       
     </div>
   );

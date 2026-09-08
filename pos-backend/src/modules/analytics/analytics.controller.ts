@@ -11,11 +11,14 @@ export class AnalyticsController {
   getAnalytics(
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('timezone') timezoneQuery?: string,
+    @Headers('x-timezone') tzHeader?: string,
     @Req() req?: any,
     @Headers('x-restaurant-id') restHeader?: string,
   ) {
     const restaurantId = req?.user?.restaurantId || restHeader || null;
-    return this.analyticsService.getAnalytics(from, to, restaurantId);
+    const clientTimezone = tzHeader || timezoneQuery || 'America/Lima';
+    return this.analyticsService.getAnalytics(from, to, restaurantId, clientTimezone);
   }
 }
 
