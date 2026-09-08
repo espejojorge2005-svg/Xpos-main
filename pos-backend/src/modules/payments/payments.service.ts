@@ -224,40 +224,75 @@ export class PaymentsService {
   }
 
   async getDailyClosure(dateString?: string, reqUser?: any, restaurantIdParam?: string | null) {
-    let startOfDay: Date;
-    let endOfDay: Date;
-
-    if (dateString) {
-      const parts = dateString.split('-');
-      if (parts.length === 3) {
-        startOfDay = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 0, 0, 0, 0);
-        endOfDay = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 23, 59, 59, 999);
-      } else {
-        startOfDay = new Date(dateString);
-        startOfDay.setHours(0, 0, 0, 0);
-        endOfDay = new Date(dateString);
-        endOfDay.setHours(23, 59, 59, 999);
-      }
-    } else {
-      startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
-      endOfDay = new Date();
-      endOfDay.setHours(23, 59, 59, 999);
-    }
-
     const restaurantId = await this.resolveRestaurantId(reqUser, restaurantIdParam);
-    const paymentWhere: any = { createdAt: { gte: startOfDay, lte: endOfDay } };
-    if (restaurantId) {
-      paymentWhere.order = { restaurantId };
-    }
-    const orderWhere: any = { status: 'CLOSED', updatedAt: { gte: startOfDay, lte: endOfDay } };
-    if (restaurantId) {
-      orderWhere.restaurantId = restaurantId;
-    }
+
     // El turno activo de la caja (cualquiera que esté actualmente OPEN para este restaurante)
     const shiftWhere: any = { status: 'OPEN' };
     if (restaurantId) {
       shiftWhere.restaurantId = restaurantId;
+    }
+
+    const activeShift = await this.prisma.cashShift.findFirst({
+      where: shiftWhere,
+      include: { expenses: true },
+      orderBy: { openedAt: 'desc' },
+    });
+
+    let paymentWhere: any = {};
+    let orderWhere: any = {};
+    let closureDate = new Date();
+
+    if (!dateString && activeShift) {
+      // Turno activo: el rango es continuo desde que se abrió el turno (openedAt)
+      // Esto previene que al pasar de medianoche se pierdan las ventas y propinas del turno
+      closureDate = activeShift.openedAt;
+      paymentWhere = {
+        createdAt: { gte: activeShift.openedAt },
+      };
+      if (restaurantId) {
+        paymentWhere.order = { restaurantId };
+      }
+      orderWhere = {
+        status: 'CLOSED',
+        OR: [
+          { updatedAt: { gte: activeShift.openedAt } },
+          { payments: { some: { createdAt: { gte: activeShift.openedAt } } } },
+        ],
+      };
+      if (restaurantId) {
+        orderWhere.restaurantId = restaurantId;
+      }
+    } else {
+      let startOfDay: Date;
+      let endOfDay: Date;
+
+      if (dateString) {
+        const parts = dateString.split('-');
+        if (parts.length === 3) {
+          startOfDay = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 0, 0, 0, 0);
+          endOfDay = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 23, 59, 59, 999);
+        } else {
+          startOfDay = new Date(dateString);
+          startOfDay.setHours(0, 0, 0, 0);
+          endOfDay = new Date(dateString);
+          endOfDay.setHours(23, 59, 59, 999);
+        }
+      } else {
+        startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        endOfDay = new Date();
+        endOfDay.setHours(23, 59, 59, 999);
+      }
+      closureDate = startOfDay;
+
+      paymentWhere = { createdAt: { gte: startOfDay, lte: endOfDay } };
+      if (restaurantId) {
+        paymentWhere.order = { restaurantId };
+      }
+      orderWhere = { status: 'CLOSED', updatedAt: { gte: startOfDay, lte: endOfDay } };
+      if (restaurantId) {
+        orderWhere.restaurantId = restaurantId;
+      }
     }
 
     // ==========================================
@@ -267,8 +302,7 @@ export class PaymentsService {
       paymentsGrouped,
       closedOrdersCount,
       paymentsWithTips,
-      activeShift,
-      closedOrders
+      closedOrders,
     ] = await Promise.all([
       // 1. Agrupar pagos
       this.prisma.payment.groupBy({
@@ -295,12 +329,7 @@ export class PaymentsService {
         },
         orderBy: { createdAt: 'desc' }
       }),
-      // 4. Fondo de caja y gastos activos
-      this.prisma.cashShift.findFirst({
-        where: shiftWhere,
-        include: { expenses: true }
-      }),
-      // 5. Detalle de todas las órdenes cerradas (select optimizado sin sobrecarga de joins)
+      // 4. Detalle de todas las órdenes cerradas (select optimizado sin sobrecarga de joins)
       this.prisma.order.findMany({
         where: orderWhere,
         include: {
@@ -396,7 +425,7 @@ export class PaymentsService {
     const soldProducts = Object.values(productSales).sort((a, b) => b.quantity - a.quantity);
 
     return {
-      date: startOfDay.toISOString().split('T')[0],
+      date: closureDate.toISOString().split('T')[0],
       shiftId: activeShift?.id || null,
       openingCash,
       totalExpenses,

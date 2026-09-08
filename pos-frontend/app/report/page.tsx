@@ -116,6 +116,7 @@ export default function CashRegisterPage() {
       let cardSales = 0;
       let transferSales = 0;
       let totalTips = 0;
+      let totalBaseSales = 0;
       const tipsDetail: TipDetail[] = [];
       const ordersDetail: OrderDetail[] = [];
       const productSalesMap: Record<string, SoldProduct> = {};
@@ -126,6 +127,7 @@ export default function CashRegisterPage() {
         const amt = Number(p.amount) || 0;
         const tip = Number(p.tipAmount) || 0;
         totalTips += tip;
+        totalBaseSales += amt;
 
         if (tip > 0) {
           tipsDetail.push({
@@ -169,12 +171,10 @@ export default function CashRegisterPage() {
         }
       }
 
-      const totalSales = cashSales + cardSales + transferSales;
-
       return {
         ...emptyReport,
         shiftId: cachedShift.shiftId || 'mock-id',
-        totalSales,
+        totalSales: totalBaseSales,
         cash: cashSales,
         card: cardSales,
         yapePlin: transferSales,
@@ -436,14 +436,19 @@ export default function CashRegisterPage() {
       if (parsedShiftData && Array.isArray(parsedShiftData.payments) && parsedShiftData.payments.length > 0) {
         parsedShiftData.payments.forEach((p: any) => {
           const orderId = p.orderId || p.id;
+          const tipAmt = Number(p.tipAmount) || 0;
+          const payAmt = Number(p.amount) || 0;
+          const payMethod = String(p.method || 'CASH').toUpperCase();
+          const pTable = p.table || 'Mesa 1';
+
           if (!ordersToUse.some(o => o.id === orderId)) {
             ordersToUse.push({
               id: orderId,
-              table: p.table || 'Mesa 1',
-              amount: Number(p.amount) || 0,
-              tip: Number(p.tipAmount) || 0,
-              methods: [p.method || 'CASH'],
-              payments: [{ id: p.id, method: p.method || 'CASH', amount: Number(p.amount) || 0 }],
+              table: pTable,
+              amount: payAmt,
+              tip: tipAmt,
+              methods: [payMethod],
+              payments: [{ id: p.id, method: payMethod, amount: payAmt }],
               items: (p.items || []).map((item: any, idx: number) => ({
                 productId: `prod-${idx}`,
                 name: item.name,
@@ -451,8 +456,48 @@ export default function CashRegisterPage() {
               }))
             });
           }
+
+          // Sincronizar propinas del turno local para que no se pierdan
+          if (tipAmt > 0) {
+            const tipId = p.id || `tip-${orderId}`;
+            const tipExists = tipsToUse.some(t => 
+              t.id === tipId || 
+              t.id === p.id || 
+              (t.table === pTable && Math.abs(Number(t.amount) - tipAmt) < 0.01 && t.method === payMethod)
+            );
+            if (!tipExists) {
+              tipsToUse.push({
+                id: tipId,
+                table: pTable,
+                amount: tipAmt,
+                method: payMethod,
+              });
+            }
+          }
         });
       }
+
+      // Asegurar que toda orden registrada con propina tenga su entrada correspondiente en tipsToUse
+      ordersToUse.forEach(o => {
+        const orderTip = Number(o.tip) || 0;
+        if (orderTip > 0) {
+          const tipId = `tip-${o.id}`;
+          const tipExists = tipsToUse.some(t => 
+            t.id === tipId || 
+            t.id === o.id || 
+            (t.table === o.table && Math.abs(Number(t.amount) - orderTip) < 0.01)
+          );
+          if (!tipExists) {
+            const method = (o.methods && o.methods[0]) ? String(o.methods[0]).toUpperCase() : 'CASH';
+            tipsToUse.push({
+              id: tipId,
+              table: o.table || 'Mesa',
+              amount: orderTip,
+              method: method,
+            });
+          }
+        }
+      });
 
       const activeOrders = ordersToUse.filter(o => !closedItemsIds.includes(o.id));
       const activeTips = tipsToUse.filter(t => !closedItemsIds.includes(t.id));
@@ -633,24 +678,49 @@ export default function CashRegisterPage() {
           }
 
           let cashSales = prev.cash;
+          let cardSales = prev.card;
+          let transferSales = prev.yapePlin;
           let totalSales = prev.totalSales;
           let ticketCount = prev.ticketCount;
+          let totalTips = prev.totalTips;
+          let tipsDetail = prev.tipsDetail;
+          let tipsBreakdown = prev.tipsBreakdown;
 
           if (prev.totalSales === 0 && hasPayments) {
             cashSales = 0;
-            let cardSales = 0;
-            let transferSales = 0;
+            cardSales = 0;
+            transferSales = 0;
+            totalTips = 0;
+            const newTipsDetail: TipDetail[] = [];
+            const tb = { CASH: 0, CARD: 0, TRANSFER: 0 };
+
             for (const p of mergedMock.payments) {
               const m = String(p.method || 'CASH').toUpperCase();
               const amt = Number(p.amount) || 0;
               const tip = Number(p.tipAmount) || 0;
+              totalTips += tip;
+
+              if (tip > 0) {
+                newTipsDetail.push({
+                  id: p.id || `tip-${Date.now()}`,
+                  table: p.table || 'Mostrador',
+                  amount: tip,
+                  method: m,
+                });
+                if (m === 'CASH') tb.CASH += tip;
+                else if (m === 'CARD') tb.CARD += tip;
+                else tb.TRANSFER += tip;
+              }
+
               const t = amt + tip;
               if (m === 'CASH') cashSales += t;
               else if (m === 'CARD') cardSales += t;
               else transferSales += t;
             }
-            totalSales = cashSales + cardSales + transferSales;
+            totalSales = cashSales + cardSales + transferSales - totalTips;
             ticketCount = mergedMock.payments.length;
+            tipsDetail = newTipsDetail;
+            tipsBreakdown = tb;
           }
 
           return {
@@ -658,8 +728,13 @@ export default function CashRegisterPage() {
             shiftId: cloudShift.shiftId || prev.shiftId || 'mock-id',
             openingCash: opening,
             cash: cashSales,
+            card: cardSales,
+            yapePlin: transferSales,
             totalSales,
             ticketCount,
+            totalTips,
+            tipsDetail,
+            tipsBreakdown,
             expectedCashInDrawer: Math.max(0, opening + cashSales - prev.totalExpenses),
           };
         });

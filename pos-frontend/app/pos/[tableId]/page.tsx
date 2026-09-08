@@ -1497,6 +1497,23 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
           else if (m === 'CARD') newCard += payTotal;
           else newTransfer += payTotal;
 
+          const currentBreakdown = cachedReport.tipsBreakdown || { CASH: 0, CARD: 0, TRANSFER: 0 };
+          const newBreakdown = {
+            CASH: Number(currentBreakdown.CASH || 0) + (m === 'CASH' ? tip : 0),
+            CARD: Number(currentBreakdown.CARD || 0) + (m === 'CARD' ? tip : 0),
+            TRANSFER: Number(currentBreakdown.TRANSFER || 0) + (m === 'TRANSFER' ? tip : 0),
+          };
+
+          const currentTipsDetail = Array.isArray(cachedReport.tipsDetail) ? [...cachedReport.tipsDetail] : [];
+          if (tip > 0) {
+            currentTipsDetail.unshift({
+              id: newPaymentRecord.id,
+              table: safeTName,
+              amount: tip,
+              method: m,
+            });
+          }
+
           const updatedReport = {
             ...cachedReport,
             totalSales: Number(cachedReport.totalSales || 0) + Number(finalPaymentAmount),
@@ -1505,6 +1522,8 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
             yapePlin: newTransfer,
             ticketCount: Number(cachedReport.ticketCount || 0) + 1,
             totalTips: Number(cachedReport.totalTips || 0) + tip,
+            tipsBreakdown: newBreakdown,
+            tipsDetail: currentTipsDetail,
             expectedCashInDrawer: Number(cachedReport.openingCash || 0) + newCash - Number(cachedReport.totalExpenses || 0),
           };
           setScopedStorage('pos_daily_closure_cache', updatedReport);
