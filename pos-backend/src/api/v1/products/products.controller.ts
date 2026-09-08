@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, Headers } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, Headers, Query } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -32,10 +32,13 @@ export class ProductsController {
   @Get('kardex')
   getKardex(
     @Req() req: any,
-    @Headers('x-restaurant-id') restHeader?: string
+    @Headers('x-restaurant-id') restHeader?: string,
+    @Headers('x-timezone') tzHeader?: string,
+    @Query('timezone') tzQuery?: string
   ) {
     const restaurantId = req.user?.restaurantId || restHeader || null;
-    return this.productsService.getKardex(7, req.user, restaurantId);
+    const clientTimezone = tzHeader || tzQuery || 'America/Lima';
+    return this.productsService.getKardex(7, req.user, restaurantId, clientTimezone);
   }
 
   @Get(':id')

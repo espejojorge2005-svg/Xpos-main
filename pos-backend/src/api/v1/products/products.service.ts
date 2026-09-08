@@ -272,12 +272,40 @@ export class ProductsService {
     return movements;
   }
 
-  async getKardex(days = 7, reqUser?: any, restaurantIdParam?: string | null) {
+  async getKardex(days = 7, reqUser?: any, restaurantIdParam?: string | null, clientTimezone = 'America/Lima') {
     try {
       const restaurantId = this.getTenantRestaurantId(reqUser, restaurantIdParam);
-      const since = new Date();
-      since.setDate(since.getDate() - (days - 1));
-      since.setHours(0, 0, 0, 0);
+
+      // Validar zona horaria segura (fallback a America/Lima)
+      let timeZone = 'America/Lima';
+      try {
+        if (clientTimezone) {
+          Intl.DateTimeFormat(undefined, { timeZone: clientTimezone });
+          timeZone = clientTimezone;
+        }
+      } catch {
+        timeZone = 'America/Lima';
+      }
+
+      const formatDateInTz = (date: Date): string => {
+        const formatter = new Intl.DateTimeFormat('en-CA', {
+          timeZone,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
+        return formatter.format(date);
+      };
+
+      const now = new Date();
+      const todayStr = formatDateInTz(now);
+      const [ty, tm, td] = todayStr.split('-').map(Number);
+
+      const dates: string[] = [];
+      for (let i = days - 1; i >= 0; i--) {
+        const d = new Date(Date.UTC(ty, tm - 1, td - i, 12, 0, 0));
+        dates.push(formatDateInTz(d));
+      }
 
       const whereProductClause: any = { 
         isActive: true,
@@ -292,36 +320,35 @@ export class ProductsService {
 
       const productIds = allProducts.map(p => p.id);
 
+      // Traer todos los movimientos de los productos ordenados de antiguo a reciente
       const movements = productIds.length > 0 ? await this.prisma.stockMovement.findMany({
-        where: { 
-          productId: { in: productIds },
-          createdAt: { gte: since } 
-        },
+        where: { productId: { in: productIds } },
         select: { productId: true, createdAt: true, stockAfter: true },
         orderBy: { createdAt: 'asc' },
       }) : [];
 
-      const dates: string[] = [];
-      for (let i = days - 1; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        dates.push(d.toISOString().slice(0, 10));
-      }
-
       const closingByProductDate: Record<string, Record<string, number>> = {};
+      const priorStockByProduct: Record<string, number> = {};
+      const firstDateInWindow = dates[0];
 
       for (const mov of movements) {
-        const dateKey = mov.createdAt.toISOString().slice(0, 10);
+        if (!mov.createdAt) continue;
+        const movDateStr = formatDateInTz(mov.createdAt);
         const pid = mov.productId;
-        if (!closingByProductDate[pid]) closingByProductDate[pid] = {};
-        closingByProductDate[pid][dateKey] = mov.stockAfter;
+
+        if (movDateStr < firstDateInWindow) {
+          priorStockByProduct[pid] = mov.stockAfter;
+        } else if (dates.includes(movDateStr)) {
+          if (!closingByProductDate[pid]) closingByProductDate[pid] = {};
+          closingByProductDate[pid][movDateStr] = mov.stockAfter;
+        }
       }
 
-      const todayKey = new Date().toISOString().slice(0, 10);
+      const todayKey = dates[dates.length - 1];
 
       const kardex = allProducts.map((product) => {
         const dailyClosing: Record<string, number | null> = {};
-        let lastKnown: number | null = null;
+        let lastKnown: number | null = priorStockByProduct[product.id] ?? null;
 
         for (const date of dates) {
           const closing = closingByProductDate[product.id]?.[date];

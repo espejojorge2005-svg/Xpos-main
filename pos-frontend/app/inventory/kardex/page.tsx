@@ -48,6 +48,9 @@ function computeLocalKardex(days = 7): KardexData {
 
   // Mapear el último movimiento de cada producto en cada fecha
   const closingByProductDate: Record<string, Record<string, number>> = {};
+  const priorStockByProduct: Record<string, number> = {};
+  const firstDateInWindow = dates[0];
+
   if (Array.isArray(movements)) {
     // Ordenar de más antiguo a más reciente para que el último del día prevalezca
     const sortedMovements = [...movements].sort((a, b) => {
@@ -63,8 +66,12 @@ function computeLocalKardex(days = 7): KardexData {
 
       const dateKey = getLocalDateString(movDate);
       const pid = mov.productId;
-      if (!closingByProductDate[pid]) closingByProductDate[pid] = {};
-      closingByProductDate[pid][dateKey] = Number(mov.stockAfter) || 0;
+      if (dateKey < firstDateInWindow) {
+        priorStockByProduct[pid] = Number(mov.stockAfter) || 0;
+      } else if (dates.includes(dateKey)) {
+        if (!closingByProductDate[pid]) closingByProductDate[pid] = {};
+        closingByProductDate[pid][dateKey] = Number(mov.stockAfter) || 0;
+      }
     }
   }
 
@@ -72,7 +79,7 @@ function computeLocalKardex(days = 7): KardexData {
 
   const kardex: KardexRow[] = (products || []).map((product) => {
     const dailyClosing: Record<string, number | null> = {};
-    let lastKnown: number | null = null;
+    let lastKnown: number | null = priorStockByProduct[product.id] ?? null;
     const currentStockNum = typeof product.stock === 'number' ? product.stock : 0;
 
     for (const date of dates) {
@@ -159,10 +166,12 @@ export default function KardexPage() {
     if (token) {
       try {
         const currentRestId = getRestaurantId();
-        const res = await fetch(getApiUrl('/products/kardex'), {
+        const clientTz = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'America/Lima';
+        const res = await fetch(getApiUrl(`/products/kardex?timezone=${encodeURIComponent(clientTz)}`), {
           headers: { 
             Authorization: `Bearer ${token}`,
-            'x-restaurant-id': currentRestId || ''
+            'x-restaurant-id': currentRestId || '',
+            'x-timezone': clientTz
           },
         });
         if (res.ok) {
