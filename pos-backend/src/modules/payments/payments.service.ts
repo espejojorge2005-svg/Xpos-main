@@ -442,6 +442,7 @@ export class PaymentsService {
   }
 
   // ==========================================
+  // ==========================================
   // ACTUALIZAR UN PAGO EXISTENTE
   // ==========================================
   async updatePayment(id: string, data: { amount: number; tipAmount: number; paymentMethod: any }) {
@@ -461,6 +462,123 @@ export class PaymentsService {
   async deletePayment(id: string) {
     return this.prisma.payment.delete({
       where: { id }
+    });
+  }
+
+  // ==========================================
+  // ACTUALIZAR O EDITAR PAGOS DE UNA ORDEN
+  // ==========================================
+  async updateOrderPayments(
+    orderId: string,
+    data: {
+      amount: number;
+      tip?: number;
+      tipMethod?: string;
+      payments: { id?: string; method: any; amount: number }[];
+    }
+  ) {
+    if (!isValidUuid(orderId)) {
+      return { message: 'Orden local actualizada' };
+    }
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { payments: true }
+    });
+
+    if (!order) {
+      throw new BadRequestException('Orden no encontrada');
+    }
+
+    return await this.prisma.$transaction(async (tx) => {
+      // 1. Actualizar el total de la orden
+      await tx.order.update({
+        where: { id: orderId },
+        data: { totalAmount: data.amount }
+      });
+
+      const tipAmt = Number(data.tip || 0);
+      const tipMethod = data.tipMethod || 'CASH';
+
+      // 2. Gestionar pagos de la orden
+      const existingPayments = order.payments;
+
+      if (data.payments && data.payments.length > 0) {
+        let tipAssigned = false;
+
+        for (let i = 0; i < data.payments.length; i++) {
+          const pData = data.payments[i];
+          const shouldGetTip = (!tipAssigned && (pData.method === tipMethod || i === data.payments.length - 1)) ? tipAmt : 0;
+          if (shouldGetTip > 0) tipAssigned = true;
+
+          if (i < existingPayments.length) {
+            await tx.payment.update({
+              where: { id: existingPayments[i].id },
+              data: {
+                amount: pData.amount,
+                paymentMethod: pData.method,
+                tipAmount: shouldGetTip
+              }
+            });
+          } else {
+            await tx.payment.create({
+              data: {
+                orderId: order.id,
+                amount: pData.amount,
+                paymentMethod: pData.method,
+                tipAmount: shouldGetTip
+              }
+            });
+          }
+        }
+
+        if (existingPayments.length > data.payments.length) {
+          const toDelete = existingPayments.slice(data.payments.length).map(p => p.id);
+          await tx.payment.deleteMany({
+            where: { id: { in: toDelete } }
+          });
+        }
+      } else {
+        if (existingPayments.length > 0) {
+          await tx.payment.update({
+            where: { id: existingPayments[0].id },
+            data: {
+              amount: data.amount,
+              tipAmount: tipAmt
+            }
+          });
+        }
+      }
+
+      return { success: true, message: 'Orden y pagos actualizados correctamente' };
+    });
+  }
+
+  // ==========================================
+  // ANULAR ORDEN DESDE CONTROL DE CAJA
+  // ==========================================
+  async annulOrder(orderId: string) {
+    if (!isValidUuid(orderId)) {
+      return { message: 'Orden local anulada' };
+    }
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId }
+    });
+
+    if (!order) return { message: 'Orden no encontrada' };
+
+    return await this.prisma.$transaction(async (tx) => {
+      await tx.payment.deleteMany({
+        where: { orderId }
+      });
+
+      await tx.order.update({
+        where: { id: orderId },
+        data: { status: 'CANCELLED', totalAmount: 0 }
+      });
+
+      return { success: true, message: 'Orden anulada correctamente' };
     });
   }
 }

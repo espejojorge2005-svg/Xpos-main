@@ -64,6 +64,24 @@ export class PaymentsController {
     return this.paymentsService.getDailyClosure(date, req?.user, restHeader);
   }
 
+  @Patch('order/:orderId')
+  async updateOrderPayments(
+    @Param('orderId') orderId: string,
+    @Body() body: {
+      amount: number;
+      tip?: number;
+      tipMethod?: string;
+      payments: { id?: string; method: any; amount: number }[];
+    }
+  ) {
+    return this.paymentsService.updateOrderPayments(orderId, body);
+  }
+
+  @Delete('order/:orderId')
+  async annulOrder(@Param('orderId') orderId: string) {
+    return this.paymentsService.annulOrder(orderId);
+  }
+
   @Patch(':id')
   updatePayment(
     @Param('id') id: string,

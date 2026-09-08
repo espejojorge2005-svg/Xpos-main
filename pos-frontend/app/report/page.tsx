@@ -1106,54 +1106,154 @@ export default function CashRegisterPage() {
   // ==========================================
   // LÓGICA DE ÓRDENES Y PAGOS DIVIDIDOS
   // ==========================================
+  // Helper para resolver con exactitud la propina que pertenece a una orden específica
+  const findTipForOrder = (order: OrderDetail, tipsList: TipDetail[]): TipDetail | undefined => {
+    if (!order || !Array.isArray(tipsList)) return undefined;
+
+    // 1. Coincidencia por ID de pago de la orden
+    const paymentIds = (order.payments || []).map(p => p.id).filter(Boolean);
+    const byPaymentId = tipsList.find(t => paymentIds.includes(t.id));
+    if (byPaymentId) return byPaymentId;
+
+    // 2. Coincidencia por ID de la orden
+    const byOrderId = tipsList.find(t =>
+      t.id === order.id ||
+      t.id === `tip-${order.id}` ||
+      t.id.startsWith(`t-${order.id}-`) ||
+      t.id.includes(order.id)
+    );
+    if (byOrderId) return byOrderId;
+
+    // 3. Si la orden tiene propina registrada, buscar por mesa y monto coincidente
+    if (order.tip > 0) {
+      const byAmountAndTable = tipsList.find(t =>
+        t.table === order.table && Math.abs(Number(t.amount) - Number(order.tip)) < 0.01
+      );
+      if (byAmountAndTable) return byAmountAndTable;
+    }
+
+    return undefined;
+  };
+
+  // ==========================================
+  // LÓGICA DE ÓRDENES Y PAGOS DIVIDIDOS
+  // ==========================================
   const handleDeleteOrder = async (orderId: string) => {
     if (!confirm('¿Estás seguro de ANULAR esta orden? Se restará de tus ingresos del día.')) return;
     try {
       const orderToAnul = report.ordersDetail.find(o => o.id === orderId);
       if (!orderToAnul) return;
-      let oldCash = 0, oldCard = 0, oldTransfer = 0;
-      orderToAnul.payments.forEach(p => {
-        if (p.method === 'CASH') oldCash += p.amount;
-        if (p.method === 'CARD') oldCard += p.amount;
-        if (p.method === 'TRANSFER') oldTransfer += p.amount;
+
+      const oldTip = findTipForOrder(orderToAnul, report.tipsDetail);
+
+      // Eliminar SOLO esta orden y SOLO su propina específica (sin afectar otras órdenes de la misma mesa)
+      const updatedOrdersDetail = report.ordersDetail.filter(o => o.id !== orderId);
+      const updatedTipsDetail = report.tipsDetail.filter(t => {
+        if (oldTip) return t.id !== oldTip.id && t !== oldTip;
+        return true;
       });
-      const oldTipDetail = report.tipsDetail.find(t => t.table === orderToAnul.table);
-      let updatedTipsBreakdown = { ...report.tipsBreakdown };
-      if (oldTipDetail) {
-        if (oldTipDetail.method === 'CASH') oldCash += oldTipDetail.amount;
-        if (oldTipDetail.method === 'CARD') oldCard += oldTipDetail.amount;
-        if (oldTipDetail.method === 'TRANSFER') oldTransfer += oldTipDetail.amount;
-        updatedTipsBreakdown[oldTipDetail.method] -= oldTipDetail.amount;
-      }
-      setReport(prev => ({
-        ...prev,
-        totalSales: prev.totalSales - orderToAnul.amount,
-        totalTips: prev.totalTips - (oldTipDetail ? oldTipDetail.amount : 0),
-        cash: prev.cash - oldCash,
-        card: prev.card - oldCard,
-        yapePlin: prev.yapePlin - oldTransfer,
-        ticketCount: prev.ticketCount - 1,
-        expectedCashInDrawer: prev.expectedCashInDrawer - oldCash,
-        ordersDetail: prev.ordersDetail.filter(o => o.id !== orderId),
-        tipsDetail: prev.tipsDetail.filter(t => t.table !== orderToAnul.table),
+
+      // Recalcular breakdown de propinas
+      const updatedTipsBreakdown = { CASH: 0, CARD: 0, TRANSFER: 0 };
+      updatedTipsDetail.forEach(t => {
+        const m = String(t.method || 'CASH').toUpperCase();
+        if (m === 'CASH') updatedTipsBreakdown.CASH += Number(t.amount) || 0;
+        else if (m === 'CARD') updatedTipsBreakdown.CARD += Number(t.amount) || 0;
+        else if (m === 'TRANSFER') updatedTipsBreakdown.TRANSFER += Number(t.amount) || 0;
+      });
+
+      // Recalcular métricas de caja
+      let recomputedCash = 0, recomputedCard = 0, recomputedTransfer = 0, recomputedTotalSales = 0;
+      updatedOrdersDetail.forEach(o => {
+        recomputedTotalSales += Number(o.amount) || 0;
+        (o.payments || []).forEach(p => {
+          const m = String(p.method || 'CASH').toUpperCase();
+          if (m === 'CASH') recomputedCash += Number(p.amount) || 0;
+          else if (m === 'CARD') recomputedCard += Number(p.amount) || 0;
+          else if (m === 'TRANSFER') recomputedTransfer += Number(p.amount) || 0;
+        });
+      });
+
+      updatedTipsDetail.forEach(t => {
+        const m = String(t.method || 'CASH').toUpperCase();
+        const amt = Number(t.amount) || 0;
+        if (m === 'CASH') recomputedCash += amt;
+        else if (m === 'CARD') recomputedCard += amt;
+        else if (m === 'TRANSFER') recomputedTransfer += amt;
+        else recomputedCash += amt;
+      });
+
+      const recomputedTotalTips = updatedTipsDetail.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+      const updatedReport: ReportState = {
+        ...report,
+        totalSales: recomputedTotalSales,
+        totalTips: recomputedTotalTips,
+        cash: recomputedCash,
+        card: recomputedCard,
+        yapePlin: recomputedTransfer,
+        ticketCount: Math.max(0, updatedOrdersDetail.length),
+        expectedCashInDrawer: Math.max(0, report.openingCash + recomputedCash - report.totalExpenses),
+        ordersDetail: updatedOrdersDetail,
+        tipsDetail: updatedTipsDetail,
         tipsBreakdown: updatedTipsBreakdown
-      }));
+      };
+
+      setReport(updatedReport);
+      setScopedStorage('pos_daily_closure_cache', updatedReport);
+
+      // Registrar en pos_closed_items para que no resucite en futuros refrescos
+      const closedItems = getScopedStorage<string[]>('pos_closed_items', []);
+      const itemsToClose = [orderId];
+      if (oldTip) itemsToClose.push(oldTip.id);
+      setScopedStorage('pos_closed_items', [...closedItems, ...itemsToClose]);
+
+      // Actualizar mock_cash_shift local
+      const currentShift = getScopedStorage<any>('mock_cash_shift', null);
+      if (currentShift && Array.isArray(currentShift.payments)) {
+        setScopedStorage('mock_cash_shift', {
+          ...currentShift,
+          payments: currentShift.payments.filter((p: any) => p.orderId !== orderId && p.id !== orderId)
+        });
+      }
+
+      // Notificar al backend si hay token
+      const token = localStorage.getItem('pos_token');
+      if (token) {
+        fetch(getApiUrl(`/payments/order/${orderId}`), {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'x-restaurant-id': getRestaurantId() || ''
+          }
+        }).catch(() => {});
+      }
+
       toast.success('Orden anulada. Caja re-calculada.');
     } catch (e) { toast.error('Error al anular orden'); }
   };
 
   const openEditOrderModal = (order: OrderDetail) => {
     let c = 0, cd = 0, t = 0;
-    order.payments.forEach(p => {
-      if (p.method === 'CASH') c += p.amount;
-      if (p.method === 'CARD') cd += p.amount;
-      if (p.method === 'TRANSFER') t += p.amount;
+    (order.payments || []).forEach(p => {
+      const m = String(p.method || 'CASH').toUpperCase();
+      if (m === 'CASH') c += Number(p.amount) || 0;
+      else if (m === 'CARD') cd += Number(p.amount) || 0;
+      else if (m === 'TRANSFER') t += Number(p.amount) || 0;
     });
-    const tipDetail = report.tipsDetail.find(td => td.table === order.table);
+
+    const tipDetail = findTipForOrder(order, report.tipsDetail);
+    const tipAmount = order.tip > 0 ? order.tip : (tipDetail ? tipDetail.amount : 0);
+    const tipMethod = tipDetail ? tipDetail.method : (order.methods[0] || 'CASH');
+
     setEditOrderForm({
-      id: order.id, table: order.table,
-      cashAmount: c > 0 ? c.toString() : '', cardAmount: cd > 0 ? cd.toString() : '', transferAmount: t > 0 ? t.toString() : '',
-      tip: tipDetail ? tipDetail.amount.toString() : '', tipMethod: tipDetail ? tipDetail.method : (order.methods[0] || 'CASH')
+      id: order.id,
+      table: order.table,
+      cashAmount: c > 0 ? c.toString() : '',
+      cardAmount: cd > 0 ? cd.toString() : '',
+      transferAmount: t > 0 ? t.toString() : '',
+      tip: tipAmount > 0 ? tipAmount.toString() : '',
+      tipMethod: tipMethod || 'CASH'
     });
     setShowEditOrderModal(true);
   };
@@ -1164,7 +1264,7 @@ export default function CashRegisterPage() {
     const nCard = parseFloat(editOrderForm.cardAmount || '0');
     const nTrans = parseFloat(editOrderForm.transferAmount || '0');
     const newTip = parseFloat(editOrderForm.tip || '0');
-    const newTipMethod = editOrderForm.tipMethod;
+    const newTipMethod = editOrderForm.tipMethod || 'CASH';
 
     if (nCash < 0 || nCard < 0 || nTrans < 0 || newTip < 0) return toast.error('Los montos no pueden ser negativos');
     const newAmount = nCash + nCard + nTrans;
@@ -1173,56 +1273,143 @@ export default function CashRegisterPage() {
     try {
       const orderToEdit = report.ordersDetail.find(o => o.id === editOrderForm.id);
       if (!orderToEdit) return;
-      let oldCash = 0, oldCard = 0, oldTransfer = 0;
-      orderToEdit.payments.forEach(p => {
-        if (p.method === 'CASH') oldCash += p.amount;
-        if (p.method === 'CARD') oldCard += p.amount;
-        if (p.method === 'TRANSFER') oldTransfer += p.amount;
-      });
-      const oldTipDetail = report.tipsDetail.find(t => t.table === orderToEdit.table);
-      let updatedTipsBreakdown = { ...report.tipsBreakdown };
-      if (oldTipDetail) {
-        if (oldTipDetail.method === 'CASH') oldCash += oldTipDetail.amount;
-        if (oldTipDetail.method === 'CARD') oldCard += oldTipDetail.amount;
-        if (oldTipDetail.method === 'TRANSFER') oldTransfer += oldTipDetail.amount;
-        updatedTipsBreakdown[oldTipDetail.method] -= oldTipDetail.amount;
-      }
-      let newCashTotal = nCash, newCardTotal = nCard, newTransTotal = nTrans;
-      if (newTipMethod === 'CASH') newCashTotal += newTip;
-      if (newTipMethod === 'CARD') newCardTotal += newTip;
-      if (newTipMethod === 'TRANSFER') newTransTotal += newTip;
-      if (newTip > 0) updatedTipsBreakdown[newTipMethod] += newTip;
 
-      const diffCash = newCashTotal - oldCash;
-      const diffCard = newCardTotal - oldCard;
-      const diffTransfer = newTransTotal - oldTransfer;
-      const diffTotalSales = newAmount - orderToEdit.amount;
-      const diffTotalTips = newTip - (oldTipDetail ? oldTipDetail.amount : 0);
+      const oldTip = findTipForOrder(orderToEdit, report.tipsDetail);
 
+      // 1. Armar nuevos pagos
       const newPayments: { id: string; method: string; amount: number }[] = [];
       const newMethods: string[] = [];
-      if (nCash > 0) { newPayments.push({ id: `p-c-${Date.now()}`, method: 'CASH', amount: nCash }); newMethods.push('CASH'); }
-      if (nCard > 0) { newPayments.push({ id: `p-cd-${Date.now()}`, method: 'CARD', amount: nCard }); newMethods.push('CARD'); }
-      if (nTrans > 0) { newPayments.push({ id: `p-t-${Date.now()}`, method: 'TRANSFER', amount: nTrans }); newMethods.push('TRANSFER'); }
-      if (newTip > 0 && !newMethods.includes(newTipMethod)) newMethods.push(newTipMethod);
+      if (nCash > 0) {
+        newPayments.push({ id: `p-c-${orderToEdit.id}`, method: 'CASH', amount: nCash });
+        newMethods.push('CASH');
+      }
+      if (nCard > 0) {
+        newPayments.push({ id: `p-cd-${orderToEdit.id}`, method: 'CARD', amount: nCard });
+        newMethods.push('CARD');
+      }
+      if (nTrans > 0) {
+        newPayments.push({ id: `p-t-${orderToEdit.id}`, method: 'TRANSFER', amount: nTrans });
+        newMethods.push('TRANSFER');
+      }
+      if (newTip > 0 && !newMethods.includes(newTipMethod)) {
+        newMethods.push(newTipMethod);
+      }
 
-      setReport(prev => {
-        let updatedTipsDetail = prev.tipsDetail.filter(t => t.table !== orderToEdit.table);
-        if (newTip > 0) updatedTipsDetail.push({ id: `t-${orderToEdit.id}-${Date.now()}`, table: orderToEdit.table, amount: newTip, method: newTipMethod });
+      // 2. Actualizar ordersDetail
+      const updatedOrdersDetail = report.ordersDetail.map(o => {
+        if (o.id !== editOrderForm.id) return o;
         return {
-          ...prev,
-          totalSales: prev.totalSales + diffTotalSales,
-          totalTips: prev.totalTips + diffTotalTips,
-          cash: prev.cash + diffCash,
-          card: prev.card + diffCard,
-          yapePlin: prev.yapePlin + diffTransfer,
-          expectedCashInDrawer: prev.expectedCashInDrawer + diffCash,
-          ordersDetail: prev.ordersDetail.map(o => o.id === editOrderForm.id ? { ...o, amount: newAmount, tip: newTip, methods: newMethods, payments: newPayments } : o),
-          tipsDetail: updatedTipsDetail,
-          tipsBreakdown: updatedTipsBreakdown
+          ...o,
+          amount: newAmount,
+          tip: newTip,
+          methods: newMethods.length > 0 ? newMethods : ['CASH'],
+          payments: newPayments
         };
       });
-      toast.success('Orden dividida actualizada correctamente.');
+
+      // 3. Actualizar tipsDetail (reemplazando ÚNICAMENTE la propina de esta orden específica)
+      let updatedTipsDetail = report.tipsDetail.filter(t => {
+        if (oldTip) return t.id !== oldTip.id && t !== oldTip;
+        return true;
+      });
+
+      if (newTip > 0) {
+        updatedTipsDetail.push({
+          id: oldTip?.id || `tip-${orderToEdit.id}`,
+          table: orderToEdit.table,
+          amount: newTip,
+          method: newTipMethod
+        });
+      }
+
+      // 4. Recalcular breakdown de propinas
+      const updatedTipsBreakdown = { CASH: 0, CARD: 0, TRANSFER: 0 };
+      updatedTipsDetail.forEach(t => {
+        const m = String(t.method || 'CASH').toUpperCase();
+        if (m === 'CASH') updatedTipsBreakdown.CASH += Number(t.amount) || 0;
+        else if (m === 'CARD') updatedTipsBreakdown.CARD += Number(t.amount) || 0;
+        else if (m === 'TRANSFER') updatedTipsBreakdown.TRANSFER += Number(t.amount) || 0;
+      });
+
+      // 5. Recalcular totales con precisión matemática
+      let recomputedCash = 0, recomputedCard = 0, recomputedTransfer = 0, recomputedTotalSales = 0;
+      updatedOrdersDetail.forEach(o => {
+        recomputedTotalSales += Number(o.amount) || 0;
+        (o.payments || []).forEach(p => {
+          const m = String(p.method || 'CASH').toUpperCase();
+          if (m === 'CASH') recomputedCash += Number(p.amount) || 0;
+          else if (m === 'CARD') recomputedCard += Number(p.amount) || 0;
+          else if (m === 'TRANSFER') recomputedTransfer += Number(p.amount) || 0;
+        });
+      });
+
+      updatedTipsDetail.forEach(t => {
+        const m = String(t.method || 'CASH').toUpperCase();
+        const amt = Number(t.amount) || 0;
+        if (m === 'CASH') recomputedCash += amt;
+        else if (m === 'CARD') recomputedCard += amt;
+        else if (m === 'TRANSFER') recomputedTransfer += amt;
+        else recomputedCash += amt;
+      });
+
+      const recomputedTotalTips = updatedTipsDetail.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+      const updatedReport: ReportState = {
+        ...report,
+        totalSales: recomputedTotalSales,
+        totalTips: recomputedTotalTips,
+        cash: recomputedCash,
+        card: recomputedCard,
+        yapePlin: recomputedTransfer,
+        expectedCashInDrawer: Math.max(0, report.openingCash + recomputedCash - report.totalExpenses),
+        ordersDetail: updatedOrdersDetail,
+        tipsDetail: updatedTipsDetail,
+        tipsBreakdown: updatedTipsBreakdown
+      };
+
+      // 6. Guardar en memoria y en caché
+      setReport(updatedReport);
+      setScopedStorage('pos_daily_closure_cache', updatedReport);
+
+      // 7. Sincronizar con mock_cash_shift local
+      const currentShift = getScopedStorage<any>('mock_cash_shift', null);
+      if (currentShift && Array.isArray(currentShift.payments)) {
+        const updatedLocalPayments = currentShift.payments.map((p: any) => {
+          const matches = p.orderId === editOrderForm.id || p.id === editOrderForm.id;
+          if (!matches) return p;
+          return {
+            ...p,
+            amount: newAmount,
+            tipAmount: newTip,
+            method: newMethods[0] || 'CASH'
+          };
+        });
+        setScopedStorage('mock_cash_shift', {
+          ...currentShift,
+          payments: updatedLocalPayments
+        });
+      }
+
+      // 8. Sincronizar con el backend si hay token
+      const token = localStorage.getItem('pos_token');
+      if (token) {
+        fetch(getApiUrl(`/payments/order/${editOrderForm.id}`), {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            'x-restaurant-id': getRestaurantId() || ''
+          },
+          body: JSON.stringify({
+            amount: newAmount,
+            tip: newTip,
+            tipMethod: newTipMethod,
+            payments: newPayments
+          })
+        }).catch(() => {});
+      }
+
+      toast.success('Orden actualizada correctamente.');
       setShowEditOrderModal(false);
     } catch (e) { toast.error('Error al editar orden'); }
   };
