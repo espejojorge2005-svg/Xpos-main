@@ -75,7 +75,7 @@ export default function OrderNotificationListener() {
 
     playBellChime();
     toast.success(`🍽️ ¡Pedido Listo para Servir!`, {
-      description: `${tableLabel} — Cocina terminó de preparar los platos y están listos para llevar a la mesa.`,
+      description: tableLabel,
       position: 'top-right',
       duration: 10000,
       action: {
