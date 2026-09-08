@@ -1431,7 +1431,10 @@ export default function CashRegisterPage() {
                   <p className="text-xl sm:text-2xl font-black text-emerald-600 mb-3">S/ {Number(t.total || 0).toFixed(2)}</p>
                 </div>
                 <button
-                  onClick={() => router.push(`/pos/${t.tableId}?mode=caja`)}
+                  onClick={() => {
+                    const cleanNum = String(t.tableName || '').replace(/^(mesa\s+)+/i, '').trim();
+                    router.push(`/pos/${t.tableId}?mode=caja&name=${encodeURIComponent(t.tableName || '')}&number=${encodeURIComponent(cleanNum)}`);
+                  }}
                   className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md shadow-indigo-100 active:scale-[0.98]"
                 >
                   <ReceiptText className="w-4 h-4" /> Cobrar en Caja

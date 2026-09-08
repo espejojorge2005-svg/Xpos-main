@@ -379,9 +379,23 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
           );
 
         // Validar que la orden sea reciente (< 12 horas)
-        const isOrderRecent = tableOrder?.createdAt && (now - new Date(tableOrder.createdAt).getTime() < twelveHoursMs);
+        const orderAge = tableOrder?.createdAt ? (now - new Date(tableOrder.createdAt).getTime()) : 0;
+        const isOrderRecent = tableOrder?.createdAt && orderAge < twelveHoursMs;
+        const isBrandNewLocal = isOrderRecent && orderAge < 45000;
 
-        if (tableOrder && isOrderRecent) {
+        // Si ya se consultó el backend/Firebase y no hay comanda activa abierta,
+        // se purga la orden huérfana de memoria para no resucitar platos ya cobrados.
+        if (!foundActiveOrder && tableOrder && !isBrandNewLocal) {
+          delete activeTableOrders[tableId];
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tableId);
+          const cleanNum = (!isUuid && tableId.startsWith('t-') ? tableId.replace('t-', '') : '') || 
+                           (!isUuid && !isNaN(parseInt(tableId)) ? String(parseInt(tableId)) : '');
+          if (cleanNum) {
+            delete activeTableOrders[`t-${cleanNum}`];
+            delete activeTableOrders[cleanNum];
+          }
+          setScopedStorage('pos_active_table_orders', activeTableOrders);
+        } else if (tableOrder && isOrderRecent && (!foundActiveOrder ? isBrandNewLocal : true)) {
           if (!activeOrderId && tableOrder.orderId) setActiveOrderId(tableOrder.orderId);
           if (tableOrder.tableName) setTableName(tableOrder.tableName);
           if (tableOrder.payments && Array.isArray(tableOrder.payments) && tableOrder.payments.length > 0) {
@@ -1006,6 +1020,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
           status: 'CLOSED',
           totalAmount: existingSubtotal,
           items: [],
+          billRequested: false,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           restaurantId: restId
@@ -1393,9 +1408,9 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         } catch {}
       }
 
-      let updatedPayments = [...payments, { id: `pay-${Date.now()}`, amount: paymentAmount, tipAmount, method: paymentMethod }];
+      let updatedPayments = [...payments, { id: `pay-${Date.now()}`, amount: finalPaymentAmount, tipAmount, method: paymentMethod }];
       if (editingPaymentId) {
-        updatedPayments = payments.map(p => p.id === editingPaymentId ? { ...p, amount: paymentAmount, tipAmount, method: paymentMethod } : p);
+        updatedPayments = payments.map(p => p.id === editingPaymentId ? { ...p, amount: finalPaymentAmount, tipAmount, method: paymentMethod } : p);
       }
 
       setPayments(updatedPayments);
@@ -1407,7 +1422,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         id: `pay-${Date.now()}`,
         orderId: activeOrderId || `ord-${tableId}`,
         table: safeTName,
-        amount: paymentAmount,
+        amount: finalPaymentAmount,
         method: paymentMethod,
         tipAmount: tipAmount || 0,
         date: new Date().toISOString(),
@@ -1427,7 +1442,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         if (cachedReport) {
           const m = String(paymentMethod || 'CASH').toUpperCase();
           const tip = Number(tipAmount || 0);
-          const payTotal = Number(paymentAmount) + tip;
+          const payTotal = Number(finalPaymentAmount) + tip;
 
           let newCash = Number(cachedReport.cash || 0);
           let newCard = Number(cachedReport.card || 0);
@@ -1439,7 +1454,7 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
 
           const updatedReport = {
             ...cachedReport,
-            totalSales: Number(cachedReport.totalSales || 0) + Number(paymentAmount),
+            totalSales: Number(cachedReport.totalSales || 0) + Number(finalPaymentAmount),
             cash: newCash,
             card: newCard,
             yapePlin: newTransfer,
@@ -1455,15 +1470,26 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
         syncShiftPaymentToFirebase(restId, newPaymentRecord).catch(() => {});
       }
 
-      const newTotalPaid = updatedPayments.reduce((sum, p) => sum + p.amount, 0);
+      const newTotalPaid = roundCurrency(updatedPayments.reduce((sum, p) => sum + p.amount, 0));
+      const targetSubtotal = roundCurrency(existingSubtotal || finalPaymentAmount);
+      const isFullyPaid = (newTotalPaid >= targetSubtotal - 0.01) || 
+                          (existingItems.length > 0 && existingItems.every(i => i.isPaid));
       
-      if (newTotalPaid >= (existingSubtotal || paymentAmount)) {
+      if (isFullyPaid) {
         clearLocalTableOccupancy();
         if (restId && tableId !== 'takeout') {
           syncTableToFirebase(tableId, 'FREE', restId).catch(() => {});
+          if (cleanNum) {
+            syncTableToFirebase(`t-${cleanNum}`, 'FREE', restId).catch(() => {});
+            syncTableToFirebase(cleanNum, 'FREE', restId).catch(() => {});
+          }
           try {
             const currentActive = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
             delete currentActive[tableId];
+            if (cleanNum) {
+              delete currentActive[`t-${cleanNum}`];
+              delete currentActive[cleanNum];
+            }
             syncActiveTableOrdersToFirebase(restId, currentActive).catch(() => {});
           } catch {}
         }

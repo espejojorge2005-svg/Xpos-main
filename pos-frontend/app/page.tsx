@@ -1,7 +1,7 @@
 'use client';
 import { getApiUrl } from '@/utils/api';
 import { getScopedStorage, getRestaurantId, setScopedStorage, removeScopedStorage } from '@/utils/storage';
-import { subscribeToCashShift, subscribeToZones, subscribeToOrders, isTableMatchingOrder, formatTableName } from '@/utils/firebaseSync';
+import { subscribeToCashShift, subscribeToZones, subscribeToOrders, subscribeToActiveTableOrders, isTableMatchingOrder, formatTableName } from '@/utils/firebaseSync';
 import { formatWaitTime } from '@/utils/date';
 
 import { useEffect, useState, useRef } from 'react';
@@ -200,8 +200,13 @@ const getInitialZones = (): Zone[] => {
       const now = Date.now();
       let hasExpired = false;
 
-      // Purgar órdenes locales expiradas de inmediato
+      // Purgar órdenes locales expiradas, cerradas o canceladas de inmediato
       Object.entries(activeTableOrders).forEach(([key, ord]: [string, any]) => {
+        if (ord?.status === 'CLOSED' || ord?.status === 'CANCELLED') {
+          delete activeTableOrders[key];
+          hasExpired = true;
+          return;
+        }
         if (ord?.createdAt) {
           const age = now - new Date(ord.createdAt).getTime();
           if (age >= twelveHoursMs) {
@@ -288,6 +293,7 @@ export default function Home() {
     const currentRestId = getRestaurantId() || 'main';
     let loadedZones: Zone[] = [];
 
+    let isServerOnline = false;
     try {
       const response = await fetch(getApiUrl('/floor/zones'), {
         headers: { 
@@ -299,14 +305,15 @@ export default function Home() {
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data) && data.length > 0) {
+          isServerOnline = true;
           // Guardar estructura física limpia en caché con nombres formateados
           const cleanLayoutTemplate = data.map((z: any) => ({
             ...z,
             tables: (z.tables || []).map((t: any) => ({
               ...t,
               name: formatTableName(t.name, t.number),
-              status: 'FREE',
-              orders: []
+              status: (t.orders && t.orders.length > 0) ? 'OCCUPIED' : 'FREE',
+              orders: t.orders || []
             }))
           }));
           setScopedStorage('pos_registered_zones', cleanLayoutTemplate);
@@ -380,6 +387,7 @@ export default function Home() {
         setScopedStorage('pos_active_table_orders', activeTableOrders);
       }
 
+      let localModified = false;
       loadedZones = loadedZones.map(zone => ({
         ...zone,
         tables: zone.tables.map(table => {
@@ -393,19 +401,33 @@ export default function Home() {
           // Verificar si la orden local es reciente (menos de 12 horas)
           const orderAge = orderInfo?.createdAt ? (now - new Date(orderInfo.createdAt).getTime()) : 0;
           const isOrderRecent = orderInfo?.createdAt && orderAge < twelveHoursMs;
+          const isBrandNewOffline = isOrderRecent && orderAge < 45000;
+          const hasServerOrder = Boolean(table.orders && table.orders.length > 0);
 
-          const isOrderActive = isOrderRecent && orderInfo && (orderInfo.status === 'OCCUPIED' || (Array.isArray(orderInfo.items) && orderInfo.items.length > 0));
-          const hasServerOrder = (table.orders && table.orders.length > 0);
+          // Si el servidor backend respondió con éxito y la mesa NO tiene comanda activa en BD,
+          // se purga la orden local residual para evitar que resurja tras el cobro.
+          if (isServerOnline && !hasServerOrder && !isBrandNewOffline && orderInfo) {
+            delete activeTableOrders[table.id];
+            if (cleanNum) {
+              delete activeTableOrders[`t-${cleanNum}`];
+              delete activeTableOrders[cleanNum];
+            }
+            localModified = true;
+          }
 
-          if (isOrderActive || hasServerOrder) {
+          const isOrderActive = hasServerOrder || 
+            (isServerOnline && isBrandNewOffline && orderInfo) || 
+            (!isServerOnline && isOrderRecent && orderInfo && (orderInfo.status === 'OCCUPIED' || (Array.isArray(orderInfo.items) && orderInfo.items.length > 0)));
+
+          if (isOrderActive) {
             const serverOrder = table.orders && table.orders.length > 0 ? table.orders[0] : null;
-            const activeData = isOrderActive ? orderInfo : serverOrder;
+            const activeData = serverOrder || orderInfo;
             return {
               ...table,
               name: tableName,
               number: cleanNum,
               status: 'OCCUPIED' as const,
-              billRequested: !!(orderInfo?.billRequested || table.billRequested),
+              billRequested: Boolean(orderInfo?.billRequested || (table as any).billRequested),
               orders: [{
                 id: activeData?.orderId || activeData?.id || `ord-${table.id}`,
                 createdAt: activeData?.createdAt || new Date().toISOString(),
@@ -418,10 +440,15 @@ export default function Home() {
             name: tableName,
             number: cleanNum,
             status: 'FREE' as const,
+            billRequested: false,
             orders: []
           };
         })
       }));
+
+      if (localModified) {
+        setScopedStorage('pos_active_table_orders', activeTableOrders);
+      }
     } catch {}
 
     setZones(loadedZones);
@@ -514,6 +541,7 @@ export default function Home() {
     const unsubscribeOrders = subscribeToOrders(currentRestId, (allOrders) => {
       if (Array.isArray(allOrders)) {
         const openOrders = allOrders.filter(o => o.status === 'OPEN' || o.status === 'SERVED');
+        const closedOrCancelledOrders = allOrders.filter(o => o.status === 'CLOSED' || o.status === 'CANCELLED');
         const activeMap: Record<string, any> = {};
         
         openOrders.forEach(o => {
@@ -525,7 +553,7 @@ export default function Home() {
             createdAt: o.createdAt || new Date().toISOString(),
             total: o.totalAmount || 0,
             status: 'OCCUPIED',
-            billRequested: !!o.billRequested,
+            billRequested: Boolean(o.billRequested),
             items: o.items || []
           };
           if (tId) activeMap[tId] = entry;
@@ -535,7 +563,26 @@ export default function Home() {
         // Combinar con órdenes activas locales existentes
         const currentActive = getScopedStorage<Record<string, any>>('pos_active_table_orders', {}) || {};
         
-        // Si una orden en Firebase cambió de mesa, eliminar la mesa previa del caché local
+        // 1. Purgar órdenes que ya fueron cerradas o canceladas en Firebase
+        closedOrCancelledOrders.forEach(co => {
+          Object.entries(currentActive).forEach(([k, existingOrder]: [string, any]) => {
+            const matchesId = existingOrder?.orderId === co.id || k === co.id;
+            const matchesTable = co.tableId && (existingOrder?.tableId === co.tableId || k === co.tableId);
+            const matchesName = co.tableName && existingOrder?.tableName && 
+              existingOrder.tableName.toLowerCase().replace(/\s+/g, '') === co.tableName.toLowerCase().replace(/\s+/g, '');
+            if (matchesId || matchesTable || matchesName) {
+              const hasOtherOpen = openOrders.some(oo => 
+                (co.tableId && oo.tableId === co.tableId) || 
+                (co.tableName && oo.tableName?.toLowerCase().replace(/\s+/g, '') === co.tableName?.toLowerCase().replace(/\s+/g, ''))
+              );
+              if (!hasOtherOpen) {
+                delete currentActive[k];
+              }
+            }
+          });
+        });
+
+        // 2. Si una orden en Firebase cambió de mesa, eliminar la mesa previa del caché local
         openOrders.forEach(o => {
           const tId = o.tableId;
           Object.entries(currentActive).forEach(([k, existingOrder]: [string, any]) => {
@@ -545,7 +592,19 @@ export default function Home() {
           });
         });
 
-        const mergedActive = { ...currentActive, ...activeMap };
+        // 3. Conservar solo órdenes locales pendientes recién creadas offline (< 45s)
+        const nowMs = Date.now();
+        const pendingOfflineLocal: Record<string, any> = {};
+        Object.entries(currentActive).forEach(([k, ord]: [string, any]) => {
+          const age = ord?.createdAt ? (nowMs - new Date(ord.createdAt).getTime()) : Infinity;
+          const isBrandNewLocal = age < 45000;
+          const isAlreadyClosed = closedOrCancelledOrders.some(co => co.id === ord?.orderId);
+          if (isBrandNewLocal && !isAlreadyClosed && !activeMap[k]) {
+            pendingOfflineLocal[k] = ord;
+          }
+        });
+
+        const mergedActive = { ...pendingOfflineLocal, ...activeMap };
         setScopedStorage('pos_active_table_orders', mergedActive);
 
         setZones(prevZones => prevZones.map(zone => ({
@@ -560,19 +619,17 @@ export default function Home() {
                 o && (o.status === 'OCCUPIED' || o.status === 'OPEN' || o.status === 'SERVED') && isTableMatchingOrder(table, o)
               );
 
-            // Una mesa SOLO está ocupada si tiene una comanda abierta activa real y reciente (< 12h)
-            const twelveHoursMs = 12 * 60 * 60 * 1000;
-            const isLocalRecent = localOrder?.createdAt && (Date.now() - new Date(localOrder.createdAt).getTime() < twelveHoursMs);
-            const hasActiveOrder = Boolean(matchedOrder || (isLocalRecent && (localOrder.status === 'OCCUPIED' || localOrder.status === 'OPEN')));
+            const hasActiveOrder = Boolean(matchedOrder || localOrder);
 
             if (hasActiveOrder) {
               const activeSource = matchedOrder || localOrder;
+              const isBillReq = matchedOrder ? Boolean(matchedOrder.billRequested) : Boolean(localOrder?.billRequested);
               return {
                 ...table,
                 name: tableName,
                 number: cleanNum,
                 status: 'OCCUPIED' as const,
-                billRequested: !!(matchedOrder?.billRequested || localOrder?.billRequested),
+                billRequested: isBillReq,
                 orders: [{
                   id: activeSource?.id || activeSource?.orderId || `ord-${table.id}`,
                   createdAt: activeSource?.createdAt || new Date().toISOString(),
@@ -629,11 +686,32 @@ export default function Home() {
       }
     });
 
+    // 4. Escucha en tiempo real de mapa global de órdenes de mesa en Firebase
+    const unsubscribeActiveOrders = subscribeToActiveTableOrders(currentRestId, (cloudActive) => {
+      if (cloudActive && typeof cloudActive === 'object') {
+        const localActive = getScopedStorage<Record<string, any>>('pos_active_table_orders', {}) || {};
+        let modified = false;
+        const nowMs = Date.now();
+        Object.entries(localActive).forEach(([k, ord]: [string, any]) => {
+          const age = ord?.createdAt ? (nowMs - new Date(ord.createdAt).getTime()) : Infinity;
+          if (age >= 45000 && !cloudActive[k]) {
+            delete localActive[k];
+            modified = true;
+          }
+        });
+        if (modified) {
+          setScopedStorage('pos_active_table_orders', localActive);
+          fetchZonas();
+        }
+      }
+    });
+
     return () => {
       clearInterval(interval);
       if (typeof unsubscribeOrders === 'function') unsubscribeOrders();
       if (typeof unsubscribeZones === 'function') unsubscribeZones();
       if (typeof unsubscribeShift === 'function') unsubscribeShift();
+      if (typeof unsubscribeActiveOrders === 'function') unsubscribeActiveOrders();
     };
   }, [router, isEditMode]);
 

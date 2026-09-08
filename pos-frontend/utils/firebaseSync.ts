@@ -645,6 +645,7 @@ export const closeTableOrdersInFirebase = async (
       if (matches) {
         await updateDoc(doc(db, 'orders', d.id), {
           status: 'CLOSED',
+          billRequested: false,
           updatedAt: nowIso
         });
       }
@@ -657,6 +658,7 @@ export const closeTableOrdersInFirebase = async (
       await setDoc(doc(db, 'orders', orderId), {
         id: orderId,
         status: 'CLOSED',
+        billRequested: false,
         updatedAt: nowIso,
         restaurantId
       }, { merge: true });
