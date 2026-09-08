@@ -1477,22 +1477,6 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
       
       if (isFullyPaid) {
         clearLocalTableOccupancy();
-        if (restId && tableId !== 'takeout') {
-          syncTableToFirebase(tableId, 'FREE', restId).catch(() => {});
-          if (cleanNum) {
-            syncTableToFirebase(`t-${cleanNum}`, 'FREE', restId).catch(() => {});
-            syncTableToFirebase(cleanNum, 'FREE', restId).catch(() => {});
-          }
-          try {
-            const currentActive = getScopedStorage<Record<string, any>>('pos_active_table_orders', {});
-            delete currentActive[tableId];
-            if (cleanNum) {
-              delete currentActive[`t-${cleanNum}`];
-              delete currentActive[cleanNum];
-            }
-            syncActiveTableOrdersToFirebase(restId, currentActive).catch(() => {});
-          } catch {}
-        }
         toast.success("Cuenta cobrada en su totalidad y mesa liberada ✅");
         setShowCheckout(false);
         if (isCashierMode) {
