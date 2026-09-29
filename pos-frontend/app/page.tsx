@@ -278,13 +278,12 @@ export default function Home() {
   const totalFreeTables = zones.reduce((acc, z) => acc + (z.tables?.filter(t => t.status === 'FREE').length || 0), 0);
   const totalOccupiedTables = zones.reduce((acc, z) => acc + (z.tables?.filter(t => t.status !== 'FREE').length || 0), 0);
 
-  // Estado para verificar si la caja está abierta (inicializado desde caché inmediata)
-  const [isShiftOpen, setIsShiftOpen] = useState<boolean | null>(() => {
-    if (typeof window === 'undefined') return null;
+  // Estado para verificar si la caja está abierta (inicializado desde caché inmediata de turno)
+  const [isShiftOpen, setIsShiftOpen] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
     const s = getScopedStorage<any>('mock_cash_shift', null);
-    if (s) return true;
-    const token = localStorage.getItem('pos_token');
-    return token ? true : null;
+    if (!s) return false;
+    return s.isOpen !== false;
   });
   const [restaurantName, setRestaurantName] = useState<string>('');
 
@@ -507,16 +506,25 @@ export default function Home() {
             setScopedStorage('mock_cash_shift', {
               openingCash: Number(shift.openingAmount || 0),
               expenses: shift.expenses || [],
-              shiftId: shift.id
+              shiftId: shift.id,
+              isOpen: true
             });
             return;
+          } else {
+            removeScopedStorage('mock_cash_shift');
+            setIsShiftOpen(false);
+            return;
           }
+        } else if (res.status === 404) {
+          removeScopedStorage('mock_cash_shift');
+          setIsShiftOpen(false);
+          return;
         }
       } catch {}
       
       // Fallback a localStorage local
       const shiftData = getScopedStorage<any>('mock_cash_shift', null);
-      setIsShiftOpen(!!shiftData);
+      setIsShiftOpen(Boolean(shiftData && shiftData.isOpen !== false));
     };
 
     checkServerShift();
