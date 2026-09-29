@@ -2157,10 +2157,15 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                     router.push('/');
                   }}
                   disabled={existingItems.length === 0}
-                  className="w-full py-4 rounded-xl font-black text-white bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-200 active:scale-[0.98]"
+                  className="w-full py-3.5 px-4 rounded-xl text-white bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center gap-3 transition-all shadow-lg shadow-indigo-200 active:scale-[0.98] outline-none"
                 >
-                  <Printer className="w-5 h-5" />
-                  IMPRIMIR PRE-CUENTA / PEDIR A CAJA
+                  <div className="w-8 h-8 rounded-lg bg-indigo-500/50 flex items-center justify-center shrink-0">
+                    <Printer className="w-4 h-4 text-white shrink-0" />
+                  </div>
+                  <div className="flex flex-col items-start leading-tight">
+                    <span className="text-xs sm:text-sm font-black tracking-wide">IMPRIMIR PRE-CUENTA</span>
+                    <span className="text-[10px] sm:text-[11px] font-bold text-indigo-200 uppercase tracking-wider">Pedir a Caja</span>
+                  </div>
                 </button>
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 text-center text-amber-800 text-xs font-semibold flex items-center justify-center gap-1.5">
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
@@ -2179,13 +2184,13 @@ export default function PosTablePage({ params }: { params: Promise<{ tableId: st
                     setShowCheckout(true);
                   }}
                   disabled={submitting || existingItems.length === 0}
-                  className={`flex-[2] py-4 rounded-xl font-black text-white flex items-center justify-center gap-2 transition-all shadow-lg active:scale-[0.98]
+                  className={`flex-[2] py-4 px-3 rounded-xl font-black text-white flex items-center justify-center gap-2 transition-all shadow-lg active:scale-[0.98]
                     ${submitting || existingItems.length === 0
                       ? 'bg-slate-300 opacity-70 cursor-not-allowed shadow-none' 
                       : 'bg-blue-600 hover:bg-blue-500 shadow-blue-200 hover:shadow-blue-300'}`}
                 >
-                  <ReceiptText className="w-5 h-5" />
-                  COBRAR CUENTA (CAJA)
+                  <ReceiptText className="w-5 h-5 shrink-0" />
+                  <span className="text-xs sm:text-sm font-black truncate">COBRAR CUENTA (CAJA)</span>
                 </button>
                 <button 
                   onClick={() => {
