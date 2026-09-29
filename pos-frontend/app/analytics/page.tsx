@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   BarChart3, Calendar, DollarSign, Receipt, TrendingUp, CreditCard,
@@ -13,7 +13,7 @@ import {
 import { toast } from 'sonner';
 import { useGuardedRoute } from '@/hooks/useGuardedRoute';
 import { getApiUrl } from '@/utils/api';
-import { getScopedStorage, getRestaurantId } from '@/utils/storage';
+import { getScopedStorage, setScopedStorage, getRestaurantId } from '@/utils/storage';
 
 interface KPI {
   totalRevenue: number;
@@ -265,8 +265,7 @@ function computeLocalAnalytics(fromStr: string, toStr: string): AnalyticsData {
 export default function AnalyticsPage() {
   const router = useRouter();
   useGuardedRoute('analytics');
-  
-  // Custom date range state (Fecha Local Exacta)
+   // Custom date range state (Fecha Local Exacta)
   const [fromDate, setFromDate] = useState(() => formatLocalDate(new Date()));
   const [toDate, setToDate] = useState(() => formatLocalDate(new Date()));
 
@@ -275,14 +274,40 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState<'TODAY' | 'LAST_7_DAYS' | 'LAST_30_DAYS' | 'CUSTOM'>('TODAY');
 
+  // Cache instantáneo en memoria y controlador de cancelación
+  const cacheRef = useRef<Map<string, AnalyticsData>>(new Map());
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   const fetchAnalytics = async (from: string, to: string) => {
-    setLoading(true);
+    const rangeKey = `${from}_${to}`;
+
+    // 1. Cargar instantáneamente desde caché (0ms) si existe
+    const memCached = cacheRef.current.get(rangeKey);
+    const localCached = !memCached ? getScopedStorage<AnalyticsData | null>(`pos_an_${rangeKey}`, null) : null;
+    const cachedData = memCached || localCached;
+
+    if (cachedData) {
+      cacheRef.current.set(rangeKey, cachedData);
+      setData(cachedData);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
+    // 2. Cancelar cualquier petición anterior que siga en vuelo
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     let serverData: AnalyticsData | null = null;
     try {
       const token = localStorage.getItem('pos_token') || '';
       const restId = getRestaurantId();
       const clientTz = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'America/Lima';
       const res = await fetch(getApiUrl(`/analytics?from=${from}&to=${to}&timezone=${encodeURIComponent(clientTz)}`), {
+        signal: controller.signal,
         headers: { 
           Authorization: `Bearer ${token}`,
           'x-restaurant-id': restId || '',
@@ -292,19 +317,22 @@ export default function AnalyticsPage() {
       if (res.ok) {
         serverData = await res.json();
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return;
       console.warn('Backend no disponible para métricas analíticas, calculando desde datos locales:', err);
     } finally {
+      if (controller.signal.aborted) return;
       if (serverData) {
+        cacheRef.current.set(rangeKey, serverData);
+        setScopedStorage(`pos_an_${rangeKey}`, serverData);
         setData(serverData);
-      } else {
+      } else if (!cachedData) {
         const localData = computeLocalAnalytics(from, to);
         setData(localData);
       }
       setLoading(false);
     }
   };
-
 
   useEffect(() => {
     const today = new Date();
@@ -313,11 +341,11 @@ export default function AnalyticsPage() {
 
     if (dateRange === 'LAST_7_DAYS') {
       const d = new Date();
-      d.setDate(d.getDate() - 6);
+      d.setDate(d.getDate() - 7);
       from = formatLocalDate(d);
     } else if (dateRange === 'LAST_30_DAYS') {
       const d = new Date();
-      d.setDate(d.getDate() - 29);
+      d.setDate(d.getDate() - 30);
       from = formatLocalDate(d);
     }
 
@@ -340,7 +368,7 @@ export default function AnalyticsPage() {
     <div className="flex h-screen w-full items-center justify-center bg-slate-50">
       <div className="flex flex-col items-center gap-4 text-violet-600">
         <Loader2 className="w-12 h-12 animate-spin" />
-        <p className="font-bold">Calculando métricas...</p>
+        <p className="font-bold">Calculando métricas al instante...</p>
       </div>
     </div>
   );
@@ -354,9 +382,16 @@ export default function AnalyticsPage() {
             <BarChart3 className="text-violet-600 w-7 h-7 sm:w-8 sm:h-8" />
             Reporte
           </h1>
-          <p className="text-slate-500 font-medium mt-1 uppercase text-xs sm:text-sm tracking-widest">
-            Métricas de Negocio y Rendimiento
-          </p>
+          <div className="flex items-center gap-2 mt-1">
+            <p className="text-slate-500 font-medium uppercase text-xs sm:text-sm tracking-widest">
+              Métricas de Negocio y Rendimiento
+            </p>
+            {loading && (
+              <span className="inline-flex items-center gap-1.5 text-xs text-violet-600 font-bold bg-violet-50 px-2.5 py-0.5 rounded-full animate-pulse">
+                <Loader2 className="w-3 h-3 animate-spin" /> Actualizando...
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
@@ -364,12 +399,13 @@ export default function AnalyticsPage() {
             <button
               key={r}
               onClick={() => setDateRange(r as any)}
-              className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all text-center ${
+              className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all text-center flex items-center justify-center gap-1.5 ${
                 dateRange === r 
                   ? 'bg-violet-100 text-violet-700 border-2 border-violet-200 shadow-inner' 
                   : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-900'
               }`}
             >
+              {loading && dateRange === r && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               {r === 'TODAY' ? 'Hoy' : r === 'LAST_7_DAYS' ? '7 Días' : r === 'LAST_30_DAYS' ? '30 Días' : 'Rango'}
             </button>
           ))}
@@ -397,10 +433,10 @@ export default function AnalyticsPage() {
 
       {/* Dashboard Content */}
       {data ? (
-        <div className="space-y-6">
+        <div className={`space-y-6 transition-opacity duration-200 ${loading ? 'opacity-70' : 'opacity-100'}`}>
           {/* Informative Notice when 0 orders in range */}
-          {data.kpis.totalOrders === 0 && (
-            <div className="bg-amber-50 border border-amber-200/80 p-4 sm:p-5 rounded-2xl flex items-center gap-3 text-amber-800 text-sm font-medium shadow-sm">
+          {!loading && data.kpis.totalOrders === 0 && (
+            <div className="bg-amber-50 border border-amber-200/80 p-4 sm:p-5 rounded-2xl flex items-center gap-3 text-amber-800 text-sm font-medium shadow-sm animate-in fade-in duration-200">
               <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
               <div>
                 <span className="font-bold">Sin ventas registradas en este período: </span>

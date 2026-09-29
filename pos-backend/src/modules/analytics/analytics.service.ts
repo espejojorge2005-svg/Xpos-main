@@ -112,17 +112,16 @@ export class AnalyticsService {
     // 1. Pagos del rango en la zona horaria del cliente
     const paymentWhere: any = {
       createdAt: { gte: from, lte: to },
-      ...(restaurantId ? { order: { restaurantId } } : { order: { restaurantId: '00000000-0000-0000-0000-000000000000' } }),
+      order: {
+        status: 'CLOSED',
+        ...(restaurantId ? { restaurantId } : { restaurantId: '00000000-0000-0000-0000-000000000000' }),
+      },
     };
 
-    // 2. Órdenes cerradas que tengan pagos en el rango O hayan sido creadas en el rango
-    // (Evita incluir órdenes huérfanas de días pasados editadas hoy vía updatedAt)
+    // 2. Órdenes cerradas en el rango (aprovecha index [restaurantId, status, createdAt])
     const orderWhere: any = {
       status: 'CLOSED',
-      OR: [
-        { payments: { some: { createdAt: { gte: from, lte: to } } } },
-        { createdAt: { gte: from, lte: to } },
-      ],
+      createdAt: { gte: from, lte: to },
       ...(restaurantId ? { restaurantId } : { restaurantId: '00000000-0000-0000-0000-000000000000' }),
     };
 
